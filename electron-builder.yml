@@ -1,5 +1,5 @@
-appId: com.studioai.desktop
-productName: StudioAI
+appId: com.gravuresse.desktop
+productName: Gravuresse
 directories:
   buildResources: build
   output: release

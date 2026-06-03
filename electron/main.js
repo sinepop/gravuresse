@@ -65,7 +65,7 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
-  electronApp.setAppUserModelId('com.studioai')
+  electronApp.setAppUserModelId('com.gravuresse')
   app.on('browser-window-created', (_, window) => optimizer.watchWindowShortcuts(window))
   createWindow()
   app.on('activate', () => {

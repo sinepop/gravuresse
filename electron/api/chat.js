@@ -6,7 +6,7 @@ async function callClaude(messages, provider) {
   const body = JSON.stringify({
     model: provider.model || 'claude-sonnet-4-6',
     max_tokens: 4096,
-    system: messages.system || 'You are StudioAI.',
+    system: messages.system || 'You are Gravuresse.',
     messages: messages.history || []
   })
   return new Promise((resolve, reject) => {
@@ -42,7 +42,7 @@ async function callOpenAI(messages, provider) {
   const body = JSON.stringify({
     model: provider.model || 'gpt-5.1',
     messages: [
-      { role: 'system', content: messages.system || 'You are StudioAI.' },
+      { role: 'system', content: messages.system || 'You are Gravuresse.' },
       ...(messages.history || [])
     ],
     max_tokens: 4096
@@ -82,7 +82,7 @@ async function callGemini(messages, provider) {
   }))
   const body = JSON.stringify({
     contents,
-    systemInstruction: { parts: [{ text: messages.system || 'You are StudioAI.' }] }
+    systemInstruction: { parts: [{ text: messages.system || 'You are Gravuresse.' }] }
   })
   return new Promise((resolve, reject) => {
     const model = provider.model || 'gemini-2.5-pro'

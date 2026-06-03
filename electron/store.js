@@ -2,7 +2,7 @@ const { app } = require('electron')
 const fs = require('fs')
 const path = require('path')
 
-const CONFIG_DIR = path.join(app.getPath('userData'), 'StudioAI')
+const CONFIG_DIR = path.join(app.getPath('userData'), 'Gravuresse')
 const STORE_FILE = path.join(CONFIG_DIR, 'conversations.json')
 
 function ensureDir() {
