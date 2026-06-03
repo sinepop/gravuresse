@@ -1,10 +1,6 @@
 # StudioAI Desktop
 
-<div align="center">
-
-**中文** | [English](#english)
-
-</div>
+[![中文](https://img.shields.io/badge/语言-中文-blue?style=flat-square)](#studioai--对话驱动的-ai-创意设计工具) [![English](https://img.shields.io/badge/lang-English-gray?style=flat-square)](#english)
 
 ## StudioAI — 对话驱动的 AI 创意设计工具
 
@@ -60,23 +56,11 @@ npm run package
 
 ---
 
-<div align="center">
-
-[English](#english) | **中文**
-
-</div>
-
----
-
 <a id="english"></a>
 
 # StudioAI Desktop
 
-<div align="center">
-
-[中文](#studioai--对话驱动的-ai-创意设计工具) | **English**
-
-</div>
+[![中文](https://img.shields.io/badge/语言-中文-gray?style=flat-square)](#studioai--对话驱动的-ai-创意设计工具) [![English](https://img.shields.io/badge/lang-English-blue?style=flat-square)](#english)
 
 ## StudioAI — Conversation-Driven AI Design Tool
 
