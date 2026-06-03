@@ -3,21 +3,49 @@ const fs = require('fs')
 const path = require('path')
 
 const CONFIG_DIR = path.join(app.getPath('userData'), 'StudioAI')
-const HISTORY_FILE = path.join(CONFIG_DIR, 'history.json')
+const STORE_FILE = path.join(CONFIG_DIR, 'conversations.json')
 
 function ensureDir() {
   if (!fs.existsSync(CONFIG_DIR)) fs.mkdirSync(CONFIG_DIR, { recursive: true })
 }
 
-function load() {
+function loadAll() {
   ensureDir()
-  try { return JSON.parse(fs.readFileSync(HISTORY_FILE, 'utf-8')) }
-  catch { return [] }
+  try {
+    const raw = JSON.parse(fs.readFileSync(STORE_FILE, 'utf-8'))
+    return { conversations: raw.conversations || [], activeId: raw.activeId || null }
+  } catch {
+    return { conversations: [], activeId: null }
+  }
 }
 
-function save(records) {
+function saveAll(data) {
   ensureDir()
-  fs.writeFileSync(HISTORY_FILE, JSON.stringify(records, null, 2), 'utf-8')
+  fs.writeFileSync(STORE_FILE, JSON.stringify(data, null, 2), 'utf-8')
 }
 
-module.exports = { load, save }
+function saveConversation(convId, convData) {
+  const data = loadAll()
+  const idx = data.conversations.findIndex(c => c.id === convId)
+  if (idx >= 0) {
+    data.conversations[idx] = { ...data.conversations[idx], ...convData, updatedAt: new Date().toISOString() }
+  } else {
+    data.conversations.unshift({ id: convId, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), ...convData })
+  }
+  saveAll(data)
+}
+
+function deleteConversation(convId) {
+  const data = loadAll()
+  data.conversations = data.conversations.filter(c => c.id !== convId)
+  if (data.activeId === convId) data.activeId = data.conversations[0]?.id || null
+  saveAll(data)
+}
+
+function setActiveId(convId) {
+  const data = loadAll()
+  data.activeId = convId
+  saveAll(data)
+}
+
+module.exports = { loadAll, saveAll, saveConversation, deleteConversation, setActiveId }

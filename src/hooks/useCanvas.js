@@ -30,6 +30,11 @@ export default function useCanvas() {
 
   const getAssetById = useCallback((id) => assets.find(a => a.id === id), [assets])
 
+  const clear = useCallback(() => {
+    setAssets([])
+    setSelectedId(null)
+  }, [])
+
   const selectedAsset = assets.find(a => a.id === selectedId) || null
   const filtered = assets
     .filter(a => filter === 'all' || a.type === filter)
@@ -38,6 +43,6 @@ export default function useCanvas() {
   return {
     assets: filtered, allAssets: assets, selectedAsset, selectedId, setSelectedId,
     viewMode, setViewMode, filter, setFilter, sort, setSort,
-    addAsset, removeAsset, updateAsset, getAssetById
+    addAsset, removeAsset, updateAsset, getAssetById, clear
   }
 }

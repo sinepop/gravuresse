@@ -12,6 +12,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getHistory: () => ipcRenderer.invoke('history:get'),
   saveHistory: (records) => ipcRenderer.invoke('history:save', records),
 
+  loadConversations: () => ipcRenderer.invoke('conv:loadAll'),
+  saveConversation: (id, data) => ipcRenderer.invoke('conv:save', id, data),
+  deleteConversation: (id) => ipcRenderer.invoke('conv:delete', id),
+  setActiveConversation: (id) => ipcRenderer.invoke('conv:setActive', id),
+
   chat: (messages, provider) => ipcRenderer.invoke('api:chat', messages, provider),
   generateImage: (params) => ipcRenderer.invoke('api:image', params),
   generateVideo: (params) => ipcRenderer.invoke('api:video', params),

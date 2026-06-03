@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { CHAT_PROVIDERS } from '../providers/chatProviders'
 import { IMG_PROVIDERS } from '../providers/imageProviders'
 import { VID_PROVIDERS } from '../providers/videoProviders'
+import { t } from '../i18n'
 import Ic from './icons'
 
 const TRACKS = [
@@ -10,7 +11,7 @@ const TRACKS = [
   { key: 'video', label: '视频', providers: VID_PROVIDERS }
 ]
 
-function Dropdown({ track, current, onChange, onOpenSettings }) {
+function Dropdown({ track, current, onChange, onOpenSettings, lang }) {
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
 
@@ -32,7 +33,7 @@ function Dropdown({ track, current, onChange, onOpenSettings }) {
         display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer'
       }}>
         <span style={{ color: 'var(--text-muted)', fontSize: 10 }}>{track.label}:</span>
-        {currentProvider?.name || '未配置'}
+        {currentProvider?.name || t('noConfig', lang)}
         {configured ? <Ic n="chevDown" size={10} /> : <Ic n="gear" size={10} color="var(--accent)" />}
       </button>
       {open && (
@@ -58,7 +59,7 @@ function Dropdown({ track, current, onChange, onOpenSettings }) {
   )
 }
 
-export default function ModelBar({ config, onProviderChange, onOpenSettings }) {
+export default function ModelBar({ config, onProviderChange, onOpenSettings, lang }) {
   if (!config) return null
   return (
     <div style={{
@@ -67,7 +68,7 @@ export default function ModelBar({ config, onProviderChange, onOpenSettings }) {
     }}>
       {TRACKS.map(t => (
         <Dropdown key={t.key} track={t} current={config.providers?.[t.key]}
-          onChange={onProviderChange} onOpenSettings={onOpenSettings} />
+          onChange={onProviderChange} onOpenSettings={onOpenSettings} lang={lang} />
       ))}
     </div>
   )

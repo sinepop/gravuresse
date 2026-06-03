@@ -2,7 +2,7 @@ import AssetCard from './AssetCard'
 import AssetDetail from './AssetDetail'
 import Ic from './icons'
 
-export default function CanvasPanel({ canvas }) {
+export default function CanvasPanel({ canvas, lang }) {
   const { assets, selectedAsset, selectedId, setSelectedId, viewMode, setViewMode, filter, setFilter } = canvas
 
   return (
@@ -37,7 +37,7 @@ export default function CanvasPanel({ canvas }) {
       </div>
       {selectedAsset && (
         <AssetDetail asset={selectedAsset} onClose={() => setSelectedId(null)}
-          onDelete={() => canvas.removeAsset(selectedAsset.id)} onRegenerate={() => {}} />
+          onDelete={() => canvas.removeAsset(selectedAsset.id)} onRegenerate={() => {}} lang={lang} />
       )}
     </div>
   )

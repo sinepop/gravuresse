@@ -1,10 +1,34 @@
 import { useState, useEffect, useCallback } from 'react'
+import { CHAT_PROVIDERS } from '../providers/chatProviders'
+import { IMG_PROVIDERS } from '../providers/imageProviders'
+import { VID_PROVIDERS } from '../providers/videoProviders'
+
+const PROVIDER_MAP = { chat: CHAT_PROVIDERS, image: IMG_PROVIDERS, video: VID_PROVIDERS }
+
+const DEPRECATED_MODELS = ['pollinations']
+
+function migrateConfig(cfg) {
+  if (!cfg?.providers) return cfg
+  const next = { ...cfg, providers: { ...cfg.providers } }
+  for (const [track, providers] of Object.entries(PROVIDER_MAP)) {
+    const saved = next.providers[track]
+    if (!saved?.id) continue
+    const matchedProvider = providers.find(p => p.id === saved.id)
+    if (!matchedProvider) {
+      const fallback = providers[0]
+      next.providers[track] = { id: fallback.id, apiKey: '', baseUrl: fallback.defaultUrl, model: fallback.defaultModel }
+    } else if (DEPRECATED_MODELS.includes(saved.model)) {
+      next.providers[track] = { ...saved, model: matchedProvider.defaultModel }
+    }
+  }
+  return next
+}
 
 export default function useConfig() {
   const [config, setConfig] = useState(null)
 
   useEffect(() => {
-    window.electronAPI?.getConfig().then(c => { if (c) setConfig(c) })
+    window.electronAPI?.getConfig().then(c => { if (c) setConfig(migrateConfig(c)) })
   }, [])
 
   const save = useCallback(async (newCfg) => {

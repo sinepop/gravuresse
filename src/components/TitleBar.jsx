@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import Ic from './icons'
+import { t } from '../i18n'
 
-export default function TitleBar({ onOpenSettings }) {
+export default function TitleBar({ onOpenSettings, lang }) {
   const [isMax, setIsMax] = useState(false)
 
   useEffect(() => {
@@ -27,10 +28,10 @@ export default function TitleBar({ onOpenSettings }) {
       background: 'var(--bg-primary)', borderBottom: '1px solid var(--border-subtle)'
     }}>
       <span style={{ fontFamily: 'var(--font-display)', fontSize: 14, fontStyle: 'italic', color: 'var(--text-secondary)' }}>
-        Studio AI
+        {t('studioAi', lang)}
       </span>
       <div style={{ display: 'flex', alignItems: 'center', WebkitAppRegion: 'no-drag' }}>
-        <button onClick={onOpenSettings} title="设置 (Ctrl+,)" style={{
+        <button onClick={onOpenSettings} title={t('settingsTitle', lang)} style={{
           background: 'none', border: 'none', color: 'var(--text-secondary)',
           width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center',
           cursor: 'pointer', borderRadius: 4

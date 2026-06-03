@@ -5,7 +5,7 @@ const { electronApp, optimizer, is } = require('@electron-toolkit/utils')
 function createWindow() {
   const mainWindow = new BrowserWindow({
     width: 1400, height: 900, minWidth: 1000, minHeight: 600,
-    frame: false, titleBarStyle: 'hidden', backgroundColor: '#FFFFFF',
+    frame: false, titleBarStyle: 'hidden', backgroundColor: '#1A1A1E',
     webPreferences: {
       preload: path.join(__dirname, '../preload/preload.js'),
       sandbox: false, contextIsolation: true, nodeIntegration: false
@@ -37,8 +37,12 @@ function createWindow() {
 
   // History IPC
   const store = require('./store')
-  ipcMain.handle('history:get', () => store.load())
-  ipcMain.handle('history:save', (_, records) => store.save(records))
+  ipcMain.handle('history:get', () => store.loadAll())
+  ipcMain.handle('history:save', (_, records) => store.saveAll(records))
+  ipcMain.handle('conv:loadAll', () => store.loadAll())
+  ipcMain.handle('conv:save', (_, id, data) => store.saveConversation(id, data))
+  ipcMain.handle('conv:delete', (_, id) => store.deleteConversation(id))
+  ipcMain.handle('conv:setActive', (_, id) => store.setActiveId(id))
 
   // API IPC
   const chatApi = require('./api/chat')

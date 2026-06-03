@@ -19,18 +19,21 @@
 ### 功能
 
 - **对话生成** — 支持多家大模型，理解意图后自动调度图像/视频任务
-- **图像生成** — 支持主流图像生成模型
+- **图像生成** — 支持主流图像生成模型，先出提示词再确认生成
 - **视频生成** — 支持多家视频生成服务，含任务队列与进度追踪
-- **素材画廊** — 网格/自由布局切换，右键菜单操作
-- **设置面板** — 标题栏齿轮图标或 `Ctrl+,` 打开，按对话/图像/视频分别配置
-- **白色主题** — 支持深色/浅色/跟随系统切换
+- **迭代修改** — 生成后用自然语言描述修改，AI 增量调整 prompt，保留满意部分
+- **多对话管理** — 多对话并行，独立记忆互不干扰，支持切换/新建/删除
+- **素材画廊** — 网格/自由布局切换，右键菜单操作，图片点击放大预览
+- **设置面板** — 左侧导航布局，通用设置 + API 配置分组，模型自动获取下拉选择
+- **主题与国际化** — 深色/浅色/跟随系统 + 中英文切换 + 字体大小调节
+- **消息可复制** — 对话内容支持选中复制，Shift+Enter 换行
 
 ### 快速开始
 
-1. 下载 `studio-ai-Setup-1.0.0.exe` 并安装
+1. 下载 `studio-ai-Setup-1.1.0.exe` 并安装
 2. 打开程序，点击标题栏齿轮图标（或按 `Ctrl+,`）进入设置
-3. 在对话/图像/视频标签页配置对应的 API Key
-4. 在聊天框输入需求，AI 自动完成创作
+3. 在 API 配置中选择 Provider，输入 API Key，模型自动获取
+4. 在聊天框输入需求，AI 先出提示词，确认后自动生成
 
 ### 开发
 
@@ -42,6 +45,42 @@ npm run package
 ```
 
 ### 更新日志
+
+#### v1.1.0 (2026-06-03)
+
+**生成流程优化**
+- 图片生成改为「先出提示词 → 确认 → 再生成」，用户可在生成前审阅和调整 prompt
+- 生成后支持自然语言迭代修改，AI 基于上次 prompt 增量调整，保留用户满意的部分
+- 任务卡片实时显示状态：待确认 → 生成中 → 已完成/失败
+
+**多对话管理**
+- 支持多对话并行，每个对话独立消息和画布资产
+- 对话列表栏：新建、切换、删除对话
+- 对话数据自动持久化，切换不丢失
+
+**设置页面重构**
+- 左侧导航布局：通用设置（外观/语言/其他）+ API 配置（对话/图像/视频）
+- 模型字段自动获取：输入 API Key 后自动拉取可用模型列表，下拉选择
+- Base URL 增加「恢复默认」按钮
+- API 配置增加「清空配置」按钮
+- 高级选项：Chat 自定义 System Prompt，Image 自定义 Negative Prompt
+- 去除免费 Pollinations API（质量不佳）
+
+**主题与国际化**
+- 深色主题完整实现（CSS 变量全覆盖，含系统偏好媒体查询）
+- 中英文切换，设置页/标题栏/底栏/聊天面板文案跟随语言
+- 字体大小可调（小/中/大）
+- 设置组件改用 CSS 变量，跟随主题切换
+
+**体验改进**
+- 设置齿轮图标替换为更精致的 Lucide Settings 图标
+- 消息气泡支持文本选中复制
+- 对话输入框 Shift+Enter 换行，自动增高
+- 图片资产详情增加「保存到本地」按钮
+- 图片点击放大预览（lightbox）
+- 修复图片/视频生成失败时无反馈的问题
+- 修复描述画面时误触发图片生成的逻辑问题
+- 废弃模型自动迁移（如旧配置中的 pollinations 自动重置）
 
 #### v1.0.0 (2026-06-03)
 
@@ -79,18 +118,21 @@ Driven by a research mindset and sheer persistence, I dug through tons of resour
 ### Features
 
 - **Chat Generation** — Supports multiple LLM providers, auto-dispatches image/video tasks based on intent
-- **Image Generation** — Supports mainstream image generation models
+- **Image Generation** — Shows prompt for review before generation, supports iterative modification
 - **Video Generation** — Supports multiple video services with task queue and progress tracking
-- **Asset Gallery** — Grid/free layout toggle, right-click context menu
-- **Settings Panel** — Gear icon in title bar or `Ctrl+,` to open, configure per track
-- **Light Theme** — Supports dark/light/system theme switching
+- **Iterative Editing** — Describe changes in natural language, AI incrementally adjusts the prompt
+- **Multi-Conversation** — Parallel conversations with isolated memory, switch/create/delete
+- **Asset Gallery** — Grid/free layout, right-click menu, click-to-zoom preview
+- **Settings Panel** — Sidebar navigation layout, auto-fetch models, grouped by General + API
+- **Theme & i18n** — Dark/light/system themes, Chinese/English, adjustable font size
+- **Copy & Paste** — Message text selectable and copyable, Shift+Enter for newlines
 
 ### Quick Start
 
-1. Download `studio-ai-Setup-1.0.0.exe` and install
+1. Download `studio-ai-Setup-1.1.0.exe` and install
 2. Open the app, click the gear icon in the title bar (or press `Ctrl+,`) to open Settings
-3. Configure your API keys for Chat/Image/Video
-4. Type your request in the chat box and let AI create for you
+3. Select a Provider in API Configuration, enter your API Key — models are auto-fetched
+4. Type your request in chat, AI shows the prompt first, confirm to generate
 
 ### Development
 
@@ -102,6 +144,41 @@ npm run package
 ```
 
 ### Changelog
+
+#### v1.1.0 (2026-06-03)
+
+**Generation Flow**
+- Image generation now shows prompt for review before execution — confirm to generate
+- Iterative modification via natural language — AI incrementally adjusts prompt, preserves what you like
+- Task cards show real-time status: pending → generating → done/error
+
+**Multi-Conversation**
+- Parallel conversations with isolated messages and canvas assets
+- Conversation bar: create, switch, delete conversations
+- Auto-persist conversation data across sessions
+
+**Settings Redesign**
+- Sidebar navigation: General (Appearance/Language/Other) + API Config (Chat/Image/Video)
+- Auto-fetch model list on API Key entry, dropdown selection
+- Base URL restore-to-default button
+- Clear config button per provider
+- Advanced options: custom system prompt, default negative prompt
+- Removed free Pollinations API (low quality)
+
+**Theme & i18n**
+- Full dark theme implementation (CSS variables, system preference media query)
+- Chinese/English language switching across all UI
+- Adjustable font size (small/medium/large)
+- Settings component uses CSS variables, follows theme
+
+**UX Improvements**
+- Replaced gear icon with refined Lucide Settings icon
+- Message text is selectable and copyable
+- Chat input auto-resizes, Shift+Enter for newlines
+- Asset detail panel: save-to-file button, click-to-zoom preview
+- Fixed silent failures on image/video generation errors
+- Fixed accidental image generation on descriptive text
+- Auto-migrate deprecated models (e.g. pollinations → provider default)
 
 #### v1.0.0 (2026-06-03)
 
