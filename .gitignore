@@ -5,3 +5,4 @@ release/
 *.html
 .env
 .env.*
+CLAUDE.md
