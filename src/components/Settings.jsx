@@ -86,7 +86,7 @@ function ProviderTab({ track, providers, config, onChange, lang }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <label style={labelS()}>
         {t('provider', lang)}
-        <select value={current.id || ''} onChange={e => { const p = providers.find(pp => pp.id === e.target.value); if (p) onChange(track, { id: p.id, baseUrl: p.defaultUrl, model: p.defaultModel }); setModels([]); setTestResult(null) }} style={selectS()}>
+        <select value={current.id || ''} onChange={e => { const p = providers.find(pp => pp.id === e.target.value); if (p) onChange(track, { id: p.id, baseUrl: p.defaultUrl, model: p.defaultModel, protocol: p.protocol, format: p.format }); setModels([]); setTestResult(null) }} style={selectS()}>
           {providers.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
         </select>
       </label>
@@ -197,6 +197,17 @@ function OtherPage({ config, onChange, lang }) {
         <input type="checkbox" checked={g.autoSave !== false} onChange={e => onChange('general', { autoSave: e.target.checked })} />
         {t('autoSave', lang)}
       </label>
+      <label style={{ ...labelS(), flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <input type="checkbox" checked={g.autoSave !== false} onChange={e => onChange('general', { autoSave: e.target.checked })} />
+        {t('autoSaveImages', lang)}
+      </label>
+      <label style={{ ...labelS(), flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <input type="checkbox" checked={g.enableReference === true} onChange={e => onChange('general', { enableReference: e.target.checked })} />
+        <div>
+          <div>{t('enableReference', lang)}</div>
+          <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>{t('enableReferenceDesc', lang)}</div>
+        </div>
+      </label>
       <label style={labelS()}>
         {t('apiTimeout', lang)}
         <select value={g.apiTimeout || 60000} onChange={e => onChange('general', { apiTimeout: Number(e.target.value) })} style={selectS()}>
@@ -211,23 +222,9 @@ function OtherPage({ config, onChange, lang }) {
 
 /* ── Image settings page ── */
 function ImagePage({ config, onChange, lang }) {
-  const g = config?.general || {}
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <ProviderTab track="image" providers={IMG_PROVIDERS} config={config} onChange={(t2, patch) => onChange('image', patch)} lang={lang} />
-      <label style={labelS()}>
-        {t('defaultRatio', lang)}
-        <select value={g.defaultRatio || '1:1'} onChange={e => onChange('general', { defaultRatio: e.target.value })} style={selectS()}>
-          {ASPECT_RATIOS.map(r => <option key={r} value={r}>{r}</option>)}
-        </select>
-      </label>
-      <label style={labelS()}>
-        {t('defaultStyle', lang)}
-        <select value={g.defaultStyle || ''} onChange={e => onChange('general', { defaultStyle: e.target.value })} style={selectS()}>
-          <option value="">{t('noStyle', lang)}</option>
-          {STYLE_PRESETS.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
-      </label>
     </div>
   )
 }

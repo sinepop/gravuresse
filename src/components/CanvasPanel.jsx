@@ -44,11 +44,9 @@ function InfiniteCanvas({ children, assets }) {
 
   const clampScale = (s) => Math.min(Math.max(s, MIN_SCALE), MAX_SCALE)
 
-  // Sync refs
   useEffect(() => { scaleRef.current = scale }, [scale])
   useEffect(() => { offsetRef.current = offset }, [offset])
 
-  // Wheel zoom centered on cursor
   useEffect(() => {
     const el = containerRef.current
     if (!el) return
@@ -73,12 +71,10 @@ function InfiniteCanvas({ children, assets }) {
     return () => el.removeEventListener('wheel', onWheel)
   }, [])
 
-  // Pan with mouse drag (left button on empty area)
   useEffect(() => {
     const el = containerRef.current
     if (!el) return
     const onMouseDown = (e) => {
-      // Only pan on left click, and not on interactive elements
       if (e.button !== 0) return
       const tag = e.target.tagName
       if (tag === 'BUTTON' || tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return
@@ -148,14 +144,11 @@ function InfiniteCanvas({ children, assets }) {
   }, [])
 
   const fitToView = useCallback(() => {
-    const el = containerRef.current
-    if (!el || !assets?.length) return
-    // Simple fit: reset to 1 and center
     scaleRef.current = 1
     offsetRef.current = { x: 0, y: 0 }
     setScale(1)
     setOffset({ x: 0, y: 0 })
-  }, [assets])
+  }, [])
 
   return (
     <div ref={containerRef} style={{
@@ -166,7 +159,6 @@ function InfiniteCanvas({ children, assets }) {
       backgroundSize: `${20 * scale}px ${20 * scale}px`,
       backgroundPosition: `${offset.x}px ${offset.y}px`
     }}>
-      {/* Content layer */}
       <div style={{
         transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
         transformOrigin: '0 0',
@@ -175,7 +167,6 @@ function InfiniteCanvas({ children, assets }) {
         {children}
       </div>
 
-      {/* Floating zoom controls */}
       <div style={{
         position: 'absolute', bottom: 14, right: 14, zIndex: 10,
         display: 'flex', alignItems: 'center', gap: 2,
@@ -201,7 +192,6 @@ function InfiniteCanvas({ children, assets }) {
         </button>
       </div>
 
-      {/* Pan hint */}
       {!isPanning && scale === 1 && offset.x === 0 && offset.y === 0 && assets?.length > 0 && (
         <div style={{
           position: 'absolute', bottom: 14, left: 14, zIndex: 10,
@@ -224,12 +214,10 @@ const zoomCtrlBtn = {
   transition: 'background 0.12s, color 0.12s'
 }
 
-/* Drawing overlay */
 function DrawingOverlay({ tool, color, width: strokeWidth }) {
   const canvasRef = useRef(null)
   const drawing = useRef(false)
   const start = useRef({ x: 0, y: 0 })
-  const path = useRef([])
   const snapshot = useRef(null)
 
   useEffect(() => {
@@ -258,7 +246,6 @@ function DrawingOverlay({ tool, color, width: strokeWidth }) {
     drawing.current = true
     const pos = getPos(e)
     start.current = pos
-    path.current = [pos]
     const ctx = canvasRef.current.getContext('2d')
     snapshot.current = ctx.getImageData(0, 0, canvasRef.current.width, canvasRef.current.height)
 
@@ -328,8 +315,7 @@ function DrawingOverlay({ tool, color, width: strokeWidth }) {
   )
 }
 
-/* Tool icon mapping (Lucide) */
-const TOOL_ICONS = { select: MousePointer, move: Hand, pencil: Pencil, rect: Square, circle: Circle, line: Minus, type: Type }
+const TOOL_ICONS = { select: MousePointer, move: Hand, pencil: Pencil, rect: Square, circle: Circle, line: Minus, text: Type }
 
 function ToolIcon({ id, size = 16 }) {
   const Icon = TOOL_ICONS[id]
@@ -337,101 +323,104 @@ function ToolIcon({ id, size = 16 }) {
   return <Icon size={size} strokeWidth={1.6} />
 }
 
-/* Figma-style vertical sidebar toolbar */
 function EditBar({ activeTool, setActiveTool, drawColor, setDrawColor, drawWidth, setDrawWidth }) {
   const [hoveredTool, setHoveredTool] = useState(null)
   const isDrawingTool = !['select', 'move'].includes(activeTool)
 
   return (
-    <>
-      {/* Bottom centered toolbar */}
-      <div style={{
-        position: 'absolute', bottom: 10, left: '50%', transform: 'translateX(-50%)', zIndex: 20,
-        display: 'flex', alignItems: 'center', gap: 2,
-        background: 'var(--bg-elevated)', border: '1px solid var(--border-default)',
-        borderRadius: 'var(--radius-lg)', padding: '4px 6px',
-        boxShadow: 'var(--shadow-md)', userSelect: 'none'
-      }}>
-        {/* Tool buttons */}
-        {TOOL_GROUPS.map((group, gi) => (
-          <div key={gi} style={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            {gi > 0 && <div style={{ width: 1, height: 20, background: 'var(--border-subtle)', margin: '0 3px' }} />}
-            {group.tools.map(tool => {
-              const isActive = activeTool === tool.id
-              const isHovered = hoveredTool === tool.id
-              return (
-                <div key={tool.id} style={{ position: 'relative' }}>
-                  <button
-                    onClick={() => setActiveTool(tool.id)}
-                    onMouseEnter={() => setHoveredTool(tool.id)}
-                    onMouseLeave={() => setHoveredTool(null)}
-                    title={`${tool.label} (${tool.key})`}
-                    style={{
-                      width: 30, height: 30, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      background: isActive ? 'var(--accent-soft)' : isHovered ? 'var(--bg-hover)' : 'transparent',
-                      border: `1px solid ${isActive ? 'var(--border-accent)' : 'transparent'}`,
-                      borderRadius: 'var(--radius-sm)',
-                      color: isActive ? 'var(--accent)' : 'var(--text-secondary)',
-                      cursor: 'pointer', transition: 'all 0.1s'
-                    }}>
-                    <ToolIcon id={tool.id} size={15} />
-                  </button>
-                  {/* Tooltip */}
-                  {isHovered && (
-                    <div style={{
-                      position: 'absolute', bottom: '100%', left: '50%', transform: 'translateX(-50%)',
-                      marginBottom: 6, padding: '4px 8px', background: 'var(--bg-primary)',
-                      border: '1px solid var(--border-default)', borderRadius: 'var(--radius-sm)',
-                      fontSize: 11, color: 'var(--text-primary)', whiteSpace: 'nowrap',
-                      boxShadow: 'var(--shadow-md)', pointerEvents: 'none',
-                      display: 'flex', alignItems: 'center', gap: 6, zIndex: 30
-                    }}>
-                      {tool.label}
-                      <span style={{
-                        fontSize: 9, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)',
-                        background: 'var(--bg-surface)', padding: '1px 4px', borderRadius: 3
-                      }}>{tool.key}</span>
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        ))}
-        {/* Drawing options (inline, after tools) */}
-        {isDrawingTool && (
-          <>
-            <div style={{ width: 1, height: 20, background: 'var(--border-subtle)', margin: '0 3px' }} />
-            {/* Colors */}
-            {COLORS.map(c => (
-              <button key={c} onClick={() => setDrawColor(c)} style={{
-                width: 16, height: 16, borderRadius: '50%', background: c, border: 'none',
-                cursor: 'pointer',
-                outline: drawColor === c ? '2px solid var(--accent)' : '1px solid var(--border-default)',
-                outlineOffset: drawColor === c ? 1 : 0,
-                transform: drawColor === c ? 'scale(1.2)' : 'scale(1)',
-                transition: 'all 0.12s', margin: '0 1px'
+    <div style={{
+      position: 'absolute', bottom: 10, left: '50%', transform: 'translateX(-50%)', zIndex: 20,
+      display: 'flex', alignItems: 'center', gap: 2,
+      background: 'var(--bg-elevated)', border: '1px solid var(--border-default)',
+      borderRadius: 'var(--radius-lg)', padding: '4px 6px',
+      boxShadow: 'var(--shadow-md)', userSelect: 'none'
+    }}>
+      {TOOL_GROUPS.map((group, gi) => (
+        <div key={gi} style={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          {gi > 0 && <div style={{ width: 1, height: 20, background: 'var(--border-subtle)', margin: '0 3px' }} />}
+          {group.tools.map(tool => {
+            const isActive = activeTool === tool.id
+            const isHovered = hoveredTool === tool.id
+            return (
+              <div key={tool.id} style={{ position: 'relative' }}>
+                <button
+                  onClick={() => setActiveTool(tool.id)}
+                  onMouseEnter={() => setHoveredTool(tool.id)}
+                  onMouseLeave={() => setHoveredTool(null)}
+                  title={`${tool.label} (${tool.key})`}
+                  style={{
+                    width: 30, height: 30, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    background: isActive ? 'var(--accent-soft)' : isHovered ? 'var(--bg-hover)' : 'transparent',
+                    border: `1px solid ${isActive ? 'var(--border-accent)' : 'transparent'}`,
+                    borderRadius: 'var(--radius-sm)',
+                    color: isActive ? 'var(--accent)' : 'var(--text-secondary)',
+                    cursor: 'pointer', transition: 'all 0.1s'
+                  }}>
+                  <ToolIcon id={tool.id} size={15} />
+                </button>
+                {isHovered && (
+                  <div style={{
+                    position: 'absolute', bottom: '100%', left: '50%', transform: 'translateX(-50%)',
+                    marginBottom: 6, padding: '4px 8px', background: 'var(--bg-primary)',
+                    border: '1px solid var(--border-default)', borderRadius: 'var(--radius-sm)',
+                    fontSize: 11, color: 'var(--text-primary)', whiteSpace: 'nowrap',
+                    boxShadow: 'var(--shadow-md)', pointerEvents: 'none',
+                    display: 'flex', alignItems: 'center', gap: 6, zIndex: 30
+                  }}>
+                    {tool.label}
+                    <span style={{
+                      fontSize: 9, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)',
+                      background: 'var(--bg-surface)', padding: '1px 4px', borderRadius: 3
+                    }}>{tool.key}</span>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      ))}
+      {isDrawingTool && (
+        <>
+          <div style={{ width: 1, height: 20, background: 'var(--border-subtle)', margin: '0 3px' }} />
+          {COLORS.map(c => (
+            <button key={c} onClick={() => setDrawColor(c)} style={{
+              width: 16, height: 16, borderRadius: '50%', background: c, border: 'none',
+              cursor: 'pointer',
+              outline: drawColor === c ? '2px solid var(--accent)' : '1px solid var(--border-default)',
+              outlineOffset: drawColor === c ? 1 : 0,
+              transform: drawColor === c ? 'scale(1.2)' : 'scale(1)',
+              transition: 'all 0.12s', margin: '0 1px'
+            }} />
+          ))}
+          <div style={{ width: 1, height: 20, background: 'var(--border-subtle)', margin: '0 3px' }} />
+          {[1, 2, 4].map(w => (
+            <button key={w} onClick={() => setDrawWidth(w)} style={{
+              width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: drawWidth === w ? 'var(--accent-soft)' : 'transparent',
+              border: `1px solid ${drawWidth === w ? 'var(--border-accent)' : 'transparent'}`,
+              borderRadius: 'var(--radius-sm)', cursor: 'pointer', transition: 'all 0.12s'
+            }}>
+              <div style={{
+                width: 12, borderRadius: w,
+                height: Math.max(w, 2), background: drawWidth === w ? 'var(--accent)' : 'var(--text-secondary)'
               }} />
-            ))}
-            <div style={{ width: 1, height: 20, background: 'var(--border-subtle)', margin: '0 3px' }} />
-            {/* Stroke width */}
-            {[1, 2, 4].map(w => (
-              <button key={w} onClick={() => setDrawWidth(w)} style={{
-                width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                background: drawWidth === w ? 'var(--accent-soft)' : 'transparent',
-                border: `1px solid ${drawWidth === w ? 'var(--border-accent)' : 'transparent'}`,
-                borderRadius: 'var(--radius-sm)', cursor: 'pointer', transition: 'all 0.12s'
-              }}>
-                <div style={{
-                  width: 12, borderRadius: w,
-                  height: Math.max(w, 2), background: drawWidth === w ? 'var(--accent)' : 'var(--text-secondary)'
-                }} />
-              </button>
-            ))}
-          </>
-        )}
-      </div>
-    </>
+            </button>
+          ))}
+        </>
+      )}
+    </div>
+  )
+}
+
+function GeneratingOverlay({ asset }) {
+  if (!asset._generating) return null
+  return (
+    <div style={{
+      position: 'absolute', inset: -2, borderRadius: 'var(--radius-md)',
+      border: '2px solid var(--accent)',
+      animation: 'genPulse 1.5s ease-in-out infinite',
+      pointerEvents: 'none', zIndex: 2
+    }} />
   )
 }
 
@@ -448,14 +437,21 @@ export default function CanvasPanel({ canvas, lang }) {
           display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px',
           borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-elevated)'
         }}>
-          <button onClick={() => setViewMode('grid')} style={filterBtnStyle(viewMode === 'grid')}><Ic n="grid" size={12} /> 网格</button>
-          <button onClick={() => setViewMode('free')} style={filterBtnStyle(viewMode === 'free')}>自由</button>
+          <button onClick={() => setViewMode('grid')} style={filterBtnStyle(viewMode === 'grid')}>
+            <Ic n="grid" size={12} /> {lang === 'en' ? 'Grid' : '网格'}
+          </button>
+          <button onClick={() => setViewMode('free')} style={filterBtnStyle(viewMode === 'free')}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="4" rx="1"/><rect x="3" y="14" width="7" height="4" rx="1"/>
+            </svg>
+            {lang === 'en' ? 'Free' : '自由'}
+          </button>
           <div style={{ width: 1, height: 16, background: 'var(--border-subtle)', margin: '0 4px' }} />
           {['all', 'image', 'video'].map(f => (
-            <button key={f} onClick={() => setFilter(f)} style={filterBtnStyle(filter === f)}>{f === 'all' ? '全部' : f === 'image' ? '图片' : '视频'}</button>
+            <button key={f} onClick={() => setFilter(f)} style={filterBtnStyle(filter === f)}>{f === 'all' ? (lang === 'en' ? 'All' : '全部') : f === 'image' ? (lang === 'en' ? 'Image' : '图片') : (lang === 'en' ? 'Video' : '视频')}</button>
           ))}
           <div style={{ flex: 1 }} />
-          <span style={{ fontSize: 10, color: 'var(--text-ghost)', fontFamily: 'var(--font-mono)' }}>{assets.length} 个资产</span>
+          <span style={{ fontSize: 10, color: 'var(--text-ghost)', fontFamily: 'var(--font-mono)' }}>{assets.length} {lang === 'en' ? 'assets' : '个资产'}</span>
         </div>
         <div style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column' }}>
           {assets.length === 0 ? (
@@ -469,31 +465,56 @@ export default function CanvasPanel({ canvas, lang }) {
                 }}>
                   <Ic n="image" size={24} color="var(--text-ghost)" />
                 </div>
-                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 4 }}>画布为空</div>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>在对话中描述你想创作的内容</div>
+                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 4 }}>
+                  {lang === 'en' ? 'Canvas is empty' : '画布为空'}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                  {lang === 'en' ? 'Describe what you want to create in the chat' : '在对话中描述你想创作的内容'}
+                </div>
+              </div>
+            </div>
+          ) : viewMode === 'grid' ? (
+            /* Grid mode: structured layout, no pan/zoom, scrollable */
+            <div style={{ flex: 1, overflow: 'auto', padding: 16 }}>
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
+                gap: 14
+              }}>
+                {assets.map(a => (
+                  <div key={a.id} style={{ position: 'relative' }}>
+                    <GeneratingOverlay asset={a} />
+                    <AssetCard asset={a} selected={a.id === selectedId} onClick={setSelectedId}
+                      onContextMenu={(e, asset) => {}} />
+                  </div>
+                ))}
               </div>
             </div>
           ) : (
+            /* Free mode: infinite canvas with free positioning */
             <>
               <InfiniteCanvas assets={assets}>
-                <div style={{
-                  padding: 20,
-                  display: 'grid',
-                  gridTemplateColumns: viewMode === 'grid' ? 'repeat(auto-fill, minmax(160px, 1fr))' : 'none',
-                  gap: 12,
-                  minWidth: viewMode === 'grid' ? '100%' : 1200,
-                  minHeight: viewMode === 'grid' ? '100%' : 800
-                }}>
-                  {assets.map(a => (
-                    <AssetCard key={a.id} asset={a} selected={a.id === selectedId} onClick={setSelectedId}
-                      onContextMenu={(e, asset) => {}} />
-                  ))}
+                <div style={{ position: 'relative', minWidth: 2000, minHeight: 1500 }}>
+                  {assets.map((a, i) => {
+                    const col = i % 4
+                    const row = Math.floor(i / 4)
+                    const x = 30 + col * 280
+                    const y = 30 + row * 280
+                    return (
+                      <div key={a.id} style={{
+                        position: 'absolute', left: x, top: y, width: 240
+                      }}>
+                        <GeneratingOverlay asset={a} />
+                        <AssetCard asset={a} selected={a.id === selectedId} onClick={setSelectedId}
+                          onContextMenu={(e, asset) => {}} />
+                      </div>
+                    )
+                  })}
                 </div>
               </InfiniteCanvas>
               <DrawingOverlay tool={activeTool} color={drawColor} width={drawWidth} />
             </>
           )}
-          {/* Figma-style floating toolbar */}
           <EditBar activeTool={activeTool} setActiveTool={setActiveTool} drawColor={drawColor} setDrawColor={setDrawColor} drawWidth={drawWidth} setDrawWidth={setDrawWidth} />
         </div>
       </div>

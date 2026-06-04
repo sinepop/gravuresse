@@ -84,7 +84,7 @@ export default function ModelBar({ config, onProviderChange, onOpenSettings, lan
         fontSize: 10, color: 'var(--text-ghost)', fontFamily: 'var(--font-mono)',
         letterSpacing: '0.5px', padding: '3px 8px', borderRadius: 'var(--radius-sm)',
         background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)'
-      }}>v1.2.0</span>
+      }}>v1.3.0</span>
     </div>
   )
 }

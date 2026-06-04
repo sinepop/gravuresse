@@ -188,7 +188,7 @@ export default function App() {
       <TitleBar onOpenSettings={() => setSettingsOpen(true)} lang={config?.general?.language} />
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
         <div style={{ width: '40%', borderRight: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column' }}>
-          <ChatPanel chat={chat} lang={config?.general?.language}
+          <ChatPanel chat={chat} config={config} lang={config?.general?.language}
             conversations={conversations} activeConvId={activeConvId}
             onSwitchConv={handleSwitchConv} onNewConv={handleNewConv} onDeleteConv={handleDeleteConv}
             canvas={canvas} />

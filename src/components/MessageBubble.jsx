@@ -1,9 +1,29 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import Ic from './icons'
 
-function TaskCard({ task, onConfirm, lang }) {
+function ElapsedTimer({ startTime }) {
+  const [elapsed, setElapsed] = useState(0)
+  useEffect(() => {
+    if (!startTime) return
+    const update = () => setElapsed(Math.floor((Date.now() - startTime) / 1000))
+    update()
+    const id = setInterval(update, 1000)
+    return () => clearInterval(id)
+  }, [startTime])
+  const m = Math.floor(elapsed / 60)
+  const s = elapsed % 60
+  return (
+    <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-muted)', marginLeft: 4 }}>
+      {m > 0 ? `${m}:${s.toString().padStart(2, '0')}` : `${s}s`}
+    </span>
+  )
+}
+
+function TaskCard({ task, onConfirm, onBatchGenerate, lang }) {
+  const [batchCount, setBatchCount] = useState(2)
+  const [showBatch, setShowBatch] = useState(false)
   const isPending = task.status === 'pending'
   const isGenerating = task.status === 'generating'
   const isDone = task.status === 'done'
@@ -19,7 +39,14 @@ function TaskCard({ task, onConfirm, lang }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
         <Ic n={task.type === 'video' ? 'film' : 'image'} size={14} color="var(--accent)" />
         <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-primary)' }}>{task.label}</span>
-        {isDone && <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--success)', display: 'flex', alignItems: 'center', gap: 3 }}><Ic n="check" size={11} color="var(--success)" /> {lang === 'en' ? 'Done' : '已生成'}</span>}
+        {isDone && (
+          <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--success)', display: 'flex', alignItems: 'center', gap: 3 }}>
+            <Ic n="check" size={11} color="var(--success)" />
+            {lang === 'en' ? 'Done' : '已生成'}
+            {task.elapsed != null && <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-muted)', marginLeft: 4 }}>{task.elapsed}s</span>}
+            {task.batchTotal > 1 && <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 4 }}>({task.batchDone}/{task.batchTotal})</span>}
+          </span>
+        )}
         {isError && <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--danger)' }}>{lang === 'en' ? 'Failed' : '失败'}</span>}
       </div>
       <div style={{
@@ -33,27 +60,62 @@ function TaskCard({ task, onConfirm, lang }) {
         <div style={{ fontSize: 11, color: 'var(--danger)', marginTop: 6 }}>{task.error}</div>
       )}
       {isPending && (
-        <button onClick={onConfirm} style={{
-          marginTop: 10, padding: '7px 20px', background: 'var(--accent)', border: 'none',
-          borderRadius: 'var(--radius-sm)', color: '#FFF', fontSize: 12, cursor: 'pointer',
-          fontWeight: 500, fontFamily: 'var(--font-body)', display: 'flex', alignItems: 'center', gap: 6,
-          boxShadow: 'var(--shadow-accent)'
-        }}>
-          <Ic n="sparkle" size={12} color="#FFF" />
-          {lang === 'en' ? 'Confirm' : '确认生成'}
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
+          <button onClick={onConfirm} style={{
+            padding: '7px 20px', background: 'var(--accent)', border: 'none',
+            borderRadius: 'var(--radius-sm)', color: '#FFF', fontSize: 12, cursor: 'pointer',
+            fontWeight: 500, fontFamily: 'var(--font-body)', display: 'flex', alignItems: 'center', gap: 6,
+            boxShadow: 'var(--shadow-accent)'
+          }}>
+            <Ic n="sparkle" size={12} color="#FFF" />
+            {lang === 'en' ? 'Confirm' : '确认生成'}
+          </button>
+
+          {task.type === 'image' && (
+            <>
+              <button onClick={() => setShowBatch(!showBatch)} style={{
+                padding: '7px 14px', background: 'transparent',
+                border: '1px solid var(--border-accent)',
+                borderRadius: 'var(--radius-sm)', color: 'var(--accent)', fontSize: 11, cursor: 'pointer',
+                fontWeight: 500, fontFamily: 'var(--font-body)', display: 'flex', alignItems: 'center', gap: 4,
+                transition: 'all 0.15s'
+              }}>
+                <Ic n="zap" size={11} color="var(--accent)" />
+                {lang === 'en' ? 'Batch' : '批量'}
+              </button>
+              {showBatch && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4, animation: 'scaleIn 0.12s ease' }}>
+                  <select value={batchCount} onChange={e => setBatchCount(Number(e.target.value))} style={{
+                    background: 'var(--bg-input)', border: '1px solid var(--border-default)',
+                    borderRadius: 'var(--radius-sm)', padding: '4px 6px', fontSize: 11,
+                    color: 'var(--text-primary)', cursor: 'pointer', fontFamily: 'var(--font-body)'
+                  }}>
+                    {[2, 3, 4].map(n => <option key={n} value={n}>{n} {lang === 'en' ? 'images' : '张'}</option>)}
+                  </select>
+                  <button onClick={() => onBatchGenerate?.(batchCount)} style={{
+                    padding: '5px 12px', background: 'var(--accent)', border: 'none',
+                    borderRadius: 'var(--radius-sm)', color: '#FFF', fontSize: 11, cursor: 'pointer',
+                    fontWeight: 500, fontFamily: 'var(--font-body)'
+                  }}>GO</button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
       )}
       {isGenerating && (
         <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--accent)' }}>
           <div style={{ width: 14, height: 14, border: '2px solid var(--border-accent)', borderTopColor: 'var(--accent)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
           {lang === 'en' ? 'Generating...' : '生成中...'}
+          <ElapsedTimer startTime={task.startTime} />
+          {task.batchTotal > 1 && <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 4 }}>({task.batchDone || 0}/{task.batchTotal})</span>}
         </div>
       )}
     </div>
   )
 }
 
-export default function MessageBubble({ msg, onConfirmTask, lang }) {
+export default function MessageBubble({ msg, onConfirmTask, onBatchGenerate, lang }) {
   const isUser = msg.role === 'user'
   const [showThinking, setShowThinking] = useState(false)
   return (
@@ -111,7 +173,8 @@ export default function MessageBubble({ msg, onConfirmTask, lang }) {
         )}
         {msg.task && (
           <TaskCard task={msg.task} lang={lang}
-            onConfirm={() => onConfirmTask?.(msg.id, msg.task)} />
+            onConfirm={() => onConfirmTask?.(msg.id, msg.task)}
+            onBatchGenerate={(count) => onBatchGenerate?.(msg.id, msg.task, count)} />
         )}
         {msg.error && !msg.task && <div style={{ color: 'var(--danger)', fontSize: 11, marginTop: 4 }}>{msg.content}</div>}
       </div>

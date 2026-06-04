@@ -13,10 +13,21 @@ export default function useCanvas() {
       type: 'image', label: asset.label || '未命名', prompt: asset.prompt || '',
       negativePrompt: asset.negativePrompt || '', url: asset.url || '',
       model: asset.model || '', ratio: asset.ratio || '1:1', style: asset.style || '',
-      createdAt: new Date().toISOString(), ...asset
+      createdAt: new Date().toISOString(), _generating: false, ...asset
     }
     setAssets(prev => [item, ...prev])
     return item
+  }, [])
+
+  const addPlaceholder = useCallback((label) => {
+    const item = {
+      id: `asset_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      type: 'image', label: label || '生成中...', prompt: '', url: '',
+      model: '', ratio: '1:1', style: '',
+      createdAt: new Date().toISOString(), _generating: true
+    }
+    setAssets(prev => [item, ...prev])
+    return item.id
   }, [])
 
   const removeAsset = useCallback((id) => {
@@ -43,6 +54,6 @@ export default function useCanvas() {
   return {
     assets: filtered, allAssets: assets, selectedAsset, selectedId, setSelectedId,
     viewMode, setViewMode, filter, setFilter, sort, setSort,
-    addAsset, removeAsset, updateAsset, getAssetById, clear
+    addAsset, addPlaceholder, removeAsset, updateAsset, getAssetById, clear
   }
 }

@@ -57,6 +57,32 @@ function createWindow() {
   ipcMain.handle('api:video:poll', (_, taskId, provider) => videoApi.poll(taskId, provider))
   ipcMain.handle('api:models', (_, provider) => modelsApi.fetch(provider))
 
+  // Auto-save assets to disk
+  const fs = require('fs')
+  const SAVE_DIR = path.join(app.getPath('pictures'), 'Gravuresse')
+  ipcMain.handle('api:saveAsset', async (_, { url, label, type }) => {
+    if (!fs.existsSync(SAVE_DIR)) fs.mkdirSync(SAVE_DIR, { recursive: true })
+    const ext = type === 'video' ? '.mp4' : '.png'
+    const safeName = (label || 'asset').replace(/[<>:"/\\|?*]/g, '_').slice(0, 60)
+    const filename = `${safeName}_${Date.now()}${ext}`
+    const filePath = path.join(SAVE_DIR, filename)
+    if (url.startsWith('data:')) {
+      const base64 = url.split(',')[1]
+      fs.writeFileSync(filePath, Buffer.from(base64, 'base64'))
+    } else {
+      const mod = url.startsWith('https') ? require('https') : require('http')
+      await new Promise((resolve, reject) => {
+        const file = fs.createWriteStream(filePath)
+        mod.get(url, (res) => {
+          res.pipe(file)
+          file.on('finish', () => { file.close(); resolve() })
+        }).on('error', (e) => { fs.unlink(filePath, () => {}); reject(e) })
+      })
+    }
+    return filePath
+  })
+  ipcMain.handle('api:getSaveDir', () => SAVE_DIR)
+
   // Dialog IPC
   ipcMain.handle('dialog:save', (_, opts) => dialog.showSaveDialog(mainWindow, opts))
   ipcMain.handle('dialog:open', (_, opts) => dialog.showOpenDialog(mainWindow, opts))

@@ -36,7 +36,7 @@
 
 ### 快速开始
 
-1. 下载 `gravuresse-Setup-1.2.0.exe` 并安装
+1. 下载 `gravuresse-Setup-1.3.0.exe` 并安装
 2. 打开程序，点击标题栏齿轮图标（或按 `Ctrl+,`）进入设置
 3. 在 API 配置中选择 Provider，输入 API Key，模型自动获取
 4. 在聊天框输入需求，AI 先出提示词，确认后自动生成
@@ -51,6 +51,44 @@ npm run package
 ```
 
 ### 更新日志
+
+#### v1.3.0 (2026-06-04)
+
+**对话生成设置**
+- 对话输入栏新增「生成设置」面板，可直接调整图片比例、风格预设、分辨率（标准/高清/超清）
+- 生成设置从 Settings 移至对话框，方便随时切换，无需打开设置页
+
+**批量生成**
+- 生成任务卡片新增「批量」按钮，支持一次生成 2/3/4 张图片
+- 批量进度实时显示（如 2/4），失败项跳过继续
+
+**计时器**
+- AI 思考和图片/视频生成过程中显示实时计时（秒数），避免用户长久等待无反馈
+- 生成完成后显示总用时
+
+**API 可靠性修复**
+- 修复切换 Provider 时 `protocol` 字段未保存到配置的 bug，导致图片生成始终失败
+- 新增即梦/Seedream (`ark_image`) 专用图片生成端点，修正 URL 路径错误
+- 图片生成新增自动重试机制（失败后间隔 2 秒重试 1 次）
+- 视频生成同样修复 protocol 解析逻辑
+
+**画布模式区分**
+- 网格模式：结构化排列，自动分列，无缩放平移，纯滚动浏览
+- 自由模式：无限画布，自由定位，4 列间距排布，支持缩放平移
+- 新图片/视频生成时，边框金色呼吸闪烁动画提示用户
+
+**参考图功能改为可选**
+- 参考图按钮默认隐藏，在设置 > 其他中可开启
+- 开启后对话框出现参考图按钮
+
+**图片自动保存**
+- 生成的图片自动保存到 `Pictures/Gravuresse/` 目录
+- 支持 base64 和 URL 两种格式的图片下载保存
+
+**其他修复**
+- 修复画布编辑工具栏「文字」图标缺失（TOOL_ICONS 键名 type→text）
+- 修复网格模式多张图片只显示一张的布局问题
+- 设置新增「自动保存图片到本地」和「启用参考图」开关
 
 #### v1.2.0 (2026-06-04)
 
@@ -177,7 +215,7 @@ Driven by a research mindset and sheer persistence, I dug through tons of resour
 
 ### Quick Start
 
-1. Download `gravuresse-Setup-1.2.0.exe` and install
+1. Download `gravuresse-Setup-1.3.0.exe` and install
 2. Open the app, click the gear icon in the title bar (or press `Ctrl+,`) to open Settings
 3. Select a Provider in API Configuration, enter your API Key — models are auto-fetched
 4. Type your request in chat, AI shows the prompt first, confirm to generate
@@ -192,6 +230,44 @@ npm run package
 ```
 
 ### Changelog
+
+#### v1.3.0 (2026-06-04)
+
+**Generation Settings in Chat**
+- New "Gen Settings" panel in chat toolbar: adjust aspect ratio, style preset, and resolution (Standard/HD/Ultra HD) inline
+- Moved from Settings page to chat toolbar for quick access
+
+**Batch Generation**
+- New "Batch" button on task cards — generate 2/3/4 images at once
+- Real-time batch progress (e.g. 2/4), failed items skipped
+
+**Elapsed Timer**
+- Real-time timer during AI thinking and image/video generation
+- Total elapsed time shown on completion
+
+**API Reliability Fix**
+- Fixed critical bug: `protocol` field was never saved to config on provider switch, causing image generation to always fail
+- Added dedicated Seedream/即梦 (`ark_image`) image generation endpoint with correct URL path
+- Added auto-retry for image generation (1 retry after 2s delay)
+- Fixed video generation protocol resolution
+
+**Canvas Mode Redesign**
+- Grid mode: structured auto-arranged layout, scrollable, no zoom/pan
+- Free mode: infinite canvas with absolute positioning in 4-column spread, zoom/pan enabled
+- Pulsing gold border animation on assets being generated
+
+**Reference Images Now Optional**
+- Reference button hidden by default, toggle in Settings > Other
+- Only appears in chat toolbar when enabled
+
+**Auto-Save Images**
+- Generated images auto-saved to `Pictures/Gravuresse/` directory
+- Supports both base64 and URL image download
+
+**Other Fixes**
+- Fixed missing "Text" tool icon in canvas toolbar (TOOL_ICONS key: type→text)
+- Fixed grid mode only showing one image (layout issue)
+- Added "Auto-save images" and "Enable reference images" toggles in Settings
 
 #### v1.2.0 (2026-06-04)
 
