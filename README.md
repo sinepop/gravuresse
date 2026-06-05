@@ -36,7 +36,7 @@
 
 ### 快速开始
 
-1. 下载 `gravuresse-Setup-1.3.0.exe` 并安装
+1. 下载 `gravuresse-Setup-1.3.1.exe` 并安装
 2. 打开程序，点击标题栏齿轮图标（或按 `Ctrl+,`）进入设置
 3. 在 API 配置中选择 Provider，输入 API Key，模型自动获取
 4. 在聊天框输入需求，AI 先出提示词，确认后自动生成
@@ -51,6 +51,32 @@ npm run package
 ```
 
 ### 更新日志
+
+#### v1.3.1 (2026-06-05)
+
+**画布生成动效**
+- 生成图片时画布显示 shimmer 占位卡片，参考 Lovart 动效风格，渐变闪烁提示生成中
+
+**多图生成支持**
+- AI 返回多个生成任务时，画布正确显示所有图片，不再只显示第一张
+
+**批量生成稳定性**
+- 批量生成不再因单张失败而中断，全程显示占位符和进度，失败项自动清理
+
+**保存弹窗修复**
+- "保存到本地"不再弹出两次对话框，统一走 IPC 通道
+
+**工具栏交互修复**
+- 画布底部绘图工具栏按钮恢复正常响应，不再被画布拖拽事件拦截
+
+**右键菜单接线**
+- 画布资产右键菜单可正常打开，支持查看大图/下载/删除/重新生成
+
+**对话命名编辑**
+- 双击对话标题可重命名，支持 Enter 确认 / Escape 取消
+
+**分辨率扩展**
+- 新增 2K (2560) 和 4K (3840) 分辨率选项，尺寸按比例动态缩放
 
 #### v1.3.0 (2026-06-04)
 
@@ -215,7 +241,7 @@ Driven by a research mindset and sheer persistence, I dug through tons of resour
 
 ### Quick Start
 
-1. Download `gravuresse-Setup-1.3.0.exe` and install
+1. Download `gravuresse-Setup-1.3.1.exe` and install
 2. Open the app, click the gear icon in the title bar (or press `Ctrl+,`) to open Settings
 3. Select a Provider in API Configuration, enter your API Key — models are auto-fetched
 4. Type your request in chat, AI shows the prompt first, confirm to generate
@@ -230,6 +256,32 @@ npm run package
 ```
 
 ### Changelog
+
+#### v1.3.1 (2026-06-05)
+
+**Canvas Generation Effects**
+- Shimmer placeholder cards appear on canvas during image generation, inspired by Lovart's visual style
+
+**Multi-Task Image Support**
+- When AI returns multiple generation tasks, all images now display correctly on canvas
+
+**Batch Generation Stability**
+- Batch generation no longer stops on single-item failure; placeholders and progress shown throughout
+
+**Save Dialog Fix**
+- "Save to file" no longer opens the dialog twice; unified IPC-only save path
+
+**Toolbar Interaction Fix**
+- Canvas bottom toolbar buttons now respond correctly, no longer intercepted by canvas drag events
+
+**Context Menu Wired Up**
+- Right-click menu on canvas assets works properly: view, download, delete, regenerate
+
+**Conversation Rename**
+- Double-click conversation title to rename, with Enter to confirm / Escape to cancel
+
+**Resolution Expansion**
+- Added 2K (2560) and 4K (3840) resolution options with proportional dynamic scaling
 
 #### v1.3.0 (2026-06-04)
 

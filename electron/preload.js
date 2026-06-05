@@ -24,6 +24,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   fetchModels: (provider) => ipcRenderer.invoke('api:models', provider),
 
   saveAssetToDisk: (params) => ipcRenderer.invoke('api:saveAsset', params),
+  saveAssetToPath: (params) => ipcRenderer.invoke('api:saveAssetToPath', params),
   getSaveDir: () => ipcRenderer.invoke('api:getSaveDir'),
 
   showSaveDialog: (opts) => ipcRenderer.invoke('dialog:save', opts),

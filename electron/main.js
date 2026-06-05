@@ -83,6 +83,24 @@ function createWindow() {
   })
   ipcMain.handle('api:getSaveDir', () => SAVE_DIR)
 
+  // Save asset to a specific file path (used by manual "Save to file" dialog)
+  ipcMain.handle('api:saveAssetToPath', async (_, { url, filePath }) => {
+    if (url.startsWith('data:')) {
+      const base64 = url.split(',')[1]
+      fs.writeFileSync(filePath, Buffer.from(base64, 'base64'))
+    } else {
+      const mod = url.startsWith('https') ? require('https') : require('http')
+      await new Promise((resolve, reject) => {
+        const file = fs.createWriteStream(filePath)
+        mod.get(url, (res) => {
+          res.pipe(file)
+          file.on('finish', () => { file.close(); resolve() })
+        }).on('error', (e) => { fs.unlink(filePath, () => {}); reject(e) })
+      })
+    }
+    return filePath
+  })
+
   // Dialog IPC
   ipcMain.handle('dialog:save', (_, opts) => dialog.showSaveDialog(mainWindow, opts))
   ipcMain.handle('dialog:open', (_, opts) => dialog.showOpenDialog(mainWindow, opts))

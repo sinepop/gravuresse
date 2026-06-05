@@ -77,8 +77,7 @@ ${modifyHint}${refHint}${styleHint}
       } catch {}
 
       if (parsed?.tasks?.length > 0) {
-        const task = parsed.tasks[0]
-        const taskData = {
+        const tasksData = parsed.tasks.map(task => ({
           status: 'pending',
           type: task.type,
           label: task.label,
@@ -89,13 +88,13 @@ ${modifyHint}${refHint}${styleHint}
           source_image_id: task.source_image_id,
           intent: parsed.intent,
           resolution: genSettings?.resolution || '1024',
-        }
+        }))
         const replyMsg = {
           role: 'assistant',
           content: parsed.reply || replyText,
           id: Date.now() + 1,
           model: result.model,
-          task: taskData,
+          tasks: tasksData,
           thinking: thinkingText || undefined,
         }
         setMessages(prev => [...prev, replyMsg])
@@ -111,10 +110,16 @@ ${modifyHint}${refHint}${styleHint}
     }
   }, [config, messages, loading, canvas])
 
-  const doGenerate = useCallback(async (msgId, task, lang) => {
+  const doGenerate = useCallback(async (msgId, task, lang, placeholderId, taskIndex) => {
     const startTime = Date.now()
+    const idx = taskIndex ?? 0
     const updateTask = (patch) => {
-      setMessages(prev => prev.map(m => m.id === msgId ? { ...m, task: { ...m.task, ...patch } } : m))
+      setMessages(prev => prev.map(m => {
+        if (m.id !== msgId) return m
+        const tasks = [...(m.tasks || [m.task])]
+        tasks[idx] = { ...tasks[idx], ...patch }
+        return { ...m, tasks }
+      }))
     }
 
     if (task.type === 'image') {
@@ -123,17 +128,21 @@ ${modifyHint}${refHint}${styleHint}
       const providerDef = IMG_PROVIDERS.find(p => p.id === imgProvider.id)
       const protocol = imgProvider.protocol || providerDef?.protocol || 'openai_image'
       const url = await window.electronAPI.generateImage({
-        prompt: task.prompt, ratio: task.ratio || '1:1',
+        prompt: task.prompt, ratio: task.ratio || '1:1', resolution: task.resolution || '1024',
         ...imgProvider, protocol
       })
       const elapsed = Math.round((Date.now() - startTime) / 1000)
-      const asset = canvas.addAsset({ type: 'image', url, prompt: task.prompt, label: task.label, model: imgProvider.model, ratio: task.ratio })
-      lastImageContext.current = { prompt: task.prompt, ratio: task.ratio || '1:1', assetId: asset.id }
-      updateTask({ status: 'done', assetId: asset.id, elapsed })
+      if (placeholderId) {
+        canvas.updateAsset(placeholderId, { url, prompt: task.prompt, label: task.label, model: imgProvider.model, ratio: task.ratio, _generating: false })
+        lastImageContext.current = { prompt: task.prompt, ratio: task.ratio || '1:1', assetId: placeholderId }
+      } else {
+        const asset = canvas.addAsset({ type: 'image', url, prompt: task.prompt, label: task.label, model: imgProvider.model, ratio: task.ratio })
+        lastImageContext.current = { prompt: task.prompt, ratio: task.ratio || '1:1', assetId: asset.id }
+      }
+      updateTask({ status: 'done', assetId: placeholderId, elapsed })
       if (config?.general?.autoSave !== false) {
         try { await window.electronAPI.saveAssetToDisk?.({ url, label: task.label, type: 'image' }) } catch {}
       }
-      return asset
     } else if (task.type === 'video') {
       const vidProvider = config?.providers?.video
       if (!vidProvider?.id || !vidProvider?.apiKey) throw new Error(t('configVideoApi', lang))
@@ -148,47 +157,85 @@ ${modifyHint}${refHint}${styleHint}
     }
   }, [config, canvas])
 
-  const confirmGenerate = useCallback(async (msgId, task) => {
+  const confirmGenerate = useCallback(async (msgId, task, taskIndex) => {
     const lang = config?.general?.language || 'zh'
-    setMessages(prev => prev.map(m => m.id === msgId ? { ...m, task: { ...m.task, status: 'generating', startTime: Date.now() } } : m))
+    const idx = taskIndex ?? 0
+    setMessages(prev => prev.map(m => {
+      if (m.id !== msgId) return m
+      const tasks = [...(m.tasks || [m.task])]
+      tasks[idx] = { ...tasks[idx], status: 'generating', startTime: Date.now() }
+      return { ...m, tasks }
+    }))
+    const placeholderId = canvas.addPlaceholder(task.label || '生成中...')
     try {
-      await doGenerate(msgId, task, lang)
+      await doGenerate(msgId, task, lang, placeholderId, idx)
     } catch (e) {
       console.error('Generation failed:', e)
-      setMessages(prev => prev.map(m => m.id === msgId ? { ...m, task: { ...m.task, status: 'error', error: e.message } } : m))
+      canvas.removeAsset(placeholderId)
+      setMessages(prev => prev.map(m => {
+        if (m.id !== msgId) return m
+        const tasks = [...(m.tasks || [m.task])]
+        tasks[idx] = { ...tasks[idx], status: 'error', error: e.message }
+        return { ...m, tasks }
+      }))
     }
-  }, [config, doGenerate])
+  }, [config, doGenerate, canvas])
 
-  const batchGenerate = useCallback(async (msgId, task, count) => {
+  const batchGenerate = useCallback(async (msgId, task, count, taskIndex) => {
     const lang = config?.general?.language || 'zh'
-    setMessages(prev => prev.map(m => m.id === msgId ? { ...m, task: { ...m.task, status: 'generating', startTime: Date.now(), batchTotal: count, batchDone: 0 } } : m))
+    const idx = taskIndex ?? 0
+    setMessages(prev => prev.map(m => {
+      if (m.id !== msgId) return m
+      const tasks = [...(m.tasks || [m.task])]
+      tasks[idx] = { ...tasks[idx], status: 'generating', startTime: Date.now(), batchTotal: count, batchDone: 0 }
+      return { ...m, tasks }
+    }))
+
+    const placeholderIds = []
+    for (let i = 0; i < count; i++) {
+      placeholderIds.push(canvas.addPlaceholder(`${task.label || '生成中'} #${i + 1}`))
+    }
+
     let done = 0
+    const failedIds = []
     for (let i = 0; i < count; i++) {
       try {
-        const batchMsgId = i === 0 ? msgId : null
-        if (i > 0) {
+        if (i === 0) {
+          await doGenerate(msgId, task, lang, placeholderIds[i], idx)
+        } else {
           const imgProvider = config?.providers?.image
           if (!imgProvider?.id || !imgProvider?.apiKey) throw new Error(t('configImageApi', lang))
           const providerDef = IMG_PROVIDERS.find(p => p.id === imgProvider.id)
           const protocol = imgProvider.protocol || providerDef?.protocol || 'openai_image'
           const url = await window.electronAPI.generateImage({
-            prompt: task.prompt, ratio: task.ratio || '1:1',
+            prompt: task.prompt, ratio: task.ratio || '1:1', resolution: task.resolution || '1024',
             ...imgProvider, protocol
           })
-          canvas.addAsset({ type: 'image', url, prompt: task.prompt, label: `${task.label} #${i + 1}`, model: imgProvider.model, ratio: task.ratio })
+          canvas.updateAsset(placeholderIds[i], { url, prompt: task.prompt, label: `${task.label} #${i + 1}`, model: imgProvider.model, ratio: task.ratio, _generating: false })
           if (config?.general?.autoSave !== false) {
             try { await window.electronAPI.saveAssetToDisk?.({ url, label: `${task.label}_${i + 1}`, type: 'image' }) } catch {}
           }
-        } else {
-          await doGenerate(msgId, task, lang)
         }
         done++
-        setMessages(prev => prev.map(m => m.id === msgId ? { ...m, task: { ...m.task, batchDone: done } } : m))
+        setMessages(prev => prev.map(m => {
+          if (m.id !== msgId) return m
+          const tasks = [...(m.tasks || [m.task])]
+          tasks[idx] = { ...tasks[idx], batchDone: done }
+          return { ...m, tasks }
+        }))
       } catch (e) {
         console.error(`Batch item ${i + 1} failed:`, e)
+        failedIds.push(placeholderIds[i])
       }
     }
-    setMessages(prev => prev.map(m => m.id === msgId ? { ...m, task: { ...m.task, status: done > 0 ? 'done' : 'error', batchDone: done, error: done === 0 ? 'All batch items failed' : undefined } } : m))
+
+    failedIds.forEach(id => canvas.removeAsset(id))
+    setMessages(prev => prev.map(m => {
+      if (m.id !== msgId) return m
+      const tasks = [...(m.tasks || [m.task])]
+      tasks[idx] = { ...tasks[idx], status: done > 0 ? 'done' : 'error', batchDone: done, error: done === 0 ? 'All batch items failed' : undefined }
+      return { ...m, tasks }
+    }))
   }, [config, canvas, doGenerate])
 
   const setMessagesDirectly = useCallback((fn) => {

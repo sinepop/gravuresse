@@ -1,11 +1,11 @@
 {
   "name": "gravuresse",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "description": "Gravuresse - AI Creative Design Desktop App",
   "main": "dist/main/main.js",
   "scripts": {
     "dev": "electron-vite dev",
-    "build": "electron-vite build && cp electron/config.js electron/store.js dist/main/ && cp -r electron/api dist/main/api",
+    "build": "electron-vite build && cp electron/config.js electron/store.js dist/main/ && rm -rf dist/main/api && cp -r electron/api dist/main/api",
     "preview": "electron-vite preview",
     "package": "electron-vite build && electron-builder --win",
     "package:dir": "electron-vite build && electron-builder --win --dir"

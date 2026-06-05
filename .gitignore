@@ -3,6 +3,11 @@ dist/
 release/
 *.zip
 *.html
+*.log
+*.bak
+*.tmp
+*.orig
+*.swp
 .env
 .env.*
 CLAUDE.md

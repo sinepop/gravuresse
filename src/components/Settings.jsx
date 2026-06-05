@@ -198,7 +198,7 @@ function OtherPage({ config, onChange, lang }) {
         {t('autoSave', lang)}
       </label>
       <label style={{ ...labelS(), flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-        <input type="checkbox" checked={g.autoSave !== false} onChange={e => onChange('general', { autoSave: e.target.checked })} />
+        <input type="checkbox" checked={g.autoSaveImage !== false} onChange={e => onChange('general', { autoSaveImage: e.target.checked })} />
         {t('autoSaveImages', lang)}
       </label>
       <label style={{ ...labelS(), flexDirection: 'row', alignItems: 'center', gap: 8 }}>

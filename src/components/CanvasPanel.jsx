@@ -167,7 +167,7 @@ function InfiniteCanvas({ children, assets }) {
         {children}
       </div>
 
-      <div style={{
+      <div data-toolbar="true" onMouseDown={e => e.stopPropagation()} style={{
         position: 'absolute', bottom: 14, right: 14, zIndex: 10,
         display: 'flex', alignItems: 'center', gap: 2,
         background: 'var(--bg-elevated)', border: '1px solid var(--border-default)',
@@ -328,7 +328,7 @@ function EditBar({ activeTool, setActiveTool, drawColor, setDrawColor, drawWidth
   const isDrawingTool = !['select', 'move'].includes(activeTool)
 
   return (
-    <div style={{
+    <div data-toolbar="true" onMouseDown={e => e.stopPropagation()} style={{
       position: 'absolute', bottom: 10, left: '50%', transform: 'translateX(-50%)', zIndex: 20,
       display: 'flex', alignItems: 'center', gap: 2,
       background: 'var(--bg-elevated)', border: '1px solid var(--border-default)',
@@ -419,12 +419,21 @@ function GeneratingOverlay({ asset }) {
       position: 'absolute', inset: -2, borderRadius: 'var(--radius-md)',
       border: '2px solid var(--accent)',
       animation: 'genPulse 1.5s ease-in-out infinite',
-      pointerEvents: 'none', zIndex: 2
-    }} />
+      pointerEvents: 'none', zIndex: 2,
+      overflow: 'hidden'
+    }}>
+      <div style={{
+        position: 'absolute', inset: 0,
+        background: 'linear-gradient(90deg, transparent 0%, rgba(232,168,73,0.08) 25%, rgba(232,168,73,0.18) 50%, rgba(232,168,73,0.08) 75%, transparent 100%)',
+        backgroundSize: '300% 100%',
+        animation: 'shimmerGlow 2s ease-in-out infinite',
+        borderRadius: 'var(--radius-md)'
+      }} />
+    </div>
   )
 }
 
-export default function CanvasPanel({ canvas, lang }) {
+export default function CanvasPanel({ canvas, lang, onContextMenu }) {
   const { assets, selectedAsset, selectedId, setSelectedId, viewMode, setViewMode, filter, setFilter } = canvas
   const [activeTool, setActiveTool] = useState('select')
   const [drawColor, setDrawColor] = useState('#E8A849')
@@ -485,7 +494,7 @@ export default function CanvasPanel({ canvas, lang }) {
                   <div key={a.id} style={{ position: 'relative' }}>
                     <GeneratingOverlay asset={a} />
                     <AssetCard asset={a} selected={a.id === selectedId} onClick={setSelectedId}
-                      onContextMenu={(e, asset) => {}} />
+                      onContextMenu={(e, asset) => onContextMenu?.(e, asset)} />
                   </div>
                 ))}
               </div>
@@ -506,7 +515,7 @@ export default function CanvasPanel({ canvas, lang }) {
                       }}>
                         <GeneratingOverlay asset={a} />
                         <AssetCard asset={a} selected={a.id === selectedId} onClick={setSelectedId}
-                          onContextMenu={(e, asset) => {}} />
+                          onContextMenu={(e, asset) => onContextMenu?.(e, asset)} />
                       </div>
                     )
                   })}

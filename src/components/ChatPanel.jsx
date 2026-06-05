@@ -9,6 +9,8 @@ const RESOLUTIONS = [
   { value: '1024', label: { zh: '标准 (1024)', en: 'Standard (1024)' } },
   { value: '1536', label: { zh: '高清 (1536)', en: 'HD (1536)' } },
   { value: '2048', label: { zh: '超清 (2048)', en: 'Ultra HD (2048)' } },
+  { value: '2560', label: { zh: '2K (2560)', en: '2K (2560)' } },
+  { value: '3840', label: { zh: '4K (3840)', en: '4K (3840)' } },
 ]
 
 const chipBtnS = (active) => ({
@@ -29,11 +31,13 @@ const selectChipS = () => ({
   appearance: 'auto', transition: 'all 0.15s',
 })
 
-export default function ChatPanel({ chat, config, lang, conversations, activeConvId, onSwitchConv, onNewConv, onDeleteConv, canvas }) {
+export default function ChatPanel({ chat, config, lang, conversations, activeConvId, onSwitchConv, onNewConv, onDeleteConv, onRenameConv, canvas }) {
   const [input, setInput] = useState('')
   const [showConvList, setShowConvList] = useState(false)
   const [showRefPicker, setShowRefPicker] = useState(false)
   const [references, setReferences] = useState([])
+  const [editingConvId, setEditingConvId] = useState(null)
+  const [editTitle, setEditTitle] = useState('')
   const [genRatio, setGenRatio] = useState(config?.general?.defaultRatio || '1:1')
   const [genStyle, setGenStyle] = useState(config?.general?.defaultStyle || '')
   const [genResolution, setGenResolution] = useState(config?.general?.defaultResolution || '1024')
@@ -99,6 +103,24 @@ export default function ChatPanel({ chat, config, lang, conversations, activeCon
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() }
   }
+
+  const startRename = useCallback((conv) => {
+    setEditingConvId(conv.id)
+    setEditTitle(conv.title || '')
+  }, [])
+
+  const commitRename = useCallback(() => {
+    if (editingConvId && editTitle.trim()) {
+      onRenameConv?.(editingConvId, editTitle.trim())
+    }
+    setEditingConvId(null)
+    setEditTitle('')
+  }, [editingConvId, editTitle, onRenameConv])
+
+  const cancelRename = useCallback(() => {
+    setEditingConvId(null)
+    setEditTitle('')
+  }, [])
 
   const formatDate = (iso) => {
     if (!iso) return ''
@@ -182,13 +204,37 @@ export default function ChatPanel({ chat, config, lang, conversations, activeCon
               onMouseLeave={e => { if (conv.id !== activeConvId) e.currentTarget.style.background = 'transparent' }}
             >
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{
-                  fontSize: 12, color: 'var(--text-primary)',
-                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                  fontWeight: conv.id === activeConvId ? 500 : 400
-                }}>
-                  {conv.title || (lang === 'en' ? 'Untitled' : '未命名对话')}
-                </div>
+                {editingConvId === conv.id ? (
+                  <input
+                    autoFocus
+                    value={editTitle}
+                    onChange={e => setEditTitle(e.target.value)}
+                    onBlur={commitRename}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') commitRename()
+                      if (e.key === 'Escape') cancelRename()
+                      e.stopPropagation()
+                    }}
+                    onClick={e => e.stopPropagation()}
+                    style={{
+                      width: '100%', background: 'var(--bg-input)', border: '1px solid var(--border-accent)',
+                      borderRadius: 'var(--radius-sm)', padding: '2px 6px', fontSize: 12,
+                      color: 'var(--text-primary)', outline: 'none', fontFamily: 'var(--font-body)'
+                    }}
+                  />
+                ) : (
+                  <div
+                    onDoubleClick={(e) => { e.stopPropagation(); startRename(conv) }}
+                    title={lang === 'en' ? 'Double-click to rename' : '双击重命名'}
+                    style={{
+                      fontSize: 12, color: 'var(--text-primary)',
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                      fontWeight: conv.id === activeConvId ? 500 : 400, cursor: 'text'
+                    }}
+                  >
+                    {conv.title || (lang === 'en' ? 'Untitled' : '未命名对话')}
+                  </div>
+                )}
                 <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 1 }}>{formatDate(conv.updatedAt)}</div>
               </div>
               <button onClick={(e) => { e.stopPropagation(); if (window.confirm(t('deleteConvConfirm', lang))) onDeleteConv(conv.id) }}
@@ -223,8 +269,8 @@ export default function ChatPanel({ chat, config, lang, conversations, activeCon
         )}
         {chat.messages.map(msg => (
           <MessageBubble key={msg.id} msg={msg} lang={lang}
-            onConfirmTask={(msgId, task) => chat.confirmGenerate(msgId, task)}
-            onBatchGenerate={(msgId, task, count) => chat.batchGenerate?.(msgId, task, count)} />
+            onConfirmTask={(msgId, task, taskIdx) => chat.confirmGenerate(msgId, task, taskIdx)}
+            onBatchGenerate={(msgId, task, count, taskIdx) => chat.batchGenerate?.(msgId, task, count, taskIdx)} />
         ))}
         {chat.loading && (
           <div style={{ padding: '8px 0', display: 'flex', alignItems: 'center', gap: 6 }}>

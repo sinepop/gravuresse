@@ -140,20 +140,7 @@ export default function AssetDetail({ asset, onClose, onDelete, onRegenerate, la
         filters: [{ name: ext.toUpperCase(), extensions: [ext] }]
       })
       if (result.canceled) return
-
-      const response = await fetch(asset.url)
-      const blob = await response.blob()
-      const buffer = await blob.arrayBuffer()
-      const fs = window.require?.('fs')
-      if (fs) {
-        fs.writeFileSync(result.filePath, Buffer.from(buffer))
-      } else {
-        const a = document.createElement('a')
-        a.href = URL.createObjectURL(blob)
-        a.download = `${asset.label || 'image'}.${ext}`
-        a.click()
-        URL.revokeObjectURL(a.href)
-      }
+      await window.electronAPI.saveAssetToPath({ url: asset.url, filePath: result.filePath })
     } catch (e) {
       console.error('Save failed:', e)
     } finally {

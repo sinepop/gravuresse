@@ -150,6 +150,20 @@ export default function App() {
     })
   }, [activeConvId, handleSwitchConv, handleNewConv])
 
+  const handleRenameConv = useCallback((id, newTitle) => {
+    setConversations(prev => {
+      const idx = prev.findIndex(c => c.id === id)
+      if (idx < 0) return prev
+      const next = [...prev]
+      next[idx] = { ...next[idx], title: newTitle }
+      return next
+    })
+    const conv = conversations.find(c => c.id === id)
+    if (conv) {
+      window.electronAPI?.saveConversation(id, { ...conv, title: newTitle })
+    }
+  }, [conversations])
+
   // Apply theme, language, font-size from config
   useEffect(() => {
     if (!config?.general) return
@@ -170,6 +184,9 @@ export default function App() {
   }, [])
 
   const handleAssetAction = useCallback((action, asset) => {
+    if (action === 'view') {
+      canvas.setSelectedId(asset.id)
+    }
     if (action === 'download' && asset.url) {
       const a = document.createElement('a'); a.href = asset.url; a.download = `${asset.label}.png`; a.click()
     }
@@ -191,11 +208,12 @@ export default function App() {
           <ChatPanel chat={chat} config={config} lang={config?.general?.language}
             conversations={conversations} activeConvId={activeConvId}
             onSwitchConv={handleSwitchConv} onNewConv={handleNewConv} onDeleteConv={handleDeleteConv}
-            canvas={canvas} />
+            onRenameConv={handleRenameConv} canvas={canvas} />
         </div>
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
           <div style={{ flex: 1, overflow: 'hidden' }}>
-            <CanvasPanel canvas={canvas} lang={config?.general?.language} />
+            <CanvasPanel canvas={canvas} lang={config?.general?.language}
+              onContextMenu={(e, asset) => setCtxMenu({ x: e.clientX, y: e.clientY, asset })} />
           </div>
           <TaskQueue tasks={taskQueue.tasks} onRetry={taskQueue.retry} onRemove={taskQueue.remove} />
         </div>

@@ -84,6 +84,8 @@ const LANG = {
     elapsedTime: '用时',
     autoSaveImages: '自动保存图片到本地',
     savePath: '保存路径',
+    renameConversation: '重命名对话',
+    renamePlaceholder: '输入新名称...',
   },
   en: {
     settings: 'Settings',
@@ -170,6 +172,8 @@ const LANG = {
     elapsedTime: 'Elapsed',
     autoSaveImages: 'Auto-save images to disk',
     savePath: 'Save path',
+    renameConversation: 'Rename',
+    renamePlaceholder: 'Enter new name...',
   }
 }
 

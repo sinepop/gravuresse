@@ -118,6 +118,10 @@ function TaskCard({ task, onConfirm, onBatchGenerate, lang }) {
 export default function MessageBubble({ msg, onConfirmTask, onBatchGenerate, lang }) {
   const isUser = msg.role === 'user'
   const [showThinking, setShowThinking] = useState(false)
+
+  // Support both msg.tasks (new) and msg.task (legacy)
+  const tasks = msg.tasks || (msg.task ? [msg.task] : [])
+
   return (
     <div style={{
       display: 'flex', justifyContent: isUser ? 'flex-end' : 'flex-start',
@@ -171,12 +175,12 @@ export default function MessageBubble({ msg, onConfirmTask, onBatchGenerate, lan
           }}>{msg.content}</ReactMarkdown>
           </>
         )}
-        {msg.task && (
-          <TaskCard task={msg.task} lang={lang}
-            onConfirm={() => onConfirmTask?.(msg.id, msg.task)}
-            onBatchGenerate={(count) => onBatchGenerate?.(msg.id, msg.task, count)} />
-        )}
-        {msg.error && !msg.task && <div style={{ color: 'var(--danger)', fontSize: 11, marginTop: 4 }}>{msg.content}</div>}
+        {tasks.map((task, idx) => (
+          <TaskCard key={idx} task={task} lang={lang}
+            onConfirm={() => onConfirmTask?.(msg.id, task, idx)}
+            onBatchGenerate={(count) => onBatchGenerate?.(msg.id, task, count, idx)} />
+        ))}
+        {msg.error && tasks.length === 0 && <div style={{ color: 'var(--danger)', fontSize: 11, marginTop: 4 }}>{msg.content}</div>}
       </div>
     </div>
   )

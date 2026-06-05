@@ -1,9 +1,19 @@
 const https = require('https')
 const http = require('http')
 
-const SIZE_MAP = {
-  '1:1': '1024x1024', '4:3': '1536x1152', '3:4': '1152x1536',
-  '16:9': '1536x864', '9:16': '864x1536', '3:2': '1536x1024'
+const BASE_SIZES = {
+  '1:1': [1024, 1024], '4:3': [1536, 1152], '3:4': [1152, 1536],
+  '16:9': [1536, 864], '9:16': [864, 1536], '3:2': [1536, 1024]
+}
+
+function getSize(ratio, resolution) {
+  const base = BASE_SIZES[ratio || '1:1'] || BASE_SIZES['1:1']
+  const res = parseInt(resolution) || 1024
+  if (res <= 1024) return `${base[0]}x${base[1]}`
+  const scale = res / 1024
+  const w = Math.round(base[0] * scale / 64) * 64
+  const h = Math.round(base[1] * scale / 64) * 64
+  return `${Math.min(w, 4096)}x${Math.min(h, 4096)}`
 }
 
 function httpRequest(url, options, body) {
@@ -21,9 +31,9 @@ function httpRequest(url, options, body) {
 }
 
 async function genOpenAI(params) {
-  const { prompt, ratio, apiKey, baseUrl, model } = params
+  const { prompt, ratio, apiKey, baseUrl, model, resolution } = params
   const base = (baseUrl || 'https://api.openai.com').replace(/\/$/, '')
-  const size = SIZE_MAP[ratio || '1:1'] || '1024x1024'
+  const size = getSize(ratio, resolution)
   const body = { model: model || 'gpt-image-2', prompt, n: 1, size }
   const url = new URL(`${base}/v1/images/generations`)
   const res = await httpRequest(url, {
@@ -61,9 +71,9 @@ async function genGemini(params) {
 }
 
 async function genArk(params) {
-  const { prompt, ratio, apiKey, baseUrl, model } = params
+  const { prompt, ratio, apiKey, baseUrl, model, resolution } = params
   const base = (baseUrl || 'https://ark.cn-beijing.volces.com/api/v3').replace(/\/$/, '')
-  const size = SIZE_MAP[ratio || '1:1'] || '1024x1024'
+  const size = getSize(ratio, resolution)
   const body = { model: model || 'doubao-seedream-4-0-250828', prompt, n: 1, size }
   const url = new URL(`${base}/images/generations`)
   const res = await httpRequest(url, {
@@ -80,9 +90,9 @@ async function genArk(params) {
 }
 
 async function genPollinations(params) {
-  const { prompt, ratio } = params
-  const dims = { '1:1': [1024, 1024], '4:3': [1024, 768], '3:4': [768, 1024], '16:9': [1280, 720], '9:16': [720, 1280], '3:2': [1024, 682] }
-  const [w, h] = dims[ratio || '1:1'] || [1024, 1024]
+  const { prompt, ratio, resolution } = params
+  const sizeStr = getSize(ratio, resolution)
+  const [w, h] = sizeStr.split('x').map(Number)
   const seed = Math.floor(Math.random() * 999999)
   return `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?seed=${seed}&width=${w}&height=${h}&nologo=true&enhance=true`
 }
