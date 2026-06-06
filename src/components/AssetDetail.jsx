@@ -130,6 +130,14 @@ export default function AssetDetail({ asset, onClose, onDelete, onRegenerate, la
   const [lightbox, setLightbox] = useState(false)
   const [saving, setSaving] = useState(false)
 
+  // Escape key closes lightbox
+  useEffect(() => {
+    if (!lightbox) return
+    const handler = (e) => { if (e.key === 'Escape') setLightbox(false) }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [lightbox])
+
   const handleSave = async () => {
     if (!asset?.url || saving) return
     setSaving(true)
@@ -200,7 +208,7 @@ export default function AssetDetail({ asset, onClose, onDelete, onRegenerate, la
         <div style={{
           position: 'fixed', inset: 0, zIndex: 20000, background: 'rgba(0,0,0,0.85)',
           display: 'flex', alignItems: 'center', justifyContent: 'center'
-        }}>
+        }} onClick={() => setLightbox(false)}>
           {/* Close button */}
           <button onClick={() => setLightbox(false)} style={{
             position: 'absolute', top: 12, right: 12, zIndex: 20002,
@@ -211,7 +219,9 @@ export default function AssetDetail({ asset, onClose, onDelete, onRegenerate, la
           }}>
             <Ic n="close" size={14} color="#fff" />
           </button>
-          <ZoomableImage src={asset.url} alt={asset.label} />
+          <div onClick={e => e.stopPropagation()}>
+            <ZoomableImage src={asset.url} alt={asset.label} />
+          </div>
         </div>
       )}
     </>

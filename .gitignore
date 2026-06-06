@@ -2,7 +2,6 @@ node_modules/
 dist/
 release/
 *.zip
-*.html
 *.log
 *.bak
 *.tmp

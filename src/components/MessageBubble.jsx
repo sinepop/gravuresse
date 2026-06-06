@@ -135,7 +135,9 @@ export default function MessageBubble({ msg, onConfirmTask, onBatchGenerate, lan
         userSelect: 'text', WebkitUserSelect: 'text', cursor: 'text',
         boxShadow: isUser ? '0 2px 8px rgba(232,168,73,0.08)' : 'var(--shadow-sm)'
       }}>
-        {isUser ? <span style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</span> : (
+        {isUser ? <span style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</span> : msg.error && tasks.length === 0 ? (
+          <div style={{ color: 'var(--danger)', fontSize: 13 }}>{msg.content}</div>
+        ) : (
           <>
           {msg.thinking && (
             <div style={{ marginBottom: 8 }}>
@@ -180,7 +182,7 @@ export default function MessageBubble({ msg, onConfirmTask, onBatchGenerate, lan
             onConfirm={() => onConfirmTask?.(msg.id, task, idx)}
             onBatchGenerate={(count) => onBatchGenerate?.(msg.id, task, count, idx)} />
         ))}
-        {msg.error && tasks.length === 0 && <div style={{ color: 'var(--danger)', fontSize: 11, marginTop: 4 }}>{msg.content}</div>}
+        {/* error-only messages are rendered above, skipping ReactMarkdown */}
       </div>
     </div>
   )

@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 
 export default function useCanvas() {
   const [assets, setAssets] = useState([])
@@ -51,9 +51,9 @@ export default function useCanvas() {
     .filter(a => filter === 'all' || a.type === filter)
     .sort((a, b) => sort === 'newest' ? new Date(b.createdAt) - new Date(a.createdAt) : a.label.localeCompare(b.label))
 
-  return {
+  return useMemo(() => ({
     assets: filtered, allAssets: assets, selectedAsset, selectedId, setSelectedId,
     viewMode, setViewMode, filter, setFilter, sort, setSort,
     addAsset, addPlaceholder, removeAsset, updateAsset, getAssetById, clear
-  }
+  }), [filtered, assets, selectedAsset, selectedId, viewMode, filter, sort, addAsset, addPlaceholder, removeAsset, updateAsset, getAssetById, clear])
 }

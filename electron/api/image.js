@@ -1,5 +1,4 @@
-const https = require('https')
-const http = require('http')
+const { request } = require('./http')
 
 const BASE_SIZES = {
   '1:1': [1024, 1024], '4:3': [1536, 1152], '3:4': [1152, 1536],
@@ -16,27 +15,13 @@ function getSize(ratio, resolution) {
   return `${Math.min(w, 4096)}x${Math.min(h, 4096)}`
 }
 
-function httpRequest(url, options, body) {
-  return new Promise((resolve, reject) => {
-    const mod = url.protocol === 'https:' ? https : http
-    const req = mod.request(url, options, (res) => {
-      let data = ''
-      res.on('data', chunk => data += chunk)
-      res.on('end', () => resolve({ status: res.statusCode, data }))
-    })
-    req.on('error', reject)
-    if (body) req.write(typeof body === 'string' ? body : JSON.stringify(body))
-    req.end()
-  })
-}
-
 async function genOpenAI(params) {
   const { prompt, ratio, apiKey, baseUrl, model, resolution } = params
   const base = (baseUrl || 'https://api.openai.com').replace(/\/$/, '')
   const size = getSize(ratio, resolution)
   const body = { model: model || 'gpt-image-2', prompt, n: 1, size }
   const url = new URL(`${base}/v1/images/generations`)
-  const res = await httpRequest(url, {
+  const res = await request(url, {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' }
   }, body)
@@ -58,8 +43,12 @@ async function genGemini(params) {
     contents: [{ parts: [{ text: `The final composition must be designed for a strict ${ratio || '1:1'} aspect ratio.\n\n${prompt}` }] }],
     generationConfig: { responseModalities: ['TEXT', 'IMAGE'] }
   }
-  const url = new URL(`${base}/v1beta/models/${encodeURIComponent(m)}:generateContent?key=${apiKey}`)
-  const res = await httpRequest(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body })
+  const url = new URL(`${base}/v1beta/models/${encodeURIComponent(m)}:generateContent?key=${encodeURIComponent(apiKey)}`)
+  // FIX: body 作为第三个参数传入，而非放在 options 对象内
+  const res = await request(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' }
+  }, body)
   const json = JSON.parse(res.data)
   if (json.error) throw new Error(json.error.message)
   const parts = json.candidates?.[0]?.content?.parts || []
@@ -76,7 +65,7 @@ async function genArk(params) {
   const size = getSize(ratio, resolution)
   const body = { model: model || 'doubao-seedream-4-0-250828', prompt, n: 1, size }
   const url = new URL(`${base}/images/generations`)
-  const res = await httpRequest(url, {
+  const res = await request(url, {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' }
   }, body)
@@ -97,19 +86,20 @@ async function genPollinations(params) {
   return `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?seed=${seed}&width=${w}&height=${h}&nologo=true&enhance=true`
 }
 
-async function generate(params, retries = 1) {
+async function generate(params) {
   const proto = params.protocol || 'openai_image'
   const fn = proto === 'gemini_image' ? genGemini
     : proto === 'ark_image' ? genArk
     : proto === 'pollinations' ? genPollinations
     : genOpenAI
+  // 统一重试逻辑
   let lastErr
-  for (let i = 0; i <= retries; i++) {
+  for (let i = 0; i <= 1; i++) {
     try {
       return await fn(params)
     } catch (e) {
       lastErr = e
-      if (i < retries) await new Promise(r => setTimeout(r, 2000))
+      if (i < 1) await new Promise(r => setTimeout(r, 2000))
     }
   }
   throw lastErr

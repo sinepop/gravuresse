@@ -36,7 +36,7 @@
 
 ### 快速开始
 
-1. 下载 `gravuresse-Setup-1.3.1.exe` 并安装
+1. 下载 `gravuresse-Setup-1.4.0.exe` 并安装
 2. 打开程序，点击标题栏齿轮图标（或按 `Ctrl+,`）进入设置
 3. 在 API 配置中选择 Provider，输入 API Key，模型自动获取
 4. 在聊天框输入需求，AI 先出提示词，确认后自动生成
@@ -51,6 +51,26 @@ npm run package
 ```
 
 ### 更新日志
+
+#### v1.4.0 (2026-06-06)
+
+**安全加固**
+- URL 重定向安全：阻止 HTTPS→HTTP 协议降级，限制最大重定向次数，支持相对路径 redirect
+- CSP 统一管理：移除 index.html 中的 CSP meta tag，由主进程 session header 统一控制
+- API Key 加密存储：使用 Electron safeStorage 加密 API Key，解密失败时自动清空避免发送垃圾数据
+- 文件写入原子性：配置和对话数据写入使用 tmp+rename 原子模式，并发写操作通过队列序列化
+- Gemini API Key URL 编码：修复含特殊字符时 URL 断裂的问题
+
+**状态管理修复**
+- 对话重命名持久化：修复重命名后刷新页面丢失的 bug
+- 画布状态稳定性：useCanvas 返回值 memoization，避免级联重渲染
+- 任务队列闭包修复：useTaskQueue 使用 canvasRef 消除 stale closure
+- 写队列竞态修复：history:save 走统一写队列，防止并发覆盖
+
+**稳定性**
+- 崩溃恢复退避：renderer 崩溃后 5 秒退避重启，最多 3 次，超限提示手动操作
+- 错误边界：新增 ErrorBoundary 组件，渲染崩溃时显示友好提示而非白屏
+- Settings 弹窗 Escape 关闭、Lightbox Escape 关闭 + 点击背景关闭
 
 #### v1.3.1 (2026-06-05)
 
@@ -241,7 +261,7 @@ Driven by a research mindset and sheer persistence, I dug through tons of resour
 
 ### Quick Start
 
-1. Download `gravuresse-Setup-1.3.1.exe` and install
+1. Download `gravuresse-Setup-1.4.0.exe` and install
 2. Open the app, click the gear icon in the title bar (or press `Ctrl+,`) to open Settings
 3. Select a Provider in API Configuration, enter your API Key — models are auto-fetched
 4. Type your request in chat, AI shows the prompt first, confirm to generate
@@ -256,6 +276,26 @@ npm run package
 ```
 
 ### Changelog
+
+#### v1.4.0 (2026-06-06)
+
+**Security Hardening**
+- URL redirect safety: blocks HTTPS→HTTP protocol downgrade, limits redirect depth, supports relative redirects
+- CSP unification: removed CSP meta tag from index.html, managed exclusively via main process session header
+- API key encryption: Electron safeStorage encrypts API keys at rest; decryption failure clears key to avoid sending garbage
+- Atomic file writes: config and conversation data use tmp+rename pattern; concurrent writes serialized via queue
+- Gemini API key URL encoding: fixes URL breakage with special characters
+
+**State Management Fixes**
+- Conversation rename persistence: fixed bug where renames were lost on page reload
+- Canvas state stability: useCanvas return value memoized, prevents cascading re-renders
+- Task queue closure fix: useTaskQueue uses canvasRef to eliminate stale closures
+- Write queue race fix: history:save routes through unified write queue, prevents concurrent overwrites
+
+**Stability**
+- Crash recovery backoff: renderer crashes restart after 5s delay, max 3 attempts, then prompts manual restart
+- Error boundary: new ErrorBoundary component shows friendly fallback instead of white screen on render crash
+- Settings modal Escape to close, Lightbox Escape to close + click backdrop to close
 
 #### v1.3.1 (2026-06-05)
 

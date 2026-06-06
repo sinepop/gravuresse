@@ -1,25 +1,34 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import { IMG_PROVIDERS } from '../providers/imageProviders'
 import { VID_PROVIDERS } from '../providers/videoProviders'
 import { t } from '../i18n'
+
+let _msgIdCounter = 0
+function nextId() { return Date.now() * 1000 + (++_msgIdCounter % 1000) }
 
 export default function useChat(config, canvas) {
   const [messages, setMessages] = useState([])
   const [loading, setLoading] = useState(false)
   const [thinking, setThinking] = useState(false)
   const lastImageContext = useRef(null)
+  const loadingRef = useRef(false)
+
+  // Keep ref in sync with state
+  useEffect(() => { loadingRef.current = loading }, [loading])
 
   const send = useCallback(async (text, references, genSettings) => {
-    if (!text.trim() || loading) return
-    const userMsg = { role: 'user', content: text, id: Date.now() }
+    if (!text.trim() || loadingRef.current) return
+    const userMsg = { role: 'user', content: text, id: nextId() }
     setMessages(prev => [...prev, userMsg])
     setLoading(true)
+    loadingRef.current = true
 
     const provider = config?.providers?.chat
     const lang = config?.general?.language || 'zh'
     if (!provider?.apiKey) {
-      setMessages(prev => [...prev, { role: 'assistant', content: t('configApiFirst', lang), id: Date.now() + 1 }])
+      setMessages(prev => [...prev, { role: 'assistant', content: t('configApiFirst', lang), id: nextId() }])
       setLoading(false)
+      loadingRef.current = false
       return
     }
 
@@ -72,7 +81,8 @@ ${modifyHint}${refHint}${styleHint}
       const thinkingText = result.thinking || ''
       let parsed = null
       try {
-        const jsonMatch = result.text.match(/\{[\s\S]*\}/)
+        // 非贪婪匹配：找第一个完整的 JSON 对象
+        const jsonMatch = result.text.match(/\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/)
         if (jsonMatch) parsed = JSON.parse(jsonMatch[0])
       } catch {}
 
@@ -92,7 +102,7 @@ ${modifyHint}${refHint}${styleHint}
         const replyMsg = {
           role: 'assistant',
           content: parsed.reply || replyText,
-          id: Date.now() + 1,
+          id: nextId(),
           model: result.model,
           tasks: tasksData,
           thinking: thinkingText || undefined,
@@ -100,15 +110,16 @@ ${modifyHint}${refHint}${styleHint}
         setMessages(prev => [...prev, replyMsg])
       } else {
         replyText = parsed?.reply || replyText
-        const replyMsg = { role: 'assistant', content: replyText, id: Date.now() + 1, model: result.model, thinking: thinkingText || undefined }
+        const replyMsg = { role: 'assistant', content: replyText, id: nextId(), model: result.model, thinking: thinkingText || undefined }
         setMessages(prev => [...prev, replyMsg])
       }
     } catch (err) {
-      setMessages(prev => [...prev, { role: 'assistant', content: `Error: ${err.message}`, id: Date.now() + 1, error: true }])
+      setMessages(prev => [...prev, { role: 'assistant', content: `Error: ${err.message}`, id: nextId(), error: true }])
     } finally {
       setLoading(false)
+      loadingRef.current = false
     }
-  }, [config, messages, loading, canvas])
+  }, [config, messages, canvas])
 
   const doGenerate = useCallback(async (msgId, task, lang, placeholderId, taskIndex) => {
     const startTime = Date.now()
@@ -197,6 +208,7 @@ ${modifyHint}${refHint}${styleHint}
     }
 
     let done = 0
+    let hasFailure = false
     const failedIds = []
     for (let i = 0; i < count; i++) {
       try {
@@ -225,6 +237,7 @@ ${modifyHint}${refHint}${styleHint}
         }))
       } catch (e) {
         console.error(`Batch item ${i + 1} failed:`, e)
+        hasFailure = true
         failedIds.push(placeholderIds[i])
       }
     }
@@ -233,7 +246,7 @@ ${modifyHint}${refHint}${styleHint}
     setMessages(prev => prev.map(m => {
       if (m.id !== msgId) return m
       const tasks = [...(m.tasks || [m.task])]
-      tasks[idx] = { ...tasks[idx], status: done > 0 ? 'done' : 'error', batchDone: done, error: done === 0 ? 'All batch items failed' : undefined }
+      tasks[idx] = { ...tasks[idx], status: done > 0 && !hasFailure ? 'done' : done > 0 ? 'partial' : 'error', batchDone: done, error: done === 0 ? 'All batch items failed' : hasFailure ? `${count - done} of ${count} failed` : undefined }
       return { ...m, tasks }
     }))
   }, [config, canvas, doGenerate])

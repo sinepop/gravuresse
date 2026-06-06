@@ -252,6 +252,13 @@ export default function Settings({ config, onSave, onClose }) {
   const [expanded, setExpanded] = useState({ general: true, api: true })
   useEffect(() => { if (config) setLocal(config) }, [config])
 
+  // Escape key to close
+  useEffect(() => {
+    const handler = (e) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [onClose])
+
   const lang = local?.general?.language || 'zh'
 
   const handleChange = (track, patch) => {
