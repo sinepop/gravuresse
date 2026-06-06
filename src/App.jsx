@@ -29,6 +29,9 @@ export default function App() {
   const switchLoading = useRef(false)
   const prevConvIdRef = useRef(null)
 
+  // Pending delete: track whether we need to switch conversation after delete
+  const pendingDeleteSwitch = useRef(null)
+
   // Load conversations on startup
   useEffect(() => {
     window.electronAPI?.loadConversations().then(data => {
@@ -55,15 +58,12 @@ export default function App() {
     if (!activeConvId) return
     switchLoading.current = true
     skipSave.current = true
-    setConversations(prev => {
-      const conv = prev.find(c => c.id === activeConvId)
-      if (conv) {
-        chat.setMessages(() => conv.messages || [])
-        canvas.allAssets.forEach(a => canvas.removeAsset(a.id))
-        if (conv.assets) conv.assets.forEach(a => canvas.addAsset(a))
-      }
-      return prev
-    })
+    const conv = conversations.find(c => c.id === activeConvId)
+    if (conv) {
+      chat.setMessages(() => conv.messages || [])
+      canvas.allAssets.forEach(a => canvas.removeAsset(a.id))
+      if (conv.assets) conv.assets.forEach(a => canvas.addAsset(a))
+    }
     skipSave.current = false
     switchLoading.current = false
     prevConvIdRef.current = activeConvId
@@ -98,7 +98,34 @@ export default function App() {
     return () => clearTimeout(timer)
   }, [chat.messages, canvas.allAssets, activeConvId])
 
-  const handleNewConv = useCallback(() => {
+  // Handle post-delete conversation switch (avoids nested setState)
+  useEffect(() => {
+    if (pendingDeleteSwitch.current) {
+      const { targetId, shouldCreateNew } = pendingDeleteSwitch.current
+      pendingDeleteSwitch.current = null
+      if (shouldCreateNew) {
+        doNewConv()
+      } else if (targetId) {
+        doSwitchConv(targetId)
+      }
+    }
+  }, [conversations])
+
+  const doSwitchConv = useCallback((id) => {
+    if (id === activeConvId) return
+    // Save current messages into conversations state before switching
+    setConversations(prev => {
+      const idx = prev.findIndex(c => c.id === activeConvId)
+      if (idx < 0) return prev
+      const next = [...prev]
+      next[idx] = { ...next[idx], messages: chat.messages, assets: canvas.allAssets }
+      return next
+    })
+    setActiveConvId(id)
+    window.electronAPI?.setActiveConversation(id)
+  }, [activeConvId, chat.messages, canvas.allAssets])
+
+  const doNewConv = useCallback(() => {
     // Flush current conversation to state + disk before switching
     if (activeConvId) {
       const title = chat.messages.find(m => m.role === 'user')?.content?.slice(0, 30) || ''
@@ -121,36 +148,29 @@ export default function App() {
     window.electronAPI?.setActiveConversation(id)
   }, [activeConvId, chat.messages, canvas.allAssets])
 
-  const handleSwitchConv = useCallback((id) => {
-    if (id === activeConvId) return
-    // Save current messages into conversations state before switching
-    setConversations(prev => {
-      const idx = prev.findIndex(c => c.id === activeConvId)
-      if (idx < 0) return prev
-      const next = [...prev]
-      next[idx] = { ...next[idx], messages: chat.messages, assets: canvas.allAssets }
-      return next
-    })
-    setActiveConvId(id)
-    window.electronAPI?.setActiveConversation(id)
-  }, [activeConvId, chat.messages, canvas.allAssets])
+  const handleNewConv = useCallback(() => doNewConv(), [doNewConv])
+  const handleSwitchConv = useCallback((id) => doSwitchConv(id), [doSwitchConv])
 
   const handleDeleteConv = useCallback((id) => {
     window.electronAPI?.deleteConversation(id)
     setConversations(prev => {
       const remaining = prev.filter(c => c.id !== id)
       if (id === activeConvId) {
-        if (remaining.length > 0) {
-          handleSwitchConv(remaining[0].id)
-        } else {
-          handleNewConv()
+        // Mark pending switch; useEffect will handle it after state commits
+        pendingDeleteSwitch.current = {
+          targetId: remaining[0]?.id || null,
+          shouldCreateNew: remaining.length === 0
         }
       }
       return remaining
     })
-  }, [activeConvId, handleSwitchConv, handleNewConv])
+  }, [activeConvId])
 
   const handleRenameConv = useCallback((id, newTitle) => {
+    // Read current data from conversations (not from updater) for disk persistence
+    const conv = conversations.find(c => c.id === id)
+    if (!conv) return
+    const saveData = { ...conv, title: newTitle }
     setConversations(prev => {
       const idx = prev.findIndex(c => c.id === id)
       if (idx < 0) return prev
@@ -158,10 +178,7 @@ export default function App() {
       next[idx] = { ...next[idx], title: newTitle }
       return next
     })
-    const conv = conversations.find(c => c.id === id)
-    if (conv) {
-      window.electronAPI?.saveConversation(id, { ...conv, title: newTitle })
-    }
+    window.electronAPI?.saveConversation(id, saveData)
   }, [conversations])
 
   // Apply theme, language, font-size from config
@@ -190,7 +207,9 @@ export default function App() {
     if (action === 'download' && asset.url) {
       const a = document.createElement('a'); a.href = asset.url; a.download = `${asset.label}.png`; a.click()
     }
-    if (action === 'copyPrompt') navigator.clipboard.writeText(asset.prompt || '')
+    if (action === 'copyPrompt') {
+      try { navigator.clipboard.writeText(asset.prompt || '') } catch {}
+    }
     if (action === 'delete') canvas.removeAsset(asset.id)
     if (action === 'regenerate') {
       chat.send(`重新生成：${asset.prompt}`)

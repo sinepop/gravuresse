@@ -34,7 +34,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   on: (channel, callback) => {
     const validChannels = ['window-maximized']
     if (validChannels.includes(channel)) {
-      ipcRenderer.on(channel, (_, ...args) => callback(...args))
+      const handler = (_, ...args) => callback(...args)
+      ipcRenderer.on(channel, handler)
+      return handler
+    }
+  },
+
+  off: (channel, handler) => {
+    const validChannels = ['window-maximized']
+    if (validChannels.includes(channel) && handler) {
+      ipcRenderer.removeListener(channel, handler)
     }
   }
 })

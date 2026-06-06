@@ -1,19 +1,4 @@
-const https = require('https')
-const http = require('http')
-
-function httpRequest(url, options, body) {
-  return new Promise((resolve, reject) => {
-    const mod = url.protocol === 'https:' ? https : http
-    const req = mod.request(url, options, (res) => {
-      let data = ''
-      res.on('data', chunk => data += chunk)
-      res.on('end', () => resolve({ status: res.statusCode, data }))
-    })
-    req.on('error', reject)
-    if (body) req.write(typeof body === 'string' ? body : JSON.stringify(body))
-    req.end()
-  })
-}
+const { request } = require('./http')
 
 async function submitArk(params) {
   const { prompt, sourceImageUrl, apiKey, baseUrl, model } = params
@@ -21,7 +6,10 @@ async function submitArk(params) {
   const body = { model: model || 'doubao-seedance-2-0-pro-250528', content: [{ type: 'text', text: prompt }] }
   if (sourceImageUrl) body.content.push({ type: 'image_url', image_url: { url: sourceImageUrl } })
   const url = new URL(`${base}/contents/generations/tasks`)
-  const res = await httpRequest(url, { method: 'POST', headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' } }, body)
+  const res = await request(url, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' }
+  }, body)
   const json = JSON.parse(res.data)
   if (json.error) throw new Error(json.error.message)
   return { taskId: json.id || json.task_id, status: 'pending' }
@@ -30,7 +18,10 @@ async function submitArk(params) {
 async function pollArk(taskId, apiKey, baseUrl) {
   const base = (baseUrl || 'https://ark.cn-beijing.volces.com/api/v3').replace(/\/$/, '')
   const url = new URL(`${base}/contents/generations/tasks/${taskId}`)
-  const res = await httpRequest(url, { method: 'GET', headers: { 'Authorization': `Bearer ${apiKey}` } })
+  const res = await request(url, {
+    method: 'GET',
+    headers: { 'Authorization': `Bearer ${apiKey}` }
+  })
   const json = JSON.parse(res.data)
   return { status: json.status || 'unknown', progress: json.progress || 0, videoUrl: json.content?.[0]?.video_url || json.output?.video_url || '', error: json.error?.message }
 }
@@ -42,7 +33,10 @@ async function submitRunway(params) {
   if (sourceImageUrl) body.image = sourceImageUrl
   if (duration) body.duration = Math.min(duration, 10)
   const url = new URL(`${base}/v1/image_to_video`)
-  const res = await httpRequest(url, { method: 'POST', headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json', 'X-Runway-Version': '2024-11-06' } }, body)
+  const res = await request(url, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json', 'X-Runway-Version': '2024-11-06' }
+  }, body)
   const json = JSON.parse(res.data)
   if (json.error) throw new Error(json.error.message)
   return { taskId: json.id, status: 'pending' }
@@ -51,7 +45,10 @@ async function submitRunway(params) {
 async function pollRunway(taskId, apiKey, baseUrl) {
   const base = (baseUrl || 'https://api.dev.runwayml.com').replace(/\/$/, '')
   const url = new URL(`${base}/v1/tasks/${taskId}`)
-  const res = await httpRequest(url, { method: 'GET', headers: { 'Authorization': `Bearer ${apiKey}`, 'X-Runway-Version': '2024-11-06' } })
+  const res = await request(url, {
+    method: 'GET',
+    headers: { 'Authorization': `Bearer ${apiKey}`, 'X-Runway-Version': '2024-11-06' }
+  })
   const json = JSON.parse(res.data)
   return { status: json.status || 'unknown', progress: json.progress || 0, videoUrl: json.output?.[0] || '', error: json.error?.message }
 }
@@ -62,7 +59,10 @@ async function submitHappyHorse(params) {
   const body = { prompt }
   if (sourceImageUrl) body.source_image = sourceImageUrl
   const url = new URL(`${base}/v1/generate`)
-  const res = await httpRequest(url, { method: 'POST', headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' } }, body)
+  const res = await request(url, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' }
+  }, body)
   const json = JSON.parse(res.data)
   if (json.error) throw new Error(json.error.message)
   return { taskId: json.id || json.task_id, status: 'pending' }
@@ -71,7 +71,10 @@ async function submitHappyHorse(params) {
 async function pollHappyHorse(taskId, apiKey, baseUrl) {
   const base = (baseUrl || 'https://happyhorse.app').replace(/\/$/, '')
   const url = new URL(`${base}/v1/task/${taskId}`)
-  const res = await httpRequest(url, { method: 'GET', headers: { 'Authorization': `Bearer ${apiKey}` } })
+  const res = await request(url, {
+    method: 'GET',
+    headers: { 'Authorization': `Bearer ${apiKey}` }
+  })
   const json = JSON.parse(res.data)
   return { status: json.status || 'unknown', progress: json.progress || 0, videoUrl: json.video_url || json.output?.video_url || '', error: json.error?.message }
 }

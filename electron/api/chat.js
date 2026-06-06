@@ -1,5 +1,4 @@
-const https = require('https')
-const http = require('http')
+const { request } = require('./http')
 
 async function callClaude(messages, provider) {
   const base = (provider.baseUrl || 'https://api.anthropic.com').replace(/\/$/, '')
@@ -9,76 +8,48 @@ async function callClaude(messages, provider) {
     system: messages.system || 'You are Gravuresse.',
     messages: messages.history || []
   }
-  // Extended thinking
   if (messages.thinking) {
     payload.thinking = { type: 'enabled', budget_tokens: 10000 }
     payload.max_tokens = 16000
   }
-  const body = JSON.stringify(payload)
-  return new Promise((resolve, reject) => {
-    const url = new URL(`${base}/v1/messages`)
-    const mod = url.protocol === 'https:' ? https : http
-    const req = mod.request(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': provider.apiKey,
-        'anthropic-version': '2023-06-01'
-      }
-    }, (res) => {
-      let data = ''
-      res.on('data', chunk => data += chunk)
-      res.on('end', () => {
-        try {
-          const json = JSON.parse(data)
-          if (json.error) return reject(new Error(json.error.message))
-          const thinking = json.content?.filter(b => b.type === 'thinking').map(b => b.text).join('') || ''
-          const text = json.content?.filter(b => b.type === 'text').map(b => b.text).join('') || ''
-          resolve({ text, thinking, model: json.model })
-        } catch (e) { reject(e) }
-      })
-    })
-    req.on('error', reject)
-    req.write(body)
-    req.end()
-  })
+  const url = new URL(`${base}/v1/messages`)
+  const res = await request(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': provider.apiKey,
+      'anthropic-version': '2023-06-01'
+    }
+  }, payload)
+  const json = JSON.parse(res.data)
+  if (json.error) throw new Error(json.error.message)
+  const thinking = json.content?.filter(b => b.type === 'thinking').map(b => b.text).join('') || ''
+  const text = json.content?.filter(b => b.type === 'text').map(b => b.text).join('') || ''
+  return { text, thinking, model: json.model }
 }
 
 async function callOpenAI(messages, provider) {
   const base = (provider.baseUrl || 'https://api.openai.com').replace(/\/$/, '')
-  const body = JSON.stringify({
+  const body = {
     model: provider.model || 'gpt-5.1',
     messages: [
       { role: 'system', content: messages.system || 'You are Gravuresse.' },
       ...(messages.history || [])
     ],
     max_tokens: 4096
-  })
-  return new Promise((resolve, reject) => {
-    const url = new URL(`${base}/v1/chat/completions`)
-    const mod = url.protocol === 'https:' ? https : http
-    const req = mod.request(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${provider.apiKey}`
-      }
-    }, (res) => {
-      let data = ''
-      res.on('data', chunk => data += chunk)
-      res.on('end', () => {
-        try {
-          const json = JSON.parse(data)
-          if (json.error) return reject(new Error(json.error.message))
-          const text = json.choices?.[0]?.message?.content || ''
-          resolve({ text, model: json.model })
-        } catch (e) { reject(e) }
-      })
-    })
-    req.on('error', reject)
-    req.write(body)
-    req.end()
-  })
+  }
+  const url = new URL(`${base}/v1/chat/completions`)
+  const res = await request(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${provider.apiKey}`
+    }
+  }, body)
+  const json = JSON.parse(res.data)
+  if (json.error) throw new Error(json.error.message)
+  const text = json.choices?.[0]?.message?.content || ''
+  return { text, model: json.model }
 }
 
 async function callGemini(messages, provider) {
@@ -87,33 +58,20 @@ async function callGemini(messages, provider) {
     role: m.role === 'assistant' ? 'model' : 'user',
     parts: [{ text: m.content }]
   }))
-  const body = JSON.stringify({
+  const body = {
     contents,
     systemInstruction: { parts: [{ text: messages.system || 'You are Gravuresse.' }] }
-  })
-  return new Promise((resolve, reject) => {
-    const model = provider.model || 'gemini-2.5-pro'
-    const url = new URL(`${base}/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${provider.apiKey}`)
-    const mod = url.protocol === 'https:' ? https : http
-    const req = mod.request(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' }
-    }, (res) => {
-      let data = ''
-      res.on('data', chunk => data += chunk)
-      res.on('end', () => {
-        try {
-          const json = JSON.parse(data)
-          if (json.error) return reject(new Error(json.error.message))
-          const text = json.candidates?.[0]?.content?.parts?.map(p => p.text).join('') || ''
-          resolve({ text, model })
-        } catch (e) { reject(e) }
-      })
-    })
-    req.on('error', reject)
-    req.write(body)
-    req.end()
-  })
+  }
+  const model = provider.model || 'gemini-2.5-pro'
+  const url = new URL(`${base}/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(provider.apiKey)}`)
+  const res = await request(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' }
+  }, body)
+  const json = JSON.parse(res.data)
+  if (json.error) throw new Error(json.error.message)
+  const text = json.candidates?.[0]?.content?.parts?.map(p => p.text).join('') || ''
+  return { text, model }
 }
 
 async function call(messages, provider) {
