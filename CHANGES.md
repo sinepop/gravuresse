@@ -2,7 +2,7 @@
 
 ## 中文
 
-#### v1.4.0 (2026-06-06)
+#### v1.5.0 (2026-06-08)
 
 **安全加固**
 - URL 重定向安全：阻止 HTTPS→HTTP 协议降级，限制最大重定向次数，支持相对路径 redirect
@@ -182,7 +182,7 @@
 
 ## English
 
-#### v1.4.0 (2026-06-06)
+#### v1.5.0 (2026-06-08)
 
 **Security Hardening**
 - URL redirect safety: blocks HTTPS→HTTP protocol downgrade, limits redirect depth, supports relative redirects
