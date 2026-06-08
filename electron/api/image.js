@@ -1,4 +1,4 @@
-const { request } = require('./http')
+const { request, joinApiUrl } = require('./http')
 
 const BASE_SIZES = {
   '1:1': [1024, 1024], '4:3': [1536, 1152], '3:4': [1152, 1536],
@@ -17,10 +17,9 @@ function getSize(ratio, resolution) {
 
 async function genOpenAI(params) {
   const { prompt, ratio, apiKey, baseUrl, model, resolution } = params
-  const base = (baseUrl || 'https://api.openai.com').replace(/\/$/, '')
   const size = getSize(ratio, resolution)
   const body = { model: model || 'gpt-image-2', prompt, n: 1, size }
-  const url = new URL(`${base}/v1/images/generations`)
+  const url = joinApiUrl(baseUrl || 'https://api.openai.com', '/v1/images/generations')
   const res = await request(url, {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' }
@@ -37,13 +36,12 @@ async function genOpenAI(params) {
 
 async function genGemini(params) {
   const { prompt, ratio, apiKey, baseUrl, model } = params
-  const base = (baseUrl || 'https://generativelanguage.googleapis.com').replace(/\/$/, '')
   const m = model || 'gemini-2.5-flash-image'
   const body = {
     contents: [{ parts: [{ text: `The final composition must be designed for a strict ${ratio || '1:1'} aspect ratio.\n\n${prompt}` }] }],
     generationConfig: { responseModalities: ['TEXT', 'IMAGE'] }
   }
-  const url = new URL(`${base}/v1beta/models/${encodeURIComponent(m)}:generateContent?key=${encodeURIComponent(apiKey)}`)
+  const url = joinApiUrl(baseUrl || 'https://generativelanguage.googleapis.com', `/v1beta/models/${encodeURIComponent(m)}:generateContent?key=${encodeURIComponent(apiKey)}`)
   // FIX: body 作为第三个参数传入，而非放在 options 对象内
   const res = await request(url, {
     method: 'POST',
@@ -61,10 +59,9 @@ async function genGemini(params) {
 
 async function genArk(params) {
   const { prompt, ratio, apiKey, baseUrl, model, resolution } = params
-  const base = (baseUrl || 'https://ark.cn-beijing.volces.com/api/v3').replace(/\/$/, '')
   const size = getSize(ratio, resolution)
   const body = { model: model || 'doubao-seedream-4-0-250828', prompt, n: 1, size }
-  const url = new URL(`${base}/images/generations`)
+  const url = joinApiUrl(baseUrl || 'https://ark.cn-beijing.volces.com/api/v3', '/images/generations')
   const res = await request(url, {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' }

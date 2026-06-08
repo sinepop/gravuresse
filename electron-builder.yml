@@ -20,7 +20,7 @@ nsis:
 forceCodeSigning: false
 win:
   icon: build/icon.png
-  sign: false
+  signExecutable: false
   target:
     - target: nsis
       arch:

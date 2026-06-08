@@ -8,19 +8,28 @@
 - URL 重定向安全：阻止 HTTPS→HTTP 协议降级，限制最大重定向次数，支持相对路径 redirect
 - CSP 统一管理：移除 index.html 中的 CSP meta tag，由主进程 session header 统一控制
 - API Key 加密存储：使用 Electron safeStorage 加密 API Key，解密失败时自动清空避免发送垃圾数据
+- Electron 导航边界：阻止非应用内导航和 `window.open` 子窗口，Markdown 外链统一走主进程 HTTPS 校验后 `shell.openExternal`
+- 渲染进程配置脱敏：`config:get` 只返回 redacted API Key，真实密钥保留在主进程并由 API IPC 读取
+- 安全保存素材：移除高风险任意路径保存接口，图片/视频保存统一走主进程生成路径或保存对话框，强制 `.png`/`.mp4` 扩展名
+- 下载与响应限制：素材下载增加 HTTPS 校验、redirect 复校验、100MB 大小上限、总超时和临时文件 rename；API 响应增加 25MB 上限
 - 文件写入原子性：配置和对话数据写入使用 tmp+rename 原子模式，并发写操作通过队列序列化
 - Gemini API Key URL 编码：修复含特殊字符时 URL 断裂的问题
 
 **状态管理修复**
 - 对话重命名持久化：修复重命名后刷新页面丢失的 bug
+- 对话切换防丢：切换/新建/删除前 flush 当前对话，异步 chat/image/video 结果写回发起对话而不是丢弃或串到当前对话
+- 对话存储恢复：损坏的 `conversations.json` 会备份后从空 store 恢复，删除 tombstone 在读取和写入时都生效
 - 画布状态稳定性：useCanvas 返回值 memoization，避免级联重渲染
 - 任务队列闭包修复：useTaskQueue 使用 canvasRef 消除 stale closure
+- 视频任务轮询：视频提交接入任务队列，成功但无 `videoUrl` 时继续 running，完成后生成 video asset
 - 写队列竞态修复：history:save 走统一写队列，防止并发覆盖
 
 **稳定性**
 - 崩溃恢复退避：renderer 崩溃后 5 秒退避重启，最多 3 次，超限提示手动操作
 - 错误边界：新增 ErrorBoundary 组件，渲染崩溃时显示友好提示而非白屏
 - Settings 弹窗 Escape 关闭、Lightbox Escape 关闭 + 点击背景关闭
+- 视频预览 CSP：增加 `media-src 'self' https: data: blob:`，AssetCard/AssetDetail 使用 `<video controls>` 渲染视频
+- 打包依赖升级：Electron 42.3.3、electron-builder 26.15.2、electron-vite 5.0.0、Vite 7.3.5，打包时复制运行时 helper 和图标进 `dist`
 
 #### v1.3.1 (2026-06-05)
 
@@ -179,19 +188,28 @@
 - URL redirect safety: blocks HTTPS→HTTP protocol downgrade, limits redirect depth, supports relative redirects
 - CSP unification: removed CSP meta tag from index.html, managed exclusively via main process session header
 - API key encryption: Electron safeStorage encrypts API keys at rest; decryption failure clears key to avoid sending garbage
+- Electron navigation boundary: blocks unexpected app navigation and `window.open` child windows; Markdown external links go through main-process HTTPS validation before `shell.openExternal`
+- Renderer config redaction: `config:get` returns redacted API keys; raw secrets stay in the main process and are read by API IPC handlers
+- Safe asset saving: removed high-risk arbitrary-path save API; image/video saves go through main-owned paths or save dialog with enforced `.png`/`.mp4` extensions
+- Download and response guards: asset downloads enforce HTTPS, revalidate redirects, cap size at 100MB, use wall-clock timeout and temp-file rename; API responses are capped at 25MB
 - Atomic file writes: config and conversation data use tmp+rename pattern; concurrent writes serialized via queue
 - Gemini API key URL encoding: fixes URL breakage with special characters
 
 **State Management Fixes**
 - Conversation rename persistence: fixed bug where renames were lost on page reload
+- Conversation switch data safety: switch/new/delete flush the active conversation first; async chat/image/video results write back to the origin conversation
+- Conversation store recovery: corrupt `conversations.json` is backed up and replaced with an empty writable store; delete tombstones are enforced on read and write
 - Canvas state stability: useCanvas return value memoized, prevents cascading re-renders
 - Task queue closure fix: useTaskQueue uses canvasRef to eliminate stale closures
+- Video task polling: video submission is wired into the task queue; succeeded-without-`videoUrl` stays running, and completion creates a video asset
 - Write queue race fix: history:save routes through unified write queue, prevents concurrent overwrites
 
 **Stability**
 - Crash recovery backoff: renderer crashes restart after 5s delay, max 3 attempts, then prompts manual restart
 - Error boundary: new ErrorBoundary component shows friendly fallback instead of white screen on render crash
 - Settings modal Escape to close, Lightbox Escape to close + click backdrop to close
+- Video preview CSP: added `media-src 'self' https: data: blob:`; AssetCard/AssetDetail render video assets with `<video controls>`
+- Build dependency refresh: Electron 42.3.3, electron-builder 26.15.2, electron-vite 5.0.0, Vite 7.3.5; packaged builds copy runtime helpers and icon into `dist`
 
 #### v1.3.1 (2026-06-05)
 

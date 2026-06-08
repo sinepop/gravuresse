@@ -1,8 +1,9 @@
 import { useState } from 'react'
 
 export default function AssetCard({ asset, selected, onClick, onContextMenu }) {
-  const [imgError, setImgError] = useState(false)
+  const [mediaError, setMediaError] = useState(false)
   const [hovered, setHovered] = useState(false)
+  const isVideo = asset.type === 'video'
   return (
     <div onClick={() => onClick(asset.id)}
       onContextMenu={(e) => { e.preventDefault(); onContextMenu(e, asset) }}
@@ -19,12 +20,20 @@ export default function AssetCard({ asset, selected, onClick, onContextMenu }) {
       }}
     >
       <div style={{ aspectRatio: '1', background: 'var(--bg-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', position: 'relative' }}>
-        {asset.url && !imgError ? (
-          <img src={asset.url} alt={asset.label} style={{
-            width: '100%', height: '100%', objectFit: 'cover',
-            transition: 'transform 0.3s ease',
-            transform: hovered ? 'scale(1.04)' : 'scale(1)'
-          }} onError={() => setImgError(true)} />
+        {asset.url && !mediaError ? (
+          isVideo ? (
+            <video src={asset.url} muted playsInline preload="metadata" style={{
+              width: '100%', height: '100%', objectFit: 'cover',
+              transition: 'transform 0.3s ease',
+              transform: hovered ? 'scale(1.04)' : 'scale(1)'
+            }} onError={() => setMediaError(true)} />
+          ) : (
+            <img src={asset.url} alt={asset.label} style={{
+              width: '100%', height: '100%', objectFit: 'cover',
+              transition: 'transform 0.3s ease',
+              transform: hovered ? 'scale(1.04)' : 'scale(1)'
+            }} onError={() => setMediaError(true)} />
+          )
         ) : (
           <div style={{ color: 'var(--text-ghost)', fontSize: 24 }}>{asset.type === 'video' ? '🎬' : '🖼️'}</div>
         )}

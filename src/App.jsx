@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import TitleBar from './components/TitleBar'
 import ModelBar from './components/ModelBar'
 import ChatPanel from './components/ChatPanel'
@@ -13,11 +13,32 @@ import useTaskQueue from './hooks/useTaskQueue'
 import './styles/global.css'
 
 const FONT_SIZES = { small: '12px', medium: '13px', large: '14px' }
+let conversationsLoadPromise = null
+
+function loadConversationsOnce() {
+  if (!conversationsLoadPromise) {
+    conversationsLoadPromise = window.electronAPI?.loadConversations?.() || Promise.resolve(null)
+  }
+  return conversationsLoadPromise
+}
+
+function getConversationTitle(messages) {
+  return messages.find(m => m.role === 'user')?.content?.slice(0, 30) || ''
+}
+
+function createStoredAsset(asset) {
+  return {
+    id: `asset_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    type: 'image', label: asset.label || '未命名', prompt: asset.prompt || '',
+    negativePrompt: asset.negativePrompt || '', url: asset.url || '',
+    model: asset.model || '', ratio: asset.ratio || '1:1', style: asset.style || '',
+    createdAt: new Date().toISOString(), _generating: false, ...asset
+  }
+}
 
 export default function App() {
   const { config, save, updateProvider } = useConfig()
   const canvas = useCanvas()
-  const chat = useChat(config, canvas)
   const taskQueue = useTaskQueue(canvas)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [ctxMenu, setCtxMenu] = useState(null)
@@ -28,49 +49,131 @@ export default function App() {
   const skipSave = useRef(false)
   const switchLoading = useRef(false)
   const prevConvIdRef = useRef(null)
+  const loadingSnapshot = useRef(null)
+  const activeConvIdRef = useRef(null)
+  const conversationsRef = useRef([])
+  const deletedConvIds = useRef(new Set())
+  const saveEpoch = useRef(0)
 
-  // Pending delete: track whether we need to switch conversation after delete
-  const pendingDeleteSwitch = useRef(null)
+  useEffect(() => {
+    activeConvIdRef.current = activeConvId
+  }, [activeConvId])
+  useEffect(() => {
+    conversationsRef.current = conversations
+  }, [conversations])
+
+  const isActiveConversation = useCallback((id) => id && activeConvIdRef.current === id && !deletedConvIds.current.has(id), [])
+
+  const patchStoredConversation = useCallback((id, patcher) => {
+    if (!id || deletedConvIds.current.has(id)) return null
+    const currentList = conversationsRef.current
+    const idx = currentList.findIndex(c => c.id === id)
+    if (idx < 0) return null
+    const current = currentList[idx]
+    const patched = patcher(current)
+    if (!patched) return null
+    const updated = { ...patched, updatedAt: new Date().toISOString() }
+    const next = [...currentList]
+    next[idx] = updated
+    next.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
+    conversationsRef.current = next
+    setConversations(next)
+    const messages = updated.messages || []
+    const assets = updated.assets || []
+    const title = updated.title || getConversationTitle(messages)
+    window.electronAPI?.saveConversation(id, { messages, assets, title }).catch(e => console.error('Failed to save conversation:', e))
+    return updated
+  }, [])
+
+  const conversationBridge = useMemo(() => ({
+    canWrite: (id) => Boolean(id && !deletedConvIds.current.has(id) && conversationsRef.current.some(c => c.id === id)),
+    appendMessage: (id, message) => patchStoredConversation(id, conv => ({
+      ...conv,
+      messages: [...(conv.messages || []), message],
+      title: conv.title || getConversationTitle([...(conv.messages || []), message])
+    })),
+    updateTask: (id, msgId, taskIndex, patch) => patchStoredConversation(id, conv => ({
+      ...conv,
+      messages: (conv.messages || []).map(m => {
+        if (m.id !== msgId) return m
+        const tasks = [...(m.tasks || [m.task])]
+        tasks[taskIndex ?? 0] = { ...tasks[taskIndex ?? 0], ...patch }
+        return { ...m, tasks }
+      })
+    })),
+    addAsset: (id, asset) => {
+      const item = createStoredAsset(asset)
+      const updated = patchStoredConversation(id, conv => ({ ...conv, assets: [item, ...(conv.assets || [])] }))
+      return updated ? item : null
+    },
+    updateAsset: (id, assetId, patch) => patchStoredConversation(id, conv => ({
+      ...conv,
+      assets: (conv.assets || []).map(a => a.id === assetId ? { ...a, ...patch } : a)
+    })),
+    removeAsset: (id, assetId) => patchStoredConversation(id, conv => ({
+      ...conv,
+      assets: (conv.assets || []).filter(a => a.id !== assetId)
+    }))
+  }), [patchStoredConversation])
+
+  const chat = useChat(config, canvas, taskQueue.add, activeConvId, isActiveConversation, conversationBridge)
+
+  const setChatMessages = chat.setMessages
+  const replaceCanvasAssets = canvas.replaceAssets
+
+  const applyConversation = useCallback((conv, id) => {
+    const messages = conv?.messages || []
+    const assets = conv?.assets || []
+    loadingSnapshot.current = { id, messages, assets }
+    switchLoading.current = true
+    skipSave.current = true
+    setChatMessages(() => messages)
+    replaceCanvasAssets(assets)
+  }, [setChatMessages, replaceCanvasAssets])
 
   // Load conversations on startup
   useEffect(() => {
-    window.electronAPI?.loadConversations().then(data => {
+    let cancelled = false
+    loadConversationsOnce().then(data => {
+      if (cancelled) return
+      deletedConvIds.current = new Set(data?.deletedIds || [])
       if (data?.conversations?.length > 0) {
         setConversations(data.conversations)
+        conversationsRef.current = data.conversations
         const activeId = data.activeId || data.conversations[0].id
         setActiveConvId(activeId)
         const conv = data.conversations.find(c => c.id === activeId)
-        if (conv) {
-          switchLoading.current = true
-          skipSave.current = true
-          chat.setMessages(() => conv.messages || [])
-          if (conv.assets) conv.assets.forEach(a => canvas.addAsset(a))
-          skipSave.current = false
-          switchLoading.current = false
-          prevConvIdRef.current = activeId
-        }
+        if (conv) applyConversation(conv, activeId)
       }
     }).catch(() => {})
-  }, [])
+    return () => {
+      cancelled = true
+    }
+  }, [applyConversation])
 
   // Reload messages + canvas when active conversation changes
   useEffect(() => {
     if (!activeConvId) return
-    switchLoading.current = true
-    skipSave.current = true
+    if (loadingSnapshot.current?.id === activeConvId) return
+    if (prevConvIdRef.current === activeConvId) return
     const conv = conversations.find(c => c.id === activeConvId)
-    if (conv) {
-      chat.setMessages(() => conv.messages || [])
-      canvas.allAssets.forEach(a => canvas.removeAsset(a.id))
-      if (conv.assets) conv.assets.forEach(a => canvas.addAsset(a))
+    if (conv) applyConversation(conv, activeConvId)
+  }, [activeConvId, conversations, applyConversation])
+
+  useEffect(() => {
+    const snapshot = loadingSnapshot.current
+    if (!snapshot || snapshot.id !== activeConvId) return
+    if (chat.messages === snapshot.messages && canvas.allAssets === snapshot.assets) {
+      loadingSnapshot.current = null
+      skipSave.current = false
+      switchLoading.current = false
+      prevConvIdRef.current = activeConvId
     }
-    skipSave.current = false
-    switchLoading.current = false
-    prevConvIdRef.current = activeConvId
-  }, [activeConvId])
+  }, [chat.messages, canvas.allAssets, activeConvId])
 
   // Sync current messages + assets into conversations state
   useEffect(() => {
+    if (loadingSnapshot.current) return
     if (skipSave.current || !activeConvId || switchLoading.current) return
     if (prevConvIdRef.current !== activeConvId) return
     setConversations(prev => {
@@ -86,91 +189,99 @@ export default function App() {
 
   // Debounced disk save
   useEffect(() => {
+    if (loadingSnapshot.current) return
     if (skipSave.current || !activeConvId) return
+    const convId = activeConvId
+    const epoch = saveEpoch.current
     const timer = setTimeout(() => {
-      const title = chat.messages.find(m => m.role === 'user')?.content?.slice(0, 30) || ''
-      window.electronAPI?.saveConversation(activeConvId, {
+      if (saveEpoch.current !== epoch || deletedConvIds.current.has(convId) || activeConvIdRef.current !== convId) return
+      const title = getConversationTitle(chat.messages)
+      window.electronAPI?.saveConversation(convId, {
         messages: chat.messages,
         assets: canvas.allAssets,
         title
-      })
+      }).catch(e => console.error('Failed to save conversation:', e))
     }, 1000)
     return () => clearTimeout(timer)
   }, [chat.messages, canvas.allAssets, activeConvId])
 
-  // Handle post-delete conversation switch (avoids nested setState)
-  useEffect(() => {
-    if (pendingDeleteSwitch.current) {
-      const { targetId, shouldCreateNew } = pendingDeleteSwitch.current
-      pendingDeleteSwitch.current = null
-      if (shouldCreateNew) {
-        doNewConv()
-      } else if (targetId) {
-        doSwitchConv(targetId)
-      }
-    }
-  }, [conversations])
-
-  const doSwitchConv = useCallback((id) => {
-    if (id === activeConvId) return
-    // Save current messages into conversations state before switching
+  const flushActiveConversation = useCallback(async () => {
+    if (!activeConvId) return
+    const messages = chat.messages
+    const assets = canvas.allAssets
+    const title = getConversationTitle(messages)
     setConversations(prev => {
       const idx = prev.findIndex(c => c.id === activeConvId)
       if (idx < 0) return prev
       const next = [...prev]
-      next[idx] = { ...next[idx], messages: chat.messages, assets: canvas.allAssets }
-      return next
+      next[idx] = { ...next[idx], messages, assets, updatedAt: new Date().toISOString() }
+      return next.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
     })
-    setActiveConvId(id)
-    window.electronAPI?.setActiveConversation(id)
+    await window.electronAPI?.saveConversation(activeConvId, { messages, assets, title })
   }, [activeConvId, chat.messages, canvas.allAssets])
 
-  const doNewConv = useCallback(() => {
-    // Flush current conversation to state + disk before switching
-    if (activeConvId) {
-      const title = chat.messages.find(m => m.role === 'user')?.content?.slice(0, 30) || ''
-      setConversations(prev => {
-        const idx = prev.findIndex(c => c.id === activeConvId)
-        if (idx < 0) return prev
-        const next = [...prev]
-        next[idx] = { ...next[idx], messages: chat.messages, assets: canvas.allAssets }
-        return next
-      })
-      window.electronAPI?.saveConversation(activeConvId, {
-        messages: chat.messages, assets: canvas.allAssets, title
-      })
+  const doSwitchConv = useCallback(async (id) => {
+    if (id === activeConvId) return
+    try {
+      saveEpoch.current++
+      await flushActiveConversation()
+      await window.electronAPI?.setActiveConversation(id)
+      setActiveConvId(id)
+    } catch (e) {
+      console.error('Failed to switch conversation:', e)
     }
+  }, [activeConvId, flushActiveConversation])
+
+  const doNewConv = useCallback(async () => {
     const id = `conv_${Date.now()}`
     const conv = { id, title: '', messages: [], assets: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
-    setConversations(prev => [conv, ...prev])
-    setActiveConvId(id)
-    window.electronAPI?.saveConversation(id, { messages: [], assets: [], title: '' })
-    window.electronAPI?.setActiveConversation(id)
-  }, [activeConvId, chat.messages, canvas.allAssets])
+    try {
+      saveEpoch.current++
+      await flushActiveConversation()
+      await window.electronAPI?.saveConversation(id, { messages: [], assets: [], title: '' })
+      await window.electronAPI?.setActiveConversation(id)
+      setConversations(prev => [conv, ...prev])
+      setActiveConvId(id)
+    } catch (e) {
+      console.error('Failed to create conversation:', e)
+    }
+  }, [flushActiveConversation])
 
   const handleNewConv = useCallback(() => doNewConv(), [doNewConv])
   const handleSwitchConv = useCallback((id) => doSwitchConv(id), [doSwitchConv])
 
-  const handleDeleteConv = useCallback((id) => {
-    window.electronAPI?.deleteConversation(id)
-    setConversations(prev => {
-      const remaining = prev.filter(c => c.id !== id)
-      if (id === activeConvId) {
-        // Mark pending switch; useEffect will handle it after state commits
-        pendingDeleteSwitch.current = {
-          targetId: remaining[0]?.id || null,
-          shouldCreateNew: remaining.length === 0
-        }
+  const handleDeleteConv = useCallback(async (id) => {
+    const deletingActive = id === activeConvId
+    const remaining = conversations.filter(c => c.id !== id)
+    try {
+      saveEpoch.current++
+      if (deletingActive) await flushActiveConversation()
+      deletedConvIds.current.add(id)
+      await window.electronAPI?.deleteConversation(id)
+      if (!deletingActive) {
+        setConversations(prev => prev.filter(c => c.id !== id))
+        return
       }
-      return remaining
-    })
-  }, [activeConvId])
+      const nextActive = remaining[0]
+      if (nextActive) {
+        await window.electronAPI?.setActiveConversation(nextActive.id)
+        setConversations(prev => prev.filter(c => c.id !== id))
+        setActiveConvId(nextActive.id)
+        return
+      }
+      const newId = `conv_${Date.now()}`
+      const conv = { id: newId, title: '', messages: [], assets: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
+      await window.electronAPI?.saveConversation(newId, { messages: [], assets: [], title: '' })
+      await window.electronAPI?.setActiveConversation(newId)
+      setConversations(prev => [conv, ...prev.filter(c => c.id !== id)])
+      setActiveConvId(newId)
+    } catch (e) {
+      deletedConvIds.current.delete(id)
+      console.error('Failed to delete conversation:', e)
+    }
+  }, [activeConvId, conversations, flushActiveConversation])
 
   const handleRenameConv = useCallback((id, newTitle) => {
-    // Read current data from conversations (not from updater) for disk persistence
-    const conv = conversations.find(c => c.id === id)
-    if (!conv) return
-    const saveData = { ...conv, title: newTitle }
     setConversations(prev => {
       const idx = prev.findIndex(c => c.id === id)
       if (idx < 0) return prev
@@ -178,8 +289,8 @@ export default function App() {
       next[idx] = { ...next[idx], title: newTitle }
       return next
     })
-    window.electronAPI?.saveConversation(id, saveData)
-  }, [conversations])
+    window.electronAPI?.saveConversation(id, { title: newTitle }).catch(e => console.error('Failed to rename conversation:', e))
+  }, [])
 
   // Apply theme, language, font-size from config
   useEffect(() => {
@@ -200,12 +311,16 @@ export default function App() {
     return () => window.removeEventListener('keydown', handler)
   }, [])
 
-  const handleAssetAction = useCallback((action, asset) => {
+  const handleAssetAction = useCallback(async (action, asset) => {
     if (action === 'view') {
       canvas.setSelectedId(asset.id)
     }
     if (action === 'download' && asset.url) {
-      const a = document.createElement('a'); a.href = asset.url; a.download = `${asset.label}.png`; a.click()
+      try {
+        await window.electronAPI?.saveAssetWithDialog?.({ url: asset.url, label: asset.label, type: asset.type })
+      } catch (e) {
+        console.error('Save failed:', e)
+      }
     }
     if (action === 'copyPrompt') {
       try { navigator.clipboard.writeText(asset.prompt || '') } catch {}
@@ -215,7 +330,7 @@ export default function App() {
       chat.send(`重新生成：${asset.prompt}`)
     }
     if (action === 'toVideo') {
-      chat.send(`把这张图片做成视频：${asset.prompt}`)
+      chat.send(`把资产 ${asset.id} 做成视频：${asset.prompt}`, [asset])
     }
   }, [canvas, chat])
 

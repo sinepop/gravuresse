@@ -1,20 +1,30 @@
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import react from '@vitejs/plugin-react'
-import { resolve, dirname } from 'path'
+import { resolve, dirname, relative } from 'path'
 import { fileURLToPath } from 'url'
 import { cpSync, existsSync, mkdirSync } from 'fs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
-function copyElectronFiles() {
+function copyElectronRuntimeFiles() {
   const srcDir = resolve(__dirname, 'electron')
   const destDir = resolve(__dirname, 'dist/main')
   if (!existsSync(destDir)) mkdirSync(destDir, { recursive: true })
-  cpSync(resolve(srcDir, 'config.js'), resolve(destDir, 'config.js'))
-  cpSync(resolve(srcDir, 'store.js'), resolve(destDir, 'store.js'))
-  const apiSrc = resolve(srcDir, 'api')
-  const apiDest = resolve(destDir, 'api')
-  cpSync(apiSrc, apiDest, { recursive: true })
+  cpSync(srcDir, destDir, {
+    recursive: true,
+    filter: (src) => {
+      const rel = relative(srcDir, src).replace(/\\/g, '/')
+      return rel !== 'main.js' && rel !== 'preload.js'
+    }
+  })
+}
+
+function copyBuildAssets() {
+  const iconSrc = resolve(__dirname, 'build/icon.png')
+  if (!existsSync(iconSrc)) return
+  const destDir = resolve(__dirname, 'dist/build')
+  if (!existsSync(destDir)) mkdirSync(destDir, { recursive: true })
+  cpSync(iconSrc, resolve(destDir, 'icon.png'))
 }
 
 export default defineConfig({
@@ -23,12 +33,15 @@ export default defineConfig({
       externalizeDepsPlugin(),
       {
         name: 'copy-electron-files',
-        closeBundle() { copyElectronFiles() }
+        closeBundle() {
+          copyElectronRuntimeFiles()
+          copyBuildAssets()
+        }
       }
     ],
     build: {
-      lib: {
-        entry: resolve(__dirname, 'electron/main.js')
+      rollupOptions: {
+        input: resolve(__dirname, 'electron/main.js')
       },
       outDir: 'dist/main'
     }
@@ -36,8 +49,8 @@ export default defineConfig({
   preload: {
     plugins: [externalizeDepsPlugin()],
     build: {
-      lib: {
-        entry: resolve(__dirname, 'electron/preload.js')
+      rollupOptions: {
+        input: resolve(__dirname, 'electron/preload.js')
       },
       outDir: 'dist/preload'
     }

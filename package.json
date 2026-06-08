@@ -5,12 +5,15 @@
   "author": "Gravuresse",
   "license": "MIT",
   "main": "dist/main/main.js",
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "scripts": {
-    "dev": "electron-vite dev",
-    "build": "electron-vite build",
-    "preview": "electron-vite preview",
-    "package": "electron-vite build && electron-builder --win",
-    "package:dir": "electron-vite build && electron-builder --win --dir"
+    "dev": "electron-vite dev --config electron.vite.config.mjs",
+    "build": "electron-vite build --config electron.vite.config.mjs",
+    "preview": "electron-vite preview --config electron.vite.config.mjs",
+    "package": "electron-vite build --config electron.vite.config.mjs && electron-builder --win",
+    "package:dir": "electron-vite build --config electron.vite.config.mjs && electron-builder --win dir --publish=never"
   },
   "dependencies": {
     "@electron-toolkit/utils": "^3.0.0",
@@ -22,9 +25,9 @@
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.4",
-    "electron": "^33.2.1",
-    "electron-builder": "^25.1.8",
-    "electron-vite": "^2.3.0",
-    "vite": "^5.4.11"
+    "electron": "^42.3.3",
+    "electron-builder": "^26.15.2",
+    "electron-vite": "^5.0.0",
+    "vite": "^7.3.5"
   }
 }

@@ -4,6 +4,7 @@ const path = require('path')
 
 const CONFIG_DIR = path.join(app.getPath('userData'), 'Gravuresse')
 const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json')
+const REDACTED_API_KEY = '********'
 
 const DEFAULT_CONFIG = {
   providers: {
@@ -88,6 +89,33 @@ function decryptApiKeys(cfg) {
   return result
 }
 
+function redactApiKeys(cfg) {
+  const result = JSON.parse(JSON.stringify(cfg))
+  for (const keyPath of API_KEY_PATHS) {
+    const val = getNestedValue(result, [...keyPath])
+    if (val && typeof val === 'string') {
+      setNestedValue(result, [...keyPath], REDACTED_API_KEY)
+    }
+  }
+  return result
+}
+
+function mergeRedactedApiKeys(nextCfg, currentCfg) {
+  const result = JSON.parse(JSON.stringify(nextCfg))
+  for (const keyPath of API_KEY_PATHS) {
+    const nextVal = getNestedValue(result, [...keyPath])
+    if (nextVal === REDACTED_API_KEY) {
+      const track = keyPath[1]
+      const nextProvider = result.providers?.[track] || {}
+      const currentProvider = currentCfg.providers?.[track] || {}
+      const sameEndpoint = ['id', 'baseUrl', 'protocol', 'format']
+        .every(key => (nextProvider[key] || '') === (currentProvider[key] || ''))
+      setNestedValue(result, [...keyPath], sameEndpoint ? (getNestedValue(currentCfg, [...keyPath]) || '') : '')
+    }
+  }
+  return result
+}
+
 function load() {
   ensureDir()
   try {
@@ -107,4 +135,4 @@ function save(cfg) {
   fs.renameSync(tmpFile, CONFIG_FILE)
 }
 
-module.exports = { load, save, DEFAULT_CONFIG }
+module.exports = { load, save, redactApiKeys, mergeRedactedApiKeys, REDACTED_API_KEY, DEFAULT_CONFIG }

@@ -7,9 +7,17 @@ export default function TitleBar({ onOpenSettings, lang }) {
   const [hoveredBtn, setHoveredBtn] = useState(null)
 
   useEffect(() => {
-    const handler = (_, val) => setIsMax(val)
-    window.electronAPI?.on?.('window-maximized', handler)
-    return () => window.electronAPI?.off?.('window-maximized', handler)
+    const handler = (val) => setIsMax(val)
+    const subscription = window.electronAPI?.on?.('window-maximized', handler)
+    return () => {
+      if (typeof subscription === 'function' && subscription.length === 0) {
+        subscription()
+      } else if (subscription && window.electronAPI?.off) {
+        window.electronAPI.off('window-maximized', subscription)
+      } else {
+        window.electronAPI?.off?.('window-maximized', handler)
+      }
+    }
   }, [])
 
   const winBtn = (fn, icon, id, isClose, ariaLabel) => {

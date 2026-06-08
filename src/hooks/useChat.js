@@ -6,18 +6,73 @@ import { t } from '../i18n'
 let _msgIdCounter = 0
 function nextId() { return Date.now() * 1000 + (++_msgIdCounter % 1000) }
 
-export default function useChat(config, canvas) {
+export default function useChat(config, canvas, onVideoTaskCreated, activeConversationId, isActiveConversation, conversationBridge) {
   const [messages, setMessages] = useState([])
   const [loading, setLoading] = useState(false)
   const [thinking, setThinking] = useState(false)
   const lastImageContext = useRef(null)
   const loadingRef = useRef(false)
+  const activeConversationIdRef = useRef(activeConversationId)
 
   // Keep ref in sync with state
   useEffect(() => { loadingRef.current = loading }, [loading])
+  useEffect(() => { activeConversationIdRef.current = activeConversationId }, [activeConversationId])
+
+  const canWriteToCurrentConversation = useCallback((conversationId) => {
+    return Boolean(conversationId && isActiveConversation?.(conversationId))
+  }, [isActiveConversation])
+
+  const canWriteToConversation = useCallback((conversationId) => {
+    return canWriteToCurrentConversation(conversationId) || Boolean(conversationBridge?.canWrite?.(conversationId))
+  }, [canWriteToCurrentConversation, conversationBridge])
+
+  const appendMessage = useCallback((conversationId, message) => {
+    if (canWriteToCurrentConversation(conversationId)) {
+      setMessages(prev => [...prev, message])
+      return true
+    }
+    return Boolean(conversationBridge?.appendMessage?.(conversationId, message))
+  }, [canWriteToCurrentConversation, conversationBridge])
+
+  const patchTask = useCallback((conversationId, msgId, taskIndex, patch) => {
+    const idx = taskIndex ?? 0
+    if (canWriteToCurrentConversation(conversationId)) {
+      setMessages(prev => prev.map(m => {
+        if (m.id !== msgId) return m
+        const tasks = [...(m.tasks || [m.task])]
+        tasks[idx] = { ...tasks[idx], ...patch }
+        return { ...m, tasks }
+      }))
+      return true
+    }
+    return Boolean(conversationBridge?.updateTask?.(conversationId, msgId, idx, patch))
+  }, [canWriteToCurrentConversation, conversationBridge])
+
+  const addAssetToConversation = useCallback((conversationId, asset) => {
+    if (canWriteToCurrentConversation(conversationId)) return canvas.addAsset(asset)
+    return conversationBridge?.addAsset?.(conversationId, asset) || null
+  }, [canvas, canWriteToCurrentConversation, conversationBridge])
+
+  const updateAssetInConversation = useCallback((conversationId, assetId, patch) => {
+    if (canWriteToCurrentConversation(conversationId)) {
+      canvas.updateAsset(assetId, patch)
+      return true
+    }
+    return Boolean(conversationBridge?.updateAsset?.(conversationId, assetId, patch))
+  }, [canvas, canWriteToCurrentConversation, conversationBridge])
+
+  const removeAssetFromConversation = useCallback((conversationId, assetId) => {
+    if (canWriteToCurrentConversation(conversationId)) {
+      canvas.removeAsset(assetId)
+      return true
+    }
+    return Boolean(conversationBridge?.removeAsset?.(conversationId, assetId))
+  }, [canvas, canWriteToCurrentConversation, conversationBridge])
 
   const send = useCallback(async (text, references, genSettings) => {
     if (!text.trim() || loadingRef.current) return
+    const originConversationId = activeConversationIdRef.current
+    if (!originConversationId) return
     const userMsg = { role: 'user', content: text, id: nextId() }
     setMessages(prev => [...prev, userMsg])
     setLoading(true)
@@ -26,7 +81,7 @@ export default function useChat(config, canvas) {
     const provider = config?.providers?.chat
     const lang = config?.general?.language || 'zh'
     if (!provider?.apiKey) {
-      setMessages(prev => [...prev, { role: 'assistant', content: t('configApiFirst', lang), id: nextId() }])
+      appendMessage(originConversationId, { role: 'assistant', content: t('configApiFirst', lang), id: nextId() })
       setLoading(false)
       loadingRef.current = false
       return
@@ -107,31 +162,24 @@ ${modifyHint}${refHint}${styleHint}
           tasks: tasksData,
           thinking: thinkingText || undefined,
         }
-        setMessages(prev => [...prev, replyMsg])
+        appendMessage(originConversationId, replyMsg)
       } else {
         replyText = parsed?.reply || replyText
         const replyMsg = { role: 'assistant', content: replyText, id: nextId(), model: result.model, thinking: thinkingText || undefined }
-        setMessages(prev => [...prev, replyMsg])
+        appendMessage(originConversationId, replyMsg)
       }
     } catch (err) {
-      setMessages(prev => [...prev, { role: 'assistant', content: `Error: ${err.message}`, id: nextId(), error: true }])
+      appendMessage(originConversationId, { role: 'assistant', content: `Error: ${err.message}`, id: nextId(), error: true })
     } finally {
       setLoading(false)
       loadingRef.current = false
     }
-  }, [config, messages, canvas])
+  }, [config, messages, canvas, appendMessage])
 
-  const doGenerate = useCallback(async (msgId, task, lang, placeholderId, taskIndex) => {
+  const doGenerate = useCallback(async (msgId, task, lang, placeholderId, taskIndex, originConversationId) => {
     const startTime = Date.now()
     const idx = taskIndex ?? 0
-    const updateTask = (patch) => {
-      setMessages(prev => prev.map(m => {
-        if (m.id !== msgId) return m
-        const tasks = [...(m.tasks || [m.task])]
-        tasks[idx] = { ...tasks[idx], ...patch }
-        return { ...m, tasks }
-      }))
-    }
+    const updateTask = (patch) => patchTask(originConversationId, msgId, idx, patch)
 
     if (task.type === 'image') {
       const imgProvider = config?.providers?.image
@@ -143,14 +191,18 @@ ${modifyHint}${refHint}${styleHint}
         ...imgProvider, protocol
       })
       const elapsed = Math.round((Date.now() - startTime) / 1000)
+      if (!canWriteToConversation(originConversationId)) return
+      let assetId = placeholderId
       if (placeholderId) {
-        canvas.updateAsset(placeholderId, { url, prompt: task.prompt, label: task.label, model: imgProvider.model, ratio: task.ratio, _generating: false })
-        lastImageContext.current = { prompt: task.prompt, ratio: task.ratio || '1:1', assetId: placeholderId }
+        updateAssetInConversation(originConversationId, placeholderId, { url, prompt: task.prompt, label: task.label, model: imgProvider.model, ratio: task.ratio, _generating: false })
       } else {
-        const asset = canvas.addAsset({ type: 'image', url, prompt: task.prompt, label: task.label, model: imgProvider.model, ratio: task.ratio })
-        lastImageContext.current = { prompt: task.prompt, ratio: task.ratio || '1:1', assetId: asset.id }
+        const asset = addAssetToConversation(originConversationId, { type: 'image', url, prompt: task.prompt, label: task.label, model: imgProvider.model, ratio: task.ratio })
+        assetId = asset?.id
       }
-      updateTask({ status: 'done', assetId: placeholderId, elapsed })
+      if (canWriteToCurrentConversation(originConversationId) && assetId) {
+        lastImageContext.current = { prompt: task.prompt, ratio: task.ratio || '1:1', assetId }
+      }
+      updateTask({ status: 'done', assetId, elapsed })
       if (config?.general?.autoSave !== false) {
         try { await window.electronAPI.saveAssetToDisk?.({ url, label: task.label, type: 'image' }) } catch {}
       }
@@ -159,16 +211,39 @@ ${modifyHint}${refHint}${styleHint}
       if (!vidProvider?.id || !vidProvider?.apiKey) throw new Error(t('configVideoApi', lang))
       const providerDef = VID_PROVIDERS.find(p => p.id === vidProvider.id)
       const protocol = vidProvider.protocol || providerDef?.protocol || 'ark_video_task'
-      await window.electronAPI.generateVideo({
+      const provider = { ...vidProvider, protocol }
+      const sourceAsset = task.source_image_id ? canvas.getAssetById(task.source_image_id) : null
+      const sourceImageUrl = task.sourceImageUrl || sourceAsset?.url || ''
+      const result = await window.electronAPI.generateVideo({
         prompt: task.prompt, ratio: task.ratio || '1:1', duration: task.duration || 5,
-        ...vidProvider, protocol
+        sourceImageUrl,
+        ...provider
+      })
+      if (!result?.taskId) throw new Error(result?.error || 'Video task was not created')
+      if (!canWriteToConversation(originConversationId)) return
+      const status = result.status === 'running' ? 'running' : 'queued'
+      const queuedTask = onVideoTaskCreated?.({
+        taskId: result.taskId,
+        prompt: task.prompt,
+        label: task.label,
+        provider,
+        autoSave: config?.general?.autoSave !== false,
+        onComplete: (result) => {
+          if (!canWriteToConversation(originConversationId)) return null
+          const asset = addAssetToConversation(originConversationId, { type: 'video', url: result.videoUrl, prompt: task.prompt, label: task.label, model: provider.model })
+          if (asset) updateTask({ status: 'done', assetId: asset.id })
+          return asset
+        },
+        onFail: (error) => updateTask({ status: 'error', error })
       })
       const elapsed = Math.round((Date.now() - startTime) / 1000)
-      updateTask({ status: 'done', elapsed })
+      updateTask({ status, taskId: result.taskId, queueId: queuedTask?.id, elapsed })
     }
-  }, [config, canvas])
+  }, [config, canvas, onVideoTaskCreated, canWriteToConversation, canWriteToCurrentConversation, addAssetToConversation, updateAssetInConversation, patchTask])
 
   const confirmGenerate = useCallback(async (msgId, task, taskIndex) => {
+    const originConversationId = activeConversationIdRef.current
+    if (!originConversationId) return
     const lang = config?.general?.language || 'zh'
     const idx = taskIndex ?? 0
     setMessages(prev => prev.map(m => {
@@ -177,22 +252,20 @@ ${modifyHint}${refHint}${styleHint}
       tasks[idx] = { ...tasks[idx], status: 'generating', startTime: Date.now() }
       return { ...m, tasks }
     }))
-    const placeholderId = canvas.addPlaceholder(task.label || '生成中...')
+    const placeholderId = task.type === 'image' ? canvas.addPlaceholder(task.label || '生成中...') : null
     try {
-      await doGenerate(msgId, task, lang, placeholderId, idx)
+      await doGenerate(msgId, task, lang, placeholderId, idx, originConversationId)
     } catch (e) {
       console.error('Generation failed:', e)
-      canvas.removeAsset(placeholderId)
-      setMessages(prev => prev.map(m => {
-        if (m.id !== msgId) return m
-        const tasks = [...(m.tasks || [m.task])]
-        tasks[idx] = { ...tasks[idx], status: 'error', error: e.message }
-        return { ...m, tasks }
-      }))
+      if (!canWriteToConversation(originConversationId)) return
+      if (placeholderId) removeAssetFromConversation(originConversationId, placeholderId)
+      patchTask(originConversationId, msgId, idx, { status: 'error', error: e.message })
     }
-  }, [config, doGenerate, canvas])
+  }, [config, doGenerate, canvas, canWriteToConversation, removeAssetFromConversation, patchTask])
 
   const batchGenerate = useCallback(async (msgId, task, count, taskIndex) => {
+    const originConversationId = activeConversationIdRef.current
+    if (!originConversationId) return
     const lang = config?.general?.language || 'zh'
     const idx = taskIndex ?? 0
     setMessages(prev => prev.map(m => {
@@ -213,7 +286,7 @@ ${modifyHint}${refHint}${styleHint}
     for (let i = 0; i < count; i++) {
       try {
         if (i === 0) {
-          await doGenerate(msgId, task, lang, placeholderIds[i], idx)
+          await doGenerate(msgId, task, lang, placeholderIds[i], idx, originConversationId)
         } else {
           const imgProvider = config?.providers?.image
           if (!imgProvider?.id || !imgProvider?.apiKey) throw new Error(t('configImageApi', lang))
@@ -223,18 +296,15 @@ ${modifyHint}${refHint}${styleHint}
             prompt: task.prompt, ratio: task.ratio || '1:1', resolution: task.resolution || '1024',
             ...imgProvider, protocol
           })
-          canvas.updateAsset(placeholderIds[i], { url, prompt: task.prompt, label: `${task.label} #${i + 1}`, model: imgProvider.model, ratio: task.ratio, _generating: false })
+          if (!canWriteToConversation(originConversationId)) return
+          updateAssetInConversation(originConversationId, placeholderIds[i], { url, prompt: task.prompt, label: `${task.label} #${i + 1}`, model: imgProvider.model, ratio: task.ratio, _generating: false })
           if (config?.general?.autoSave !== false) {
             try { await window.electronAPI.saveAssetToDisk?.({ url, label: `${task.label}_${i + 1}`, type: 'image' }) } catch {}
           }
         }
         done++
-        setMessages(prev => prev.map(m => {
-          if (m.id !== msgId) return m
-          const tasks = [...(m.tasks || [m.task])]
-          tasks[idx] = { ...tasks[idx], batchDone: done }
-          return { ...m, tasks }
-        }))
+        if (!canWriteToConversation(originConversationId)) return
+        patchTask(originConversationId, msgId, idx, { batchDone: done })
       } catch (e) {
         console.error(`Batch item ${i + 1} failed:`, e)
         hasFailure = true
@@ -242,14 +312,10 @@ ${modifyHint}${refHint}${styleHint}
       }
     }
 
-    failedIds.forEach(id => canvas.removeAsset(id))
-    setMessages(prev => prev.map(m => {
-      if (m.id !== msgId) return m
-      const tasks = [...(m.tasks || [m.task])]
-      tasks[idx] = { ...tasks[idx], status: done > 0 && !hasFailure ? 'done' : done > 0 ? 'partial' : 'error', batchDone: done, error: done === 0 ? 'All batch items failed' : hasFailure ? `${count - done} of ${count} failed` : undefined }
-      return { ...m, tasks }
-    }))
-  }, [config, canvas, doGenerate])
+    if (!canWriteToConversation(originConversationId)) return
+    failedIds.forEach(id => removeAssetFromConversation(originConversationId, id))
+    patchTask(originConversationId, msgId, idx, { status: done > 0 && !hasFailure ? 'done' : done > 0 ? 'partial' : 'error', batchDone: done, error: done === 0 ? 'All batch items failed' : hasFailure ? `${count - done} of ${count} failed` : undefined })
+  }, [config, canvas, doGenerate, canWriteToConversation, updateAssetInConversation, removeAssetFromConversation, patchTask])
 
   const setMessagesDirectly = useCallback((fn) => {
     setMessages(fn)

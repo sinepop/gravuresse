@@ -1,7 +1,6 @@
-const { request } = require('./http')
+const { request, joinApiUrl } = require('./http')
 
 async function callClaude(messages, provider) {
-  const base = (provider.baseUrl || 'https://api.anthropic.com').replace(/\/$/, '')
   const payload = {
     model: provider.model || 'claude-sonnet-4-6',
     max_tokens: 16000,
@@ -12,7 +11,7 @@ async function callClaude(messages, provider) {
     payload.thinking = { type: 'enabled', budget_tokens: 10000 }
     payload.max_tokens = 16000
   }
-  const url = new URL(`${base}/v1/messages`)
+  const url = joinApiUrl(provider.baseUrl || 'https://api.anthropic.com', '/v1/messages')
   const res = await request(url, {
     method: 'POST',
     headers: {
@@ -29,7 +28,6 @@ async function callClaude(messages, provider) {
 }
 
 async function callOpenAI(messages, provider) {
-  const base = (provider.baseUrl || 'https://api.openai.com').replace(/\/$/, '')
   const body = {
     model: provider.model || 'gpt-5.1',
     messages: [
@@ -38,7 +36,7 @@ async function callOpenAI(messages, provider) {
     ],
     max_tokens: 4096
   }
-  const url = new URL(`${base}/v1/chat/completions`)
+  const url = joinApiUrl(provider.baseUrl || 'https://api.openai.com', '/v1/chat/completions')
   const res = await request(url, {
     method: 'POST',
     headers: {
@@ -53,7 +51,6 @@ async function callOpenAI(messages, provider) {
 }
 
 async function callGemini(messages, provider) {
-  const base = (provider.baseUrl || 'https://generativelanguage.googleapis.com').replace(/\/$/, '')
   const contents = (messages.history || []).map(m => ({
     role: m.role === 'assistant' ? 'model' : 'user',
     parts: [{ text: m.content }]
@@ -63,7 +60,7 @@ async function callGemini(messages, provider) {
     systemInstruction: { parts: [{ text: messages.system || 'You are Gravuresse.' }] }
   }
   const model = provider.model || 'gemini-2.5-pro'
-  const url = new URL(`${base}/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(provider.apiKey)}`)
+  const url = joinApiUrl(provider.baseUrl || 'https://generativelanguage.googleapis.com', `/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(provider.apiKey)}`)
   const res = await request(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' }

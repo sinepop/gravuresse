@@ -32,7 +32,7 @@ const filterBtnStyle = (active) => ({
 const MIN_SCALE = 0.1
 const MAX_SCALE = 5
 
-function InfiniteCanvas({ children, assets }) {
+function InfiniteCanvas({ children, assets, activeTool }) {
   const [scale, setScale] = useState(1)
   const [offset, setOffset] = useState({ x: 0, y: 0 })
   const [isPanning, setIsPanning] = useState(false)
@@ -41,6 +41,7 @@ function InfiniteCanvas({ children, assets }) {
   const offsetRef = useRef({ x: 0, y: 0 })
   const panStart = useRef({ x: 0, y: 0 })
   const offsetStart = useRef({ x: 0, y: 0 })
+  const spacePressed = useRef(false)
 
   const clampScale = (s) => Math.min(Math.max(s, MIN_SCALE), MAX_SCALE)
 
@@ -78,7 +79,8 @@ function InfiniteCanvas({ children, assets }) {
       if (e.button !== 0) return
       const tag = e.target.tagName
       if (tag === 'BUTTON' || tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return
-      if (e.target.closest('button')) return
+      if (e.target.closest('button') || e.target.closest('[data-asset-card]')) return
+      if (activeTool !== 'move' && !spacePressed.current) return
       e.preventDefault()
       setIsPanning(true)
       panStart.current = { x: e.clientX, y: e.clientY }
@@ -86,6 +88,21 @@ function InfiniteCanvas({ children, assets }) {
     }
     el.addEventListener('mousedown', onMouseDown)
     return () => el.removeEventListener('mousedown', onMouseDown)
+  }, [activeTool])
+
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (e.code === 'Space') spacePressed.current = true
+    }
+    const onKeyUp = (e) => {
+      if (e.code === 'Space') spacePressed.current = false
+    }
+    window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('keyup', onKeyUp)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('keyup', onKeyUp)
+    }
   }, [])
 
   useEffect(() => {
@@ -153,7 +170,7 @@ function InfiniteCanvas({ children, assets }) {
   return (
     <div ref={containerRef} style={{
       flex: 1, overflow: 'hidden', position: 'relative',
-      cursor: isPanning ? 'grabbing' : 'grab',
+      cursor: isPanning ? 'grabbing' : activeTool === 'move' ? 'grab' : 'default',
       background: 'var(--bg-primary)',
       backgroundImage: 'radial-gradient(circle, var(--border-subtle) 1px, transparent 1px)',
       backgroundSize: `${20 * scale}px ${20 * scale}px`,
@@ -200,7 +217,7 @@ function InfiniteCanvas({ children, assets }) {
           border: '1px solid var(--border-subtle)', opacity: 0.7
         }}>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M5 9l4-4 4 4M5 15l4 4 4-4"/><path d="M15 5l4 4-4 4M9 15l-4 4 4 4"/></svg>
-          滚轮缩放 · 拖拽平移
+          Wheel zoom / H or Space pan
         </div>
       )}
     </div>
@@ -219,6 +236,7 @@ function DrawingOverlay({ tool, color, width: strokeWidth }) {
   const drawing = useRef(false)
   const start = useRef({ x: 0, y: 0 })
   const snapshot = useRef(null)
+  const [spacePan, setSpacePan] = useState(false)
 
   useEffect(() => {
     const c = canvasRef.current
@@ -234,6 +252,17 @@ function DrawingOverlay({ tool, color, width: strokeWidth }) {
     return () => obs.disconnect()
   }, [])
 
+  useEffect(() => {
+    const onKeyDown = (e) => { if (e.code === 'Space') setSpacePan(true) }
+    const onKeyUp = (e) => { if (e.code === 'Space') setSpacePan(false) }
+    window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('keyup', onKeyUp)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('keyup', onKeyUp)
+    }
+  }, [])
+
   const getPos = (e) => {
     const c = canvasRef.current
     const rect = c.getBoundingClientRect()
@@ -242,6 +271,7 @@ function DrawingOverlay({ tool, color, width: strokeWidth }) {
 
   const onMouseDown = (e) => {
     if (tool === 'select' || tool === 'move') return
+    if (spacePan) return
     if (e.button !== 0) return
     drawing.current = true
     const pos = getPos(e)
@@ -309,8 +339,8 @@ function DrawingOverlay({ tool, color, width: strokeWidth }) {
   return (
     <canvas ref={canvasRef} style={{
       position: 'absolute', inset: 0, zIndex: 5,
-      pointerEvents: isDrawingTool ? 'auto' : 'none',
-      cursor: isDrawingTool ? 'crosshair' : 'default'
+      pointerEvents: isDrawingTool && !spacePan ? 'auto' : 'none',
+      cursor: isDrawingTool && !spacePan ? 'crosshair' : 'default'
     }} onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp} onMouseLeave={onMouseUp} />
   )
 }
@@ -326,6 +356,20 @@ function ToolIcon({ id, size = 16 }) {
 function EditBar({ activeTool, setActiveTool, drawColor, setDrawColor, drawWidth, setDrawWidth }) {
   const [hoveredTool, setHoveredTool] = useState(null)
   const isDrawingTool = !['select', 'move'].includes(activeTool)
+  const toolByKey = useRef(new Map(TOOL_GROUPS.flatMap(group => group.tools.map(tool => [tool.key.toLowerCase(), tool.id]))))
+
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      const tag = e.target?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.target?.isContentEditable) return
+      const toolId = toolByKey.current.get(e.key.toLowerCase())
+      if (!toolId) return
+      e.preventDefault()
+      setActiveTool(toolId)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [setActiveTool])
 
   return (
     <div data-toolbar="true" onMouseDown={e => e.stopPropagation()} style={{
@@ -491,7 +535,7 @@ export default function CanvasPanel({ canvas, lang, onContextMenu }) {
                 gap: 14
               }}>
                 {assets.map(a => (
-                  <div key={a.id} style={{ position: 'relative' }}>
+                  <div key={a.id} data-asset-card="true" style={{ position: 'relative' }}>
                     <GeneratingOverlay asset={a} />
                     <AssetCard asset={a} selected={a.id === selectedId} onClick={setSelectedId}
                       onContextMenu={(e, asset) => onContextMenu?.(e, asset)} />
@@ -502,7 +546,7 @@ export default function CanvasPanel({ canvas, lang, onContextMenu }) {
           ) : (
             /* Free mode: infinite canvas with free positioning */
             <>
-              <InfiniteCanvas assets={assets}>
+              <InfiniteCanvas assets={assets} activeTool={activeTool}>
                 <div style={{ position: 'relative', minWidth: 2000, minHeight: 1500 }}>
                   {assets.map((a, i) => {
                     const col = i % 4
@@ -510,7 +554,7 @@ export default function CanvasPanel({ canvas, lang, onContextMenu }) {
                     const x = 30 + col * 280
                     const y = 30 + row * 280
                     return (
-                      <div key={a.id} style={{
+                      <div key={a.id} data-asset-card="true" style={{
                         position: 'absolute', left: x, top: y, width: 240
                       }}>
                         <GeneratingOverlay asset={a} />

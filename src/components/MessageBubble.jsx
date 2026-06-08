@@ -26,6 +26,7 @@ function TaskCard({ task, onConfirm, onBatchGenerate, lang }) {
   const [showBatch, setShowBatch] = useState(false)
   const isPending = task.status === 'pending'
   const isGenerating = task.status === 'generating'
+  const isQueued = task.status === 'queued' || task.status === 'running'
   const isDone = task.status === 'done'
   const isError = task.status === 'error'
 
@@ -48,6 +49,7 @@ function TaskCard({ task, onConfirm, onBatchGenerate, lang }) {
           </span>
         )}
         {isError && <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--danger)' }}>{lang === 'en' ? 'Failed' : '失败'}</span>}
+        {isQueued && <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--accent)' }}>{lang === 'en' ? 'Queued' : 'Queued'}</span>}
       </div>
       <div style={{
         fontSize: 11, lineHeight: 1.6, color: 'var(--text-secondary)',
@@ -111,6 +113,13 @@ function TaskCard({ task, onConfirm, onBatchGenerate, lang }) {
           {task.batchTotal > 1 && <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 4 }}>({task.batchDone || 0}/{task.batchTotal})</span>}
         </div>
       )}
+      {isQueued && (
+        <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--accent)' }}>
+          <div style={{ width: 14, height: 14, border: '2px solid var(--border-accent)', borderTopColor: 'var(--accent)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+          {lang === 'en' ? 'Polling video task...' : 'Polling video task...'}
+          <ElapsedTimer startTime={task.startTime} />
+        </div>
+      )}
     </div>
   )
 }
@@ -118,6 +127,13 @@ function TaskCard({ task, onConfirm, onBatchGenerate, lang }) {
 export default function MessageBubble({ msg, onConfirmTask, onBatchGenerate, lang }) {
   const isUser = msg.role === 'user'
   const [showThinking, setShowThinking] = useState(false)
+
+  const openMarkdownLink = (e, href) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (!href) return
+    window.electronAPI?.openExternal?.(href).catch?.(() => {})
+  }
 
   // Support both msg.tasks (new) and msg.task (legacy)
   const tasks = msg.tasks || (msg.task ? [msg.task] : [])
@@ -173,6 +189,11 @@ export default function MessageBubble({ msg, onConfirmTask, onBatchGenerate, lan
               className
                 ? <pre style={{ background: 'var(--bg-primary)', padding: 8, borderRadius: 4, overflow: 'auto', fontSize: 11, fontFamily: 'var(--font-mono)' }}><code>{children}</code></pre>
                 : <code style={{ background: 'var(--bg-primary)', padding: '1px 5px', borderRadius: 3, fontSize: 12 }}>{children}</code>
+            ),
+            a: ({ children, href }) => (
+              <a href={href} onClick={(e) => openMarkdownLink(e, href)} style={{ color: 'var(--accent)', textDecoration: 'underline' }}>
+                {children}
+              </a>
             )
           }}>{msg.content}</ReactMarkdown>
           </>

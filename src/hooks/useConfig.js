@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { CHAT_PROVIDERS } from '../providers/chatProviders'
 import { IMG_PROVIDERS } from '../providers/imageProviders'
 import { VID_PROVIDERS } from '../providers/videoProviders'
@@ -26,30 +26,39 @@ function migrateConfig(cfg) {
 
 export default function useConfig() {
   const [config, setConfig] = useState(null)
+  const configRef = useRef(null)
 
   useEffect(() => {
-    window.electronAPI?.getConfig().then(c => { if (c) setConfig(migrateConfig(c)) })
+    window.electronAPI?.getConfig().then(c => {
+      if (!c) return
+      const migrated = migrateConfig(c)
+      configRef.current = migrated
+      setConfig(migrated)
+    })
   }, [])
 
   const save = useCallback(async (newCfg) => {
+    configRef.current = newCfg
     setConfig(newCfg)
     await window.electronAPI?.saveConfig(newCfg)
   }, [])
 
   const updateProvider = useCallback((track, patch) => {
-    if (!config) return
+    const current = configRef.current
+    if (!current) return
     const next = {
-      ...config,
-      providers: { ...config.providers, [track]: { ...config.providers[track], ...patch } }
+      ...current,
+      providers: { ...current.providers, [track]: { ...current.providers[track], ...patch } }
     }
     save(next)
-  }, [config, save])
+  }, [save])
 
   const updateGeneral = useCallback((patch) => {
-    if (!config) return
-    const next = { ...config, general: { ...config.general, ...patch } }
+    const current = configRef.current
+    if (!current) return
+    const next = { ...current, general: { ...current.general, ...patch } }
     save(next)
-  }, [config, save])
+  }, [save])
 
   return { config, save, updateProvider, updateGeneral }
 }

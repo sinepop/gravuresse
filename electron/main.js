@@ -1,8 +1,7 @@
 const { app, BrowserWindow, ipcMain, dialog, shell, session } = require('electron')
 const path = require('path')
 const fs = require('fs')
-const https = require('https')
-const http = require('http')
+const { fileURLToPath } = require('url')
 const { electronApp, optimizer, is } = require('@electron-toolkit/utils')
 const config = require('./config')
 const store = require('./store')
@@ -10,53 +9,122 @@ const chatApi = require('./api/chat')
 const imageApi = require('./api/image')
 const videoApi = require('./api/video')
 const modelsApi = require('./api/models')
+const { assertHttpsUrl, downloadToFile } = require('./api/http')
 
 let mainWindow = null
 let crashCount = 0
 
 const SAVE_DIR = path.join(app.getPath('pictures'), 'Gravuresse')
 
-// ── URL 安全校验 ──
-function assertHttpsUrl(urlStr) {
-  let parsed
-  try { parsed = new URL(urlStr) } catch { throw new Error('Invalid URL') }
-  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
-    throw new Error('Only http/https URLs are allowed')
+function getStoredProvider(track) {
+  return config.load().providers?.[track] || {}
+}
+
+function getApiRequest(track, params = {}) {
+  return { ...params, ...getStoredProvider(track) }
+}
+
+function sameProviderEndpoint(a = {}, b = {}) {
+  return ['id', 'baseUrl', 'protocol', 'format'].every(key => (a[key] || '') === (b[key] || ''))
+}
+
+function sameProviderHost(a = {}, b = {}) {
+  return ['id', 'baseUrl', 'format'].every(key => (a[key] || '') === (b[key] || ''))
+}
+
+function getModelFetchProvider(provider = {}) {
+  const track = inferProviderTrack(provider)
+  const stored = getStoredProvider(track)
+  if (provider.apiKey && provider.apiKey !== config.REDACTED_API_KEY) return provider
+  if (sameProviderEndpoint(provider, stored)) return stored
+  return { ...provider, apiKey: '' }
+}
+
+function getVideoPollProvider(provider = {}) {
+  const stored = getStoredProvider('video')
+  if (!provider || Object.keys(provider).length === 0) return stored
+  if (provider.apiKey && provider.apiKey !== config.REDACTED_API_KEY) return provider
+  if (sameProviderHost(provider, stored)) return { ...provider, apiKey: stored.apiKey || '' }
+  return { ...provider, apiKey: '' }
+}
+
+function inferProviderTrack(provider = {}) {
+  if (provider.track) return provider.track
+  if (['runway_task', 'happyhorse_task'].includes(provider.protocol) || provider.protocol?.includes('video') || provider.id?.includes('vid')) return 'video'
+  if (['dalle', 'gemini_img', 'jimeng_img'].includes(provider.id) || provider.protocol?.includes('image') || provider.id?.includes('img')) return 'image'
+  return 'chat'
+}
+
+function normalizeAssetLabel(label) {
+  return (label || 'asset').replace(/[<>:"/\\|?*]/g, '_').slice(0, 60) || 'asset'
+}
+
+function tempFileFor(filePath) {
+  return `${filePath}.tmp-${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
+function writeDataUrl(url, filePath, type) {
+  const match = /^data:([\w.+-]+\/[\w.+-]+)?;base64,([a-z0-9+/=\s]+)$/i.exec(url || '')
+  if (!match) throw new Error('Invalid data URL')
+  const mime = (match[1] || '').toLowerCase()
+  const allowed = type === 'video'
+    ? new Set(['video/mp4'])
+    : new Set(['image/png', 'image/jpeg', 'image/webp'])
+  if (!allowed.has(mime)) throw new Error('Unsupported asset data type')
+
+  const base64 = match[2].replace(/\s/g, '')
+  if (base64.length > Math.ceil(100 * 1024 * 1024 * 4 / 3) + 4) {
+    throw new Error('Asset data is too large')
   }
-  return parsed
+  const bytes = Buffer.from(base64, 'base64')
+  if (bytes.length > 100 * 1024 * 1024) throw new Error('Asset data is too large')
+  const tmpFile = tempFileFor(filePath)
+  try {
+    fs.writeFileSync(tmpFile, bytes)
+    fs.renameSync(tmpFile, filePath)
+  } catch (e) {
+    try { fs.unlinkSync(tmpFile) } catch {}
+    throw e
+  }
 }
 
-// ── 通用 HTTP 下载 ──
-function downloadToFile(url, filePath, depth = 0) {
-  if (depth > 5) return Promise.reject(new Error('Too many redirects'))
-  return new Promise((resolve, reject) => {
-    const handler = (res) => {
-      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-        // 支持相对路径 redirect
-        const nextUrl = new URL(res.headers.location, url).href
-        const parsed = assertHttpsUrl(nextUrl)
-        // 阻止 HTTPS→HTTP 降级
-        if (url.startsWith('https') && parsed.protocol === 'http:') {
-          return reject(new Error('HTTPS→HTTP downgrade blocked'))
-        }
-        return downloadToFile(nextUrl, filePath, depth + 1).then(resolve, reject)
-      }
-      if (res.statusCode !== 200) {
-        return reject(new Error(`HTTP ${res.statusCode}`))
-      }
-      const file = fs.createWriteStream(filePath)
-      res.pipe(file)
-      file.on('finish', () => { file.close(); resolve() })
-      file.on('error', (e) => { fs.unlink(filePath, () => {}); reject(e) })
-    }
-    const mod = url.startsWith('https') ? https : http
-    mod.get(url, handler).on('error', (e) => { fs.unlink(filePath, () => {}); reject(e) })
-  })
+async function writeAssetUrl(url, filePath, type) {
+  if (url.startsWith('data:')) {
+    writeDataUrl(url, filePath, type)
+    return
+  }
+  assertHttpsUrl(url)
+  await downloadToFile(url, filePath)
 }
 
-// ── IPC Handlers（模块级注册，避免重复注册崩溃）──
+function enforceAssetExtension(filePath, type) {
+  const expected = type === 'video' ? '.mp4' : '.png'
+  return path.extname(filePath).toLowerCase() === expected ? filePath : `${filePath}${expected}`
+}
 
-// Window controls — 需要 mainWindow 引用，延迟绑定在 createWindow 内
+function openExternalSafe(url) {
+  const parsed = assertHttpsUrl(url)
+  return shell.openExternal(parsed.href)
+}
+
+function isAppUrl(url) {
+  let parsed
+  try { parsed = new URL(url) } catch { return false }
+
+  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+    return parsed.origin === new URL(process.env['ELECTRON_RENDERER_URL']).origin
+  }
+
+  if (parsed.protocol !== 'file:') return false
+  try {
+    const target = path.resolve(fileURLToPath(parsed))
+    const rendererDir = path.resolve(__dirname, '../renderer')
+    return target === rendererDir || target.startsWith(rendererDir + path.sep)
+  } catch {
+    return false
+  }
+}
+
 function registerWindowHandlers() {
   ipcMain.on('window-minimize', () => mainWindow?.minimize())
   ipcMain.on('window-maximize', () => {
@@ -67,19 +135,16 @@ function registerWindowHandlers() {
   ipcMain.handle('window-is-maximized', () => mainWindow?.isMaximized() ?? false)
 }
 
-// Config IPC
-ipcMain.handle('config:get', () => config.load())
+ipcMain.handle('config:get', () => config.redactApiKeys(config.load()))
 ipcMain.handle('config:save', (_, cfg) => {
-  // Schema 校验：只允许写入已知顶层 key
   const allowedKeys = Object.keys(config.DEFAULT_CONFIG)
   const filtered = {}
   for (const key of allowedKeys) {
     if (key in cfg) filtered[key] = cfg[key]
   }
-  config.save(filtered)
+  config.save(config.mergeRedactedApiKeys(filtered, config.load()))
 })
 
-// History / Conversation IPC
 ipcMain.handle('history:get', () => store.loadAll())
 ipcMain.handle('history:save', (_, records) => store.saveAllQueued(records))
 ipcMain.handle('conv:loadAll', () => store.loadAll())
@@ -87,64 +152,40 @@ ipcMain.handle('conv:save', (_, id, data) => store.saveConversation(id, data))
 ipcMain.handle('conv:delete', (_, id) => store.deleteConversation(id))
 ipcMain.handle('conv:setActive', (_, id) => store.setActiveId(id))
 
-// API IPC
-ipcMain.handle('api:chat', (_, messages, provider) => chatApi.call(messages, provider))
-ipcMain.handle('api:image', (_, params) => imageApi.generate(params))
-ipcMain.handle('api:video', (_, params) => videoApi.submit(params))
-ipcMain.handle('api:video:poll', (_, taskId, provider) => videoApi.poll(taskId, provider))
-ipcMain.handle('api:models', (_, provider) => modelsApi.fetch(provider))
+ipcMain.handle('api:chat', (_, messages) => chatApi.call(messages, getStoredProvider('chat')))
+ipcMain.handle('api:image', (_, params) => imageApi.generate(getApiRequest('image', params)))
+ipcMain.handle('api:video', (_, params) => videoApi.submit(getApiRequest('video', params)))
+ipcMain.handle('api:video:poll', (_, taskId, provider) => videoApi.poll(taskId, getVideoPollProvider(provider)))
+ipcMain.handle('api:models', (_, provider) => modelsApi.fetch(getModelFetchProvider(provider)))
 
-// Asset 保存到默认目录（安全：路径由主进程生成）
 ipcMain.handle('api:saveAsset', async (_, { url, label, type }) => {
   if (!fs.existsSync(SAVE_DIR)) fs.mkdirSync(SAVE_DIR, { recursive: true })
   const ext = type === 'video' ? '.mp4' : '.png'
-  const safeName = (label || 'asset').replace(/[<>:"/\\|?*]/g, '_').slice(0, 60)
-  const filePath = path.join(SAVE_DIR, `${safeName}_${Date.now()}${ext}`)
-  if (url.startsWith('data:')) {
-    const base64 = url.split(',')[1]
-    fs.writeFileSync(filePath, Buffer.from(base64, 'base64'))
-  } else {
-    assertHttpsUrl(url)
-    await downloadToFile(url, filePath)
-  }
+  const filePath = path.join(SAVE_DIR, `${normalizeAssetLabel(label)}_${Date.now()}${ext}`)
+  await writeAssetUrl(url, filePath, type)
   return filePath
 })
 
 ipcMain.handle('api:getSaveDir', () => SAVE_DIR)
 
-// Asset 保存到用户指定路径（来自 dialog:save，需校验路径合法性）
-ipcMain.handle('api:saveAssetToPath', async (_, { url, filePath }) => {
-  // 路径安全：必须是绝对路径，不允许 .. 遍历
-  const resolved = path.resolve(filePath)
-  if (!path.isAbsolute(resolved) || resolved.includes('\0')) {
-    throw new Error('Invalid file path')
-  }
-  if (url.startsWith('data:')) {
-    const base64 = url.split(',')[1]
-    fs.writeFileSync(resolved, Buffer.from(base64, 'base64'))
-  } else {
-    assertHttpsUrl(url)
-    await downloadToFile(url, resolved)
-  }
-  return resolved
+ipcMain.handle('api:saveAssetWithDialog', async (_, { url, label, type }) => {
+  const ext = type === 'video' ? 'mp4' : 'png'
+  const result = await dialog.showSaveDialog(mainWindow, {
+    defaultPath: `${normalizeAssetLabel(label)}.${ext}`,
+    filters: [{ name: ext.toUpperCase(), extensions: [ext] }]
+  })
+  if (result.canceled || !result.filePath) return { canceled: true }
+  const resolved = path.resolve(enforceAssetExtension(result.filePath, type))
+  await writeAssetUrl(url, resolved, type)
+  return { canceled: false, filePath: resolved }
 })
 
-// Dialog IPC
-ipcMain.handle('dialog:save', (_, opts) => dialog.showSaveDialog(mainWindow, opts))
-ipcMain.handle('dialog:open', (_, opts) => dialog.showOpenDialog(mainWindow, opts))
-
-// Shell openExternal — 只允许 http/https 协议
-ipcMain.handle('shell:open-external', (_, url) => {
-  const parsed = assertHttpsUrl(url)
-  return shell.openExternal(parsed.href)
-})
-
-// ── 窗口创建 ──
+ipcMain.handle('shell:open-external', (_, url) => openExternalSafe(url))
 
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1400, height: 900, minWidth: 1000, minHeight: 600,
-    show: false, // ready-to-show 模式
+    show: false,
     frame: false, titleBarStyle: 'hidden', backgroundColor: '#1A1A1E',
     icon: path.join(__dirname, '../build/icon.png'),
     webPreferences: {
@@ -153,21 +194,32 @@ function createWindow() {
     }
   })
 
-  // CSP 设置
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    const devCsp = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data: blob:; media-src 'self' https: data: blob:; connect-src 'self' https: ws:; font-src 'self' data:"
+    const prodCsp = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data: blob:; media-src 'self' https: data: blob:; connect-src 'self' https:; font-src 'self' data:"
     callback({
       responseHeaders: {
         ...details.responseHeaders,
-        'Content-Security-Policy': [
-          is.dev
-            ? "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data: blob:; connect-src 'self' https: ws:; font-src 'self' data:"
-            : "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data: blob:; connect-src 'self' https:; font-src 'self' data:"
-        ]
+        'Content-Security-Policy': [is.dev ? devCsp : prodCsp]
       }
     })
   })
 
-  // ready-to-show
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (isAppUrl(url)) return
+    event.preventDefault()
+    Promise.resolve()
+      .then(() => openExternalSafe(url))
+      .catch(err => console.warn('Blocked navigation:', err.message))
+  })
+
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    Promise.resolve()
+      .then(() => openExternalSafe(url))
+      .catch(err => console.warn('Blocked window open:', err.message))
+    return { action: 'deny' }
+  })
+
   mainWindow.once('ready-to-show', () => mainWindow.show())
 
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
@@ -176,11 +228,9 @@ function createWindow() {
     mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'))
   }
 
-  // Maximize state sync
   mainWindow.on('maximize', () => mainWindow.webContents.send('window-maximized', true))
   mainWindow.on('unmaximize', () => mainWindow.webContents.send('window-maximized', false))
 
-  // Renderer 崩溃恢复（退避 + 最多重启 3 次）
   mainWindow.webContents.on('render-process-gone', (_, details) => {
     console.error('Renderer process gone:', details.reason)
     crashCount++
@@ -223,8 +273,6 @@ function createWindow() {
   return mainWindow
 }
 
-// ── 应用生命周期 ──
-
 registerWindowHandlers()
 
 app.whenReady().then(() => {
@@ -240,6 +288,4 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
 
-app.on('will-quit', () => {
-  // 退出前确保数据已写入（如有待处理的异步写入可在此 flush）
-})
+app.on('will-quit', () => {})

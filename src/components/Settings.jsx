@@ -21,6 +21,7 @@ const NAV_SECTIONS = [
 const ASPECT_RATIOS = ['1:1', '4:3', '3:4', '16:9', '9:16', '3:2']
 const STYLE_PRESETS = ['扁平插画', '3D 渲染', '写实摄影', '水彩画', '动漫风', '像素艺术', '油画', '极简主义', '赛博朋克', '剪纸']
 const DURATIONS = ['5s', '8s', '10s']
+const REDACTED_API_KEY = '********'
 
 /* ── reusable styles (all CSS variables) ── */
 const labelS = () => ({ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13, color: 'var(--text-secondary)', fontFamily: 'var(--font-body)', fontWeight: 400, letterSpacing: '0.2px' })
@@ -32,6 +33,8 @@ const btnS = (primary) => ({ padding: '8px 22px', background: primary ? 'linear-
 function ProviderTab({ track, providers, config, onChange, lang }) {
   const current = config?.providers?.[track] || {}
   const provider = providers.find(p => p.id === current.id)
+  const apiKeyRedacted = current.apiKey === REDACTED_API_KEY
+  const apiKeyValue = apiKeyRedacted ? '' : current.apiKey || ''
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState(null)
   const [models, setModels] = useState([])
@@ -92,7 +95,7 @@ function ProviderTab({ track, providers, config, onChange, lang }) {
       </label>
       <label style={labelS()}>
         {t('apiKey', lang)}
-        <input type="password" value={current.apiKey || ''} placeholder="sk-..." onChange={e => onChange(track, { apiKey: e.target.value })} style={inputS()} />
+        <input type="password" value={apiKeyValue} placeholder={apiKeyRedacted ? (lang === 'en' ? 'Configured' : '已配置') : 'sk-...'} onChange={e => onChange(track, { apiKey: e.target.value })} style={inputS()} />
       </label>
       <label style={labelS()}>
         {t('baseUrl', lang)} <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>({t('optional', lang)})</span>

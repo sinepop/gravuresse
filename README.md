@@ -10,7 +10,7 @@
 
 作为一名设计专业的在读研究生，常与设计工具打交道。随着 AI 工具的兴起和迅猛发展，我将目光转到 AI 工具上。经过一段时间的摸索，发现了几个问题：
 
-1. **AI 模型迭代太快** — 各家模型能力不同，今天刚熟悉一个工具，过几天又听说另一个更好用，来回尝试耗费太多财力、人力和时间。
+1. **AI 模型迭代太快** — 各家模型能力不同，刚熟悉一个工具，又听说另一个更好用，来回尝试耗费太多财力、人力和时间。
 2. **提示词使用不当** — 虽然提示词概念已经兴起很久，但大多数同学（包括我自己）有时还是会下意识地直接说一段话让 AI 生图或改图，导致 AI 无法准确理解意图，生成一堆不尽人意的内容。
 3. **费用门槛** — 好用的设计 AI 费用偏高，作为普通学生难以长期支撑，所以需要另寻他法。
 
@@ -47,6 +47,14 @@
 npm install
 npm run dev
 npm run build
+npm run package
+```
+
+Windows 打包如果遇到 Electron / NSIS 下载超时，可临时设置镜像后重试：
+
+```powershell
+$env:ELECTRON_MIRROR='https://npmmirror.com/mirrors/electron/'
+$env:ELECTRON_BUILDER_BINARIES_MIRROR='https://npmmirror.com/mirrors/electron-builder-binaries/'
 npm run package
 ```
 
@@ -107,6 +115,14 @@ Driven by a research mindset and sheer persistence, I dug through tons of resour
 npm install
 npm run dev
 npm run build
+npm run package
+```
+
+If Windows packaging times out while downloading Electron or NSIS assets, retry with mirrors:
+
+```powershell
+$env:ELECTRON_MIRROR='https://npmmirror.com/mirrors/electron/'
+$env:ELECTRON_BUILDER_BINARIES_MIRROR='https://npmmirror.com/mirrors/electron-builder-binaries/'
 npm run package
 ```
 

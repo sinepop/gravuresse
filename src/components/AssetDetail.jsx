@@ -129,6 +129,13 @@ const zoomBtnStyle = {
 export default function AssetDetail({ asset, onClose, onDelete, onRegenerate, lang }) {
   const [lightbox, setLightbox] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [mediaError, setMediaError] = useState(false)
+  const isVideo = asset?.type === 'video'
+
+  useEffect(() => {
+    setLightbox(false)
+    setMediaError(false)
+  }, [asset?.id, asset?.url])
 
   // Escape key closes lightbox
   useEffect(() => {
@@ -142,13 +149,7 @@ export default function AssetDetail({ asset, onClose, onDelete, onRegenerate, la
     if (!asset?.url || saving) return
     setSaving(true)
     try {
-      const ext = asset.type === 'video' ? 'mp4' : 'png'
-      const result = await window.electronAPI.showSaveDialog({
-        defaultPath: `${asset.label || 'image'}.${ext}`,
-        filters: [{ name: ext.toUpperCase(), extensions: [ext] }]
-      })
-      if (result.canceled) return
-      await window.electronAPI.saveAssetToPath({ url: asset.url, filePath: result.filePath })
+      await window.electronAPI.saveAssetWithDialog({ url: asset.url, label: asset.label, type: asset.type })
     } catch (e) {
       console.error('Save failed:', e)
     } finally {
@@ -165,11 +166,20 @@ export default function AssetDetail({ asset, onClose, onDelete, onRegenerate, la
         </div>
         <div style={{ flex: 1, overflow: 'auto', padding: 14 }}>
           {asset.url && (
-            <div onClick={() => setLightbox(true)} style={{
+            <div onClick={() => { if (!isVideo && !mediaError) setLightbox(true) }} style={{
               borderRadius: 'var(--radius-md)', overflow: 'hidden', marginBottom: 14,
-              cursor: 'zoom-in', position: 'relative', border: '1px solid var(--border-subtle)'
+              cursor: isVideo || mediaError ? 'default' : 'zoom-in', position: 'relative', border: '1px solid var(--border-subtle)',
+              background: 'var(--bg-primary)', minHeight: 120, display: 'flex', alignItems: 'center', justifyContent: 'center'
             }}>
-              <img src={asset.url} alt={asset.label} style={{ width: '100%', display: 'block' }} />
+              {mediaError ? (
+                <div style={{ padding: 16, fontSize: 11, color: 'var(--danger)', textAlign: 'center' }}>
+                  Preview failed to load
+                </div>
+              ) : isVideo ? (
+                <video src={asset.url} controls style={{ width: '100%', display: 'block', maxHeight: 240 }} onError={() => setMediaError(true)} />
+              ) : (
+                <>
+                  <img src={asset.url} alt={asset.label} style={{ width: '100%', display: 'block' }} onError={() => setMediaError(true)} />
               <div style={{
                 position: 'absolute', bottom: 8, right: 8,
                 background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(8px)',
@@ -178,7 +188,9 @@ export default function AssetDetail({ asset, onClose, onDelete, onRegenerate, la
               }}>
                 <Ic n="eye" size={11} color="#FFF" />
                 <span style={{ fontSize: 10, color: '#fff' }}>{lang === 'en' ? 'Zoom' : '放大'}</span>
-              </div>
+                  </div>
+                </>
+              )}
             </div>
           )}
           <div style={{ fontSize: 11, lineHeight: 2, color: 'var(--text-secondary)' }}>
@@ -204,7 +216,7 @@ export default function AssetDetail({ asset, onClose, onDelete, onRegenerate, la
       </div>
 
       {/* Lightbox */}
-      {lightbox && (
+      {lightbox && !isVideo && (
         <div style={{
           position: 'fixed', inset: 0, zIndex: 20000, background: 'rgba(0,0,0,0.85)',
           display: 'flex', alignItems: 'center', justifyContent: 'center'

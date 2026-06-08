@@ -35,6 +35,10 @@ export default function useCanvas() {
     setSelectedId(prev => prev === id ? null : prev)
   }, [])
 
+  const replaceAssets = useCallback((nextAssets) => {
+    setAssets(Array.isArray(nextAssets) ? nextAssets : [])
+  }, [])
+
   const updateAsset = useCallback((id, patch) => {
     setAssets(prev => prev.map(a => a.id === id ? { ...a, ...patch } : a))
   }, [])
@@ -54,6 +58,6 @@ export default function useCanvas() {
   return useMemo(() => ({
     assets: filtered, allAssets: assets, selectedAsset, selectedId, setSelectedId,
     viewMode, setViewMode, filter, setFilter, sort, setSort,
-    addAsset, addPlaceholder, removeAsset, updateAsset, getAssetById, clear
-  }), [filtered, assets, selectedAsset, selectedId, viewMode, filter, sort, addAsset, addPlaceholder, removeAsset, updateAsset, getAssetById, clear])
+    addAsset, addPlaceholder, removeAsset, replaceAssets, updateAsset, getAssetById, clear
+  }), [filtered, assets, selectedAsset, selectedId, viewMode, filter, sort, addAsset, addPlaceholder, removeAsset, replaceAssets, updateAsset, getAssetById, clear])
 }

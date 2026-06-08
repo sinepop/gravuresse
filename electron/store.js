@@ -11,30 +11,58 @@ function ensureDir() {
   if (!fs.existsSync(CONFIG_DIR)) fs.mkdirSync(CONFIG_DIR, { recursive: true })
 }
 
+function emptyStore() {
+  return { schemaVersion: SCHEMA_VERSION, conversations: [], activeId: null, deletedIds: [] }
+}
+
+function backupCorruptStore() {
+  if (!fs.existsSync(STORE_FILE)) return
+  try {
+    fs.copyFileSync(STORE_FILE, `${STORE_FILE}.corrupt-${Date.now()}`)
+  } catch (e) {
+    console.error('Failed to back up corrupt store:', e)
+  }
+}
+
 // 简单写入队列，防止并发 read-modify-write 竞态
 let writeQueue = Promise.resolve()
 
 function enqueueWrite(fn) {
-  writeQueue = writeQueue.then(fn).catch(e => {
-    console.error('Store write error:', e)
-    return fn().catch(retryErr => {
-      console.error('Store write retry also failed:', retryErr)
+  const operation = writeQueue.then(() => {
+    return Promise.resolve().then(fn).catch(e => {
+      console.error('Store write error:', e)
+      return Promise.resolve().then(fn).catch(retryErr => {
+        console.error('Store write retry also failed:', retryErr)
+        throw retryErr
+      })
     })
   })
-  return writeQueue
+  writeQueue = operation.catch(() => {})
+  return operation
 }
 
 function loadAll() {
   ensureDir()
   try {
     const raw = JSON.parse(fs.readFileSync(STORE_FILE, 'utf-8'))
+    const deletedIds = raw.deletedIds || []
+    const deleted = new Set(deletedIds)
+    const conversations = (raw.conversations || []).filter(c => !deleted.has(c.id))
+    const activeId = raw.activeId && !deleted.has(raw.activeId) && conversations.some(c => c.id === raw.activeId)
+      ? raw.activeId
+      : conversations[0]?.id || null
     return {
       schemaVersion: raw.schemaVersion || SCHEMA_VERSION,
-      conversations: raw.conversations || [],
-      activeId: raw.activeId || null
+      conversations,
+      activeId,
+      deletedIds
     }
-  } catch {
-    return { schemaVersion: SCHEMA_VERSION, conversations: [], activeId: null }
+  } catch (e) {
+    if (e.code !== 'ENOENT') {
+      console.error('Store read failed; backing up corrupt store:', e)
+      backupCorruptStore()
+    }
+    return emptyStore()
   }
 }
 
@@ -50,6 +78,7 @@ function saveAll(data) {
 function saveConversation(convId, convData) {
   return enqueueWrite(() => {
     const data = loadAll()
+    if ((data.deletedIds || []).includes(convId)) return
     const idx = data.conversations.findIndex(c => c.id === convId)
     if (idx >= 0) {
       data.conversations[idx] = { ...data.conversations[idx], ...convData, updatedAt: new Date().toISOString() }
@@ -64,6 +93,7 @@ function deleteConversation(convId) {
   return enqueueWrite(() => {
     const data = loadAll()
     data.conversations = data.conversations.filter(c => c.id !== convId)
+    data.deletedIds = Array.from(new Set([...(data.deletedIds || []), convId]))
     if (data.activeId === convId) data.activeId = data.conversations[0]?.id || null
     saveAll(data)
   })
