@@ -43,6 +43,10 @@ export default function useCanvas() {
     setAssets(prev => prev.map(a => a.id === id ? { ...a, ...patch } : a))
   }, [])
 
+  const updateAssets = useCallback((patches) => {
+    setAssets(prev => prev.map(a => patches[a.id] ? { ...a, ...patches[a.id] } : a))
+  }, [])
+
   const getAssetById = useCallback((id) => assets.find(a => a.id === id), [assets])
 
   const clear = useCallback(() => {
@@ -58,6 +62,6 @@ export default function useCanvas() {
   return useMemo(() => ({
     assets: filtered, allAssets: assets, selectedAsset, selectedId, setSelectedId,
     viewMode, setViewMode, filter, setFilter, sort, setSort,
-    addAsset, addPlaceholder, removeAsset, replaceAssets, updateAsset, getAssetById, clear
-  }), [filtered, assets, selectedAsset, selectedId, viewMode, filter, sort, addAsset, addPlaceholder, removeAsset, replaceAssets, updateAsset, getAssetById, clear])
+    addAsset, addPlaceholder, removeAsset, replaceAssets, updateAsset, updateAssets, getAssetById, clear
+  }), [filtered, assets, selectedAsset, selectedId, viewMode, filter, sort, addAsset, addPlaceholder, removeAsset, replaceAssets, updateAsset, updateAssets, getAssetById, clear])
 }

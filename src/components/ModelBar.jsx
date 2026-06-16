@@ -38,7 +38,7 @@ function Dropdown({ track, current, onChange, onOpenSettings, lang }) {
       onMouseEnter={e => { if (!open) e.currentTarget.style.borderColor = 'var(--border-accent)' }}
       onMouseLeave={e => { if (!open) e.currentTarget.style.borderColor = 'var(--border-default)' }}
       >
-        <span style={{ color: 'var(--accent)', fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{track.label}</span>
+        <span style={{ color: 'var(--accent)', fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{t(track.key, lang)}</span>
         <span style={{ width: 1, height: 12, background: 'var(--border-default)', flexShrink: 0 }} />
         {currentProvider?.name || t('noConfig', lang)}
         {configured ? <Ic n="chevDown" size={11} sw={2} /> : <Ic n="gear" size={11} color="var(--accent)" />}
@@ -84,7 +84,7 @@ export default function ModelBar({ config, onProviderChange, onOpenSettings, lan
         fontSize: 10, color: 'var(--text-ghost)', fontFamily: 'var(--font-mono)',
         letterSpacing: '0.5px', padding: '3px 8px', borderRadius: 'var(--radius-sm)',
         background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)'
-      }}>v1.5.0</span>
+      }}>v1.5.1</span>
     </div>
   )
 }

@@ -2,6 +2,19 @@
 
 ## 中文
 
+#### v1.5.1 (2026-06-16)
+
+**安全与代码质量加固**
+- **IPC 监听提升**：将窗口最小化/最大化/关闭及状态查询的 IPC 注册，从内部辅助函数范围提升至 `electron/main.js` 模块的顶级作用域，消除了潜在的内存泄露隐患，严格遵循 Electron 安全规范。
+- **UI 样式规范统一**：增加了遮罩背景色、渐变与危险边框的 CSS 全局变量，移过了主要组件中的硬编码颜色与边框设置，全面替换为主题变量。
+- **图标包装器统一**：在 `icons.jsx` 中增加了缺失窗口控件与画布工具图标的映射，将各组件中所有原生 `<svg>` 和 direct lucide 引用全部规范化替换为 `<Ic />`。
+
+**状态与生命周期修复**
+- **Ref 状态副作用清理**：移除了 `AssetDetail.jsx` 状态更新器内部直接修改 ref 的操作，引入了与其同步的 `offsetRef` 读取最新偏移量，保证了 React 状态的纯度。
+- **卡片自由移动竞态修复**：在 `useCanvas.js` 中新增 `updateAssets` 批量更新函数；重构了 `CanvasPanel.jsx` 在 Free Mode 下的坐标初始化，将坐标分配采用单次原子批量更新，彻底消除了由于逐个卡片修改导致的顺次重渲染级联和无限循环隐患。
+- **事件监听泄漏修复**：在 `CanvasPanel.jsx` 中引入 `dragCleanupRef` 与卸载清理 effect，保证在组件意外销毁时释放绑定在 window 上的拖拽监听事件，杜绝内存泄露。
+- **i18n 缺陷修复与传播**：修复了 `MessageBubble.jsx` 排队中与查询视频状态的中英文转换 bug，使 `ContextMenu.jsx` (右键菜单) 与 `TaskQueue.jsx` (任务队列) 能够正确消费 `lang` 配置与 `t()` 函数翻译，完成底栏 model 轨道的翻译转换。
+
 #### v1.5.0 (2026-06-08)
 
 **安全加固**
@@ -181,6 +194,19 @@
 ---
 
 ## English
+
+#### v1.5.1 (2026-06-16)
+
+**Security & Quality Hardening**
+- **IPC Scoping**: Lifted all window control IPC listeners (minimize, maximize, close, and status query) to the top-level module scope of `electron/main.js`, satisfying Electron secure registry requirements.
+- **Theme Consistency**: Replaced hardcoded literal colors and card borders across UI components with central CSS variables from `global.css` (overlay-dark, danger-border, accent-gradient).
+- **Icon wrapper `<Ic />` Integration**: Expanded `icons.jsx` to map missing window controls and tools, and refactored components to replace raw SVGs and direct lucide imports with `<Ic />`.
+
+**State & Lifecycle Fixes**
+- **State Purity**: Removed state setter side effects in `AssetDetail.jsx` by implementing a synchronized `offsetRef` to read current mouse drag offsets.
+- **Coordinate Assignment Batching**: Added the `updateAssets` batch action to `useCanvas.js` and optimized `CanvasPanel.jsx` Free Mode initial coordinates assignment to run in a single atomic update, eliminating infinite loop risks.
+- **Memory Leak Prevention**: Created a `dragCleanupRef` in `CanvasPanel.jsx` with an unmount cleanup effect to properly release window mouse move and up event listeners if the panel unmounts mid-drag.
+- **i18n Mappings & Propagation**: Resolved translate-to-English bugs for queued and polling states in `MessageBubble.jsx`, propagated `lang` prop to `ContextMenu.jsx` and `TaskQueue.jsx` to render fully translated action menus and queue labels, and mapped model track categories in `ModelBar.jsx`.
 
 #### v1.5.0 (2026-06-08)
 

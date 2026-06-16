@@ -1,16 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
 import Ic from './icons'
+import { t } from '../i18n'
 
 const MENU_ITEMS = [
-  { id: 'view', label: '查看大图', icon: 'eye' },
-  { id: 'download', label: 'Download file', icon: 'download' },
-  { id: 'regenerate', label: '重新生成', icon: 'refresh' },
-  { id: 'toVideo', label: '做成视频', icon: 'film', type: 'image' },
-  { id: 'copyPrompt', label: '复制 Prompt', icon: 'link' },
-  { id: 'delete', label: '删除', icon: 'trash', danger: true }
+  { id: 'view', key: 'viewImage', icon: 'eye' },
+  { id: 'download', key: 'downloadFile', icon: 'download' },
+  { id: 'regenerate', key: 'regenerate', icon: 'refresh' },
+  { id: 'toVideo', key: 'toVideo', icon: 'film', type: 'image' },
+  { id: 'copyPrompt', key: 'copyPrompt', icon: 'link' },
+  { id: 'delete', key: 'delete', icon: 'trash', danger: true }
 ]
 
-export default function ContextMenu({ x, y, asset, onClose, onAction }) {
+export default function ContextMenu({ x, y, asset, onClose, onAction, lang }) {
   const ref = useRef(null)
   const [position, setPosition] = useState({ left: x, top: y })
 
@@ -48,7 +49,7 @@ export default function ContextMenu({ x, y, asset, onClose, onAction }) {
           onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
         >
           <Ic n={item.icon} size={12} color={item.danger ? 'var(--danger)' : 'var(--text-secondary)'} />
-          {item.label}
+          {t(item.key, lang)}
         </button>
       ))}
     </div>

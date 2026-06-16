@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import Ic from './icons'
+import { t } from '../i18n'
 
 function ElapsedTimer({ startTime }) {
   const [elapsed, setElapsed] = useState(0)
@@ -43,13 +44,13 @@ function TaskCard({ task, onConfirm, onBatchGenerate, lang }) {
         {isDone && (
           <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--success)', display: 'flex', alignItems: 'center', gap: 3 }}>
             <Ic n="check" size={11} color="var(--success)" />
-            {lang === 'en' ? 'Done' : '已生成'}
+            {t('generated', lang)}
             {task.elapsed != null && <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-muted)', marginLeft: 4 }}>{task.elapsed}s</span>}
             {task.batchTotal > 1 && <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 4 }}>({task.batchDone}/{task.batchTotal})</span>}
           </span>
         )}
-        {isError && <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--danger)' }}>{lang === 'en' ? 'Failed' : '失败'}</span>}
-        {isQueued && <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--accent)' }}>{lang === 'en' ? 'Queued' : 'Queued'}</span>}
+        {isError && <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--danger)' }}>{t('failed', lang)}</span>}
+        {isQueued && <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--accent)' }}>{t('queued', lang)}</span>}
       </div>
       <div style={{
         fontSize: 11, lineHeight: 1.6, color: 'var(--text-secondary)',
@@ -65,12 +66,12 @@ function TaskCard({ task, onConfirm, onBatchGenerate, lang }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
           <button onClick={onConfirm} style={{
             padding: '7px 20px', background: 'var(--accent)', border: 'none',
-            borderRadius: 'var(--radius-sm)', color: '#FFF', fontSize: 12, cursor: 'pointer',
+            borderRadius: 'var(--radius-sm)', color: 'var(--text-white)', fontSize: 12, cursor: 'pointer',
             fontWeight: 500, fontFamily: 'var(--font-body)', display: 'flex', alignItems: 'center', gap: 6,
             boxShadow: 'var(--shadow-accent)'
           }}>
-            <Ic n="sparkle" size={12} color="#FFF" />
-            {lang === 'en' ? 'Confirm' : '确认生成'}
+            <Ic n="sparkle" size={12} color="var(--text-white)" />
+            {t('confirmGenerate', lang)}
           </button>
 
           {task.type === 'image' && (
@@ -83,7 +84,7 @@ function TaskCard({ task, onConfirm, onBatchGenerate, lang }) {
                 transition: 'all 0.15s'
               }}>
                 <Ic n="zap" size={11} color="var(--accent)" />
-                {lang === 'en' ? 'Batch' : '批量'}
+                {t('batch', lang)}
               </button>
               {showBatch && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 4, animation: 'scaleIn 0.12s ease' }}>
@@ -96,7 +97,7 @@ function TaskCard({ task, onConfirm, onBatchGenerate, lang }) {
                   </select>
                   <button onClick={() => onBatchGenerate?.(batchCount)} style={{
                     padding: '5px 12px', background: 'var(--accent)', border: 'none',
-                    borderRadius: 'var(--radius-sm)', color: '#FFF', fontSize: 11, cursor: 'pointer',
+                    borderRadius: 'var(--radius-sm)', color: 'var(--text-white)', fontSize: 11, cursor: 'pointer',
                     fontWeight: 500, fontFamily: 'var(--font-body)'
                   }}>GO</button>
                 </div>
@@ -108,7 +109,7 @@ function TaskCard({ task, onConfirm, onBatchGenerate, lang }) {
       {isGenerating && (
         <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--accent)' }}>
           <div style={{ width: 14, height: 14, border: '2px solid var(--border-accent)', borderTopColor: 'var(--accent)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-          {lang === 'en' ? 'Generating...' : '生成中...'}
+          {t('generating', lang)}
           <ElapsedTimer startTime={task.startTime} />
           {task.batchTotal > 1 && <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 4 }}>({task.batchDone || 0}/{task.batchTotal})</span>}
         </div>
@@ -116,7 +117,7 @@ function TaskCard({ task, onConfirm, onBatchGenerate, lang }) {
       {isQueued && (
         <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--accent)' }}>
           <div style={{ width: 14, height: 14, border: '2px solid var(--border-accent)', borderTopColor: 'var(--accent)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-          {lang === 'en' ? 'Polling video task...' : 'Polling video task...'}
+          {t('pollingVideo', lang)}
           <ElapsedTimer startTime={task.startTime} />
         </div>
       )}
@@ -149,7 +150,7 @@ export default function MessageBubble({ msg, onConfirmTask, onBatchGenerate, lan
         border: `1px solid ${isUser ? 'var(--border-accent)' : 'var(--border-subtle)'}`,
         fontSize: 13, lineHeight: 1.65, color: 'var(--text-primary)',
         userSelect: 'text', WebkitUserSelect: 'text', cursor: 'text',
-        boxShadow: isUser ? '0 2px 8px rgba(232,168,73,0.08)' : 'var(--shadow-sm)'
+        boxShadow: isUser ? 'var(--shadow-accent-soft)' : 'var(--shadow-sm)'
       }}>
         {isUser ? <span style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</span> : msg.error && tasks.length === 0 ? (
           <div style={{ color: 'var(--danger)', fontSize: 13 }}>{msg.content}</div>
@@ -163,10 +164,7 @@ export default function MessageBubble({ msg, onConfirmTask, onBatchGenerate, lan
                 color: 'var(--text-muted)', fontSize: 10, cursor: 'pointer',
                 display: 'flex', alignItems: 'center', gap: 4
               }}>
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M12 2a7 7 0 017 7c0 2.5-1.5 4.5-3 6s-2 3-2 5M12 2a7 7 0 00-7 7c0 2.5 1.5 4.5 3 6s2 3 2 5"/>
-                  <circle cx="12" cy="19" r="1"/>
-                </svg>
+                <Ic n="think" size={10} />
                 {lang === 'en' ? 'Thinking process' : '思考过程'}
                 <span style={{ transform: showThinking ? 'rotate(90deg)' : 'rotate(0)', transition: 'transform 0.15s', fontSize: 8 }}>▶</span>
               </button>
