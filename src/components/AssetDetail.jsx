@@ -11,6 +11,11 @@ function ZoomableImage({ src, alt }) {
   const offsetStart = useRef({ x: 0, y: 0 })
   const containerRef = useRef(null)
 
+  const offsetRef = useRef({ x: 0, y: 0 })
+  useEffect(() => {
+    offsetRef.current = offset
+  }, [offset])
+
   const clampScale = (s) => Math.min(Math.max(s, 0.2), 10)
 
   const handleWheel = useCallback((e) => {
@@ -30,7 +35,7 @@ function ZoomableImage({ src, alt }) {
       dragging.current = true
       setIsDragging(true)
       dragStart.current = { x: e.clientX, y: e.clientY }
-      setOffset(prev => { offsetStart.current = { ...prev }; return prev })
+      offsetStart.current = { ...offsetRef.current }
     }
 
     const onMouseMove = (e) => {
@@ -67,19 +72,19 @@ function ZoomableImage({ src, alt }) {
       <div style={{
         position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)', zIndex: 20001,
         display: 'flex', alignItems: 'center', gap: 4, padding: '4px 8px',
-        background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)', borderRadius: 8,
-        border: '1px solid rgba(255,255,255,0.1)', userSelect: 'none'
+        background: 'var(--overlay-dark)', backdropFilter: 'blur(8px)', borderRadius: 8,
+        border: '1px solid var(--border-white-subtle)', userSelect: 'none'
       }}>
         <button onClick={zoomOut} style={zoomBtnStyle} title="缩小 (-)">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          <Ic n="minus" size={14} color="var(--text-white)" sw={2} />
         </button>
-        <span style={{ color: '#fff', fontSize: 11, minWidth: 44, textAlign: 'center', fontFamily: 'var(--font-mono)' }}>
+        <span style={{ color: 'var(--text-white)', fontSize: 11, minWidth: 44, textAlign: 'center', fontFamily: 'var(--font-mono)' }}>
           {Math.round(scale * 100)}%
         </span>
         <button onClick={zoomIn} style={zoomBtnStyle} title="放大 (+)">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          <Ic n="plus" size={14} color="var(--text-white)" sw={2} />
         </button>
-        <div style={{ width: 1, height: 14, background: 'rgba(255,255,255,0.2)', margin: '0 4px' }} />
+        <div style={{ width: 1, height: 14, background: 'var(--border-white-subtle)', margin: '0 4px' }} />
         <button onClick={resetZoom} style={{ ...zoomBtnStyle, fontSize: 10, padding: '2px 6px', width: 'auto' }} title="重置">
           1:1
         </button>
@@ -107,8 +112,8 @@ function ZoomableImage({ src, alt }) {
       <div style={{
         position: 'absolute', bottom: 12, left: '50%', transform: 'translateX(-50%)', zIndex: 20001,
         display: 'flex', gap: 8, padding: '4px 10px',
-        background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(8px)', borderRadius: 6,
-        fontSize: 10, color: 'rgba(255,255,255,0.5)', userSelect: 'none'
+        background: 'var(--overlay-dark)', backdropFilter: 'blur(8px)', borderRadius: 6,
+        fontSize: 10, color: 'var(--text-muted)', userSelect: 'none'
       }}>
         <span>滚轮缩放</span>
         <span>·</span>
@@ -121,7 +126,7 @@ function ZoomableImage({ src, alt }) {
 }
 
 const zoomBtnStyle = {
-  background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer',
+  background: 'transparent', border: 'none', color: 'var(--text-white)', cursor: 'pointer',
   width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center',
   borderRadius: 4, padding: 0
 }
@@ -182,13 +187,13 @@ export default function AssetDetail({ asset, onClose, onDelete, onRegenerate, la
                   <img src={asset.url} alt={asset.label} style={{ width: '100%', display: 'block' }} onError={() => setMediaError(true)} />
               <div style={{
                 position: 'absolute', bottom: 8, right: 8,
-                background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(8px)',
+                background: 'var(--overlay-dark)', backdropFilter: 'blur(8px)',
                 borderRadius: 'var(--radius-sm)', padding: '3px 8px',
                 display: 'flex', alignItems: 'center', gap: 4
               }}>
-                <Ic n="eye" size={11} color="#FFF" />
-                <span style={{ fontSize: 10, color: '#fff' }}>{lang === 'en' ? 'Zoom' : '放大'}</span>
-                  </div>
+                <Ic n="eye" size={11} color="var(--text-white)" />
+                <span style={{ fontSize: 10, color: 'var(--text-white)' }}>{lang === 'en' ? 'Zoom' : '放大'}</span>
+              </div>
                 </>
               )}
             </div>
@@ -211,25 +216,25 @@ export default function AssetDetail({ asset, onClose, onDelete, onRegenerate, la
             <Ic n="download" size={11} /> {saving ? '...' : t('saveToLocal', lang)}
           </button>
           <button onClick={onRegenerate} style={{ padding: '6px 10px', background: 'var(--bg-surface)', border: '1px solid var(--border-default)', borderRadius: 'var(--radius-sm)', color: 'var(--text-secondary)', fontSize: 11, cursor: 'pointer' }}><Ic n="refresh" size={11} /></button>
-          <button onClick={onDelete} style={{ padding: '6px 10px', background: 'var(--danger-soft)', border: '1px solid rgba(196,85,74,0.2)', borderRadius: 'var(--radius-sm)', color: 'var(--danger)', fontSize: 11, cursor: 'pointer' }}><Ic n="trash" size={11} /></button>
+          <button onClick={onDelete} style={{ padding: '6px 10px', background: 'var(--danger-soft)', border: '1px solid var(--danger-border)', borderRadius: 'var(--radius-sm)', color: 'var(--danger)', fontSize: 11, cursor: 'pointer' }}><Ic n="trash" size={11} /></button>
         </div>
       </div>
 
       {/* Lightbox */}
       {lightbox && !isVideo && (
         <div style={{
-          position: 'fixed', inset: 0, zIndex: 20000, background: 'rgba(0,0,0,0.85)',
+          position: 'fixed', inset: 0, zIndex: 20000, background: 'var(--overlay-dark)',
           display: 'flex', alignItems: 'center', justifyContent: 'center'
         }} onClick={() => setLightbox(false)}>
           {/* Close button */}
           <button onClick={() => setLightbox(false)} style={{
             position: 'absolute', top: 12, right: 12, zIndex: 20002,
-            background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.1)',
-            borderRadius: 6, color: '#fff', width: 32, height: 32,
+            background: 'var(--overlay-dark)', border: '1px solid var(--border-white-subtle)',
+            borderRadius: 6, color: 'var(--text-white)', width: 32, height: 32,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             cursor: 'pointer', backdropFilter: 'blur(8px)'
           }}>
-            <Ic n="close" size={14} color="#fff" />
+            <Ic n="close" size={14} color="var(--text-white)" />
           </button>
           <div onClick={e => e.stopPropagation()}>
             <ZoomableImage src={asset.url} alt={asset.label} />

@@ -1,5 +1,4 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { MousePointer, Hand, Pencil, Square, Circle, Minus, Type } from 'lucide-react'
 import AssetCard from './AssetCard'
 import AssetDetail from './AssetDetail'
 import Ic from './icons'
@@ -32,9 +31,7 @@ const filterBtnStyle = (active) => ({
 const MIN_SCALE = 0.1
 const MAX_SCALE = 5
 
-function InfiniteCanvas({ children, assets, activeTool }) {
-  const [scale, setScale] = useState(1)
-  const [offset, setOffset] = useState({ x: 0, y: 0 })
+function InfiniteCanvas({ children, assets, activeTool, scale, setScale, offset, setOffset }) {
   const [isPanning, setIsPanning] = useState(false)
   const containerRef = useRef(null)
   const scaleRef = useRef(1)
@@ -192,7 +189,7 @@ function InfiniteCanvas({ children, assets, activeTool }) {
         boxShadow: 'var(--shadow-md)', userSelect: 'none'
       }}>
         <button onClick={zoomOut} style={zoomCtrlBtn} title="缩小">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          <Ic n="minus" size={14} sw={2} />
         </button>
         <span style={{
           fontSize: 10, color: 'var(--text-secondary)', minWidth: 40, textAlign: 'center',
@@ -201,7 +198,7 @@ function InfiniteCanvas({ children, assets, activeTool }) {
           {Math.round(scale * 100)}%
         </span>
         <button onClick={zoomIn} style={zoomCtrlBtn} title="放大">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          <Ic n="plus" size={14} sw={2} />
         </button>
         <div style={{ width: 1, height: 16, background: 'var(--border-subtle)', margin: '0 2px' }} />
         <button onClick={fitToView} style={{ ...zoomCtrlBtn, width: 'auto', padding: '2px 6px', fontSize: 10 }} title="适应视图">
@@ -216,7 +213,7 @@ function InfiniteCanvas({ children, assets, activeTool }) {
           padding: '4px 8px', background: 'var(--bg-elevated)', borderRadius: 'var(--radius-sm)',
           border: '1px solid var(--border-subtle)', opacity: 0.7
         }}>
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M5 9l4-4 4 4M5 15l4 4 4-4"/><path d="M15 5l4 4-4 4M9 15l-4 4 4 4"/></svg>
+          <Ic n="move4" size={12} sw={1.5} />
           Wheel zoom / H or Space pan
         </div>
       )}
@@ -231,8 +228,7 @@ const zoomCtrlBtn = {
   transition: 'background 0.12s, color 0.12s'
 }
 
-function DrawingOverlay({ tool, color, width: strokeWidth }) {
-  const canvasRef = useRef(null)
+function DrawingOverlay({ tool, color, width: strokeWidth, scale, canvasRef }) {
   const drawing = useRef(false)
   const start = useRef({ x: 0, y: 0 })
   const snapshot = useRef(null)
@@ -250,7 +246,7 @@ function DrawingOverlay({ tool, color, width: strokeWidth }) {
     const obs = new ResizeObserver(resize)
     obs.observe(parent)
     return () => obs.disconnect()
-  }, [])
+  }, [canvasRef])
 
   useEffect(() => {
     const onKeyDown = (e) => { if (e.code === 'Space') setSpacePan(true) }
@@ -266,7 +262,10 @@ function DrawingOverlay({ tool, color, width: strokeWidth }) {
   const getPos = (e) => {
     const c = canvasRef.current
     const rect = c.getBoundingClientRect()
-    return { x: e.clientX - rect.left, y: e.clientY - rect.top }
+    return {
+      x: (e.clientX - rect.left) / scale,
+      y: (e.clientY - rect.top) / scale
+    }
   }
 
   const onMouseDown = (e) => {
@@ -345,15 +344,11 @@ function DrawingOverlay({ tool, color, width: strokeWidth }) {
   )
 }
 
-const TOOL_ICONS = { select: MousePointer, move: Hand, pencil: Pencil, rect: Square, circle: Circle, line: Minus, text: Type }
-
 function ToolIcon({ id, size = 16 }) {
-  const Icon = TOOL_ICONS[id]
-  if (!Icon) return null
-  return <Icon size={size} strokeWidth={1.6} />
+  return <Ic n={id === 'line' ? 'minus' : id} size={size} sw={1.6} />
 }
 
-function EditBar({ activeTool, setActiveTool, drawColor, setDrawColor, drawWidth, setDrawWidth }) {
+function EditBar({ activeTool, setActiveTool, drawColor, setDrawColor, drawWidth, setDrawWidth, onClearDrawings }) {
   const [hoveredTool, setHoveredTool] = useState(null)
   const isDrawingTool = !['select', 'move'].includes(activeTool)
   const toolByKey = useRef(new Map(TOOL_GROUPS.flatMap(group => group.tools.map(tool => [tool.key.toLowerCase(), tool.id]))))
@@ -450,6 +445,17 @@ function EditBar({ activeTool, setActiveTool, drawColor, setDrawColor, drawWidth
               }} />
             </button>
           ))}
+          <div style={{ width: 1, height: 20, background: 'var(--border-subtle)', margin: '0 3px' }} />
+          <button onClick={onClearDrawings} title="清空涂鸦" style={{
+            width: 30, height: 30, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: 'transparent', border: 'none', borderRadius: 'var(--radius-sm)',
+            color: 'var(--text-secondary)', cursor: 'pointer', transition: 'all 0.12s'
+          }}
+          onMouseEnter={e => { e.currentTarget.style.background = 'var(--danger-soft)'; e.currentTarget.style.color = 'var(--danger)' }}
+          onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--text-secondary)' }}
+          >
+            <Ic n="trash" size={15} />
+          </button>
         </>
       )}
     </div>
@@ -482,6 +488,101 @@ export default function CanvasPanel({ canvas, lang, onContextMenu }) {
   const [activeTool, setActiveTool] = useState('select')
   const [drawColor, setDrawColor] = useState('#E8A849')
   const [drawWidth, setDrawWidth] = useState(2)
+  const [scale, setScale] = useState(1)
+  const [offset, setOffset] = useState({ x: 0, y: 0 })
+  const [draggedAsset, setDraggedAsset] = useState(null)
+
+  const scaleRef = useRef(1)
+  useEffect(() => {
+    scaleRef.current = scale
+  }, [scale])
+
+  const drawingCanvasRef = useRef(null)
+  const dragCleanupRef = useRef(null)
+
+  // Unmount cleanup for mouse drag listeners
+  useEffect(() => {
+    return () => {
+      if (dragCleanupRef.current) {
+        dragCleanupRef.current()
+      }
+    }
+  }, [])
+
+  const handleClearDrawings = () => {
+    const c = drawingCanvasRef.current
+    if (c) {
+      const ctx = c.getContext('2d')
+      ctx.clearRect(0, 0, c.width, c.height)
+    }
+  }
+
+  // Assign coordinate fields (x and y) to assets if they are missing in Free Mode
+  useEffect(() => {
+    if (viewMode !== 'free') return
+    const missingCoords = assets.filter(a => a.x === undefined || a.y === undefined)
+    if (missingCoords.length === 0) return
+
+    const patches = {}
+    missingCoords.forEach(a => {
+      const idx = assets.findIndex(item => item.id === a.id)
+      if (idx !== -1) {
+        const col = idx % 4
+        const row = Math.floor(idx / 4)
+        const x = 30 + col * 280
+        const y = 30 + row * 280
+        patches[a.id] = { x, y }
+      }
+    })
+    canvas.updateAssets(patches)
+  }, [viewMode, assets, canvas.updateAssets])
+
+  const handleCardMouseDown = (e, asset, defaultX, defaultY) => {
+    if (activeTool !== 'select') return
+    const tag = e.target.tagName
+    if (tag === 'BUTTON' || tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return
+    if (e.target.closest('button')) return
+
+    e.preventDefault()
+    setSelectedId(asset.id)
+
+    const startX = asset.x !== undefined ? asset.x : defaultX
+    const startY = asset.y !== undefined ? asset.y : defaultY
+    const startMouseX = e.clientX
+    const startMouseY = e.clientY
+
+    setDraggedAsset({ id: asset.id, x: startX, y: startY })
+
+    const cleanup = () => {
+      window.removeEventListener('mousemove', onMouseMove)
+      window.removeEventListener('mouseup', onMouseUp)
+      dragCleanupRef.current = null
+    }
+    dragCleanupRef.current = cleanup
+
+    const onMouseMove = (moveEvent) => {
+      const currentScale = scaleRef.current
+      const dx = (moveEvent.clientX - startMouseX) / currentScale
+      const dy = (moveEvent.clientY - startMouseY) / currentScale
+      setDraggedAsset({ id: asset.id, x: startX + dx, y: startY + dy })
+    }
+
+    const onMouseUp = (upEvent) => {
+      cleanup()
+
+      const currentScale = scaleRef.current
+      const dx = (upEvent.clientX - startMouseX) / currentScale
+      const dy = (upEvent.clientY - startMouseY) / currentScale
+      const finalX = startX + dx
+      const finalY = startY + dy
+
+      setDraggedAsset(null)
+      canvas.updateAsset(asset.id, { x: finalX, y: finalY })
+    }
+
+    window.addEventListener('mousemove', onMouseMove)
+    window.addEventListener('mouseup', onMouseUp)
+  }
 
   return (
     <div style={{ display: 'flex', height: '100%' }}>
@@ -494,9 +595,7 @@ export default function CanvasPanel({ canvas, lang, onContextMenu }) {
             <Ic n="grid" size={12} /> {lang === 'en' ? 'Grid' : '网格'}
           </button>
           <button onClick={() => setViewMode('free')} style={filterBtnStyle(viewMode === 'free')}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="4" rx="1"/><rect x="3" y="14" width="7" height="4" rx="1"/>
-            </svg>
+            <Ic n="layoutGrid" size={12} />
             {lang === 'en' ? 'Free' : '自由'}
           </button>
           <div style={{ width: 1, height: 16, background: 'var(--border-subtle)', margin: '0 4px' }} />
@@ -546,29 +645,51 @@ export default function CanvasPanel({ canvas, lang, onContextMenu }) {
           ) : (
             /* Free mode: infinite canvas with free positioning */
             <>
-              <InfiniteCanvas assets={assets} activeTool={activeTool}>
+              <InfiniteCanvas
+                assets={assets}
+                activeTool={activeTool}
+                scale={scale}
+                setScale={setScale}
+                offset={offset}
+                setOffset={setOffset}
+              >
                 <div style={{ position: 'relative', minWidth: 2000, minHeight: 1500 }}>
                   {assets.map((a, i) => {
                     const col = i % 4
                     const row = Math.floor(i / 4)
-                    const x = 30 + col * 280
-                    const y = 30 + row * 280
+                    const defaultX = 30 + col * 280
+                    const defaultY = 30 + row * 280
+                    
+                    const isDragging = draggedAsset && draggedAsset.id === a.id
+                    const x = isDragging ? draggedAsset.x : (a.x !== undefined ? a.x : defaultX)
+                    const y = isDragging ? draggedAsset.y : (a.y !== undefined ? a.y : defaultY)
+
                     return (
-                      <div key={a.id} data-asset-card="true" style={{
-                        position: 'absolute', left: x, top: y, width: 240
-                      }}>
+                      <div
+                        key={a.id}
+                        data-asset-card="true"
+                        style={{
+                          position: 'absolute',
+                          left: x,
+                          top: y,
+                          width: 240,
+                          cursor: activeTool === 'select' ? 'move' : 'default',
+                          userSelect: 'none'
+                        }}
+                        onMouseDown={(e) => handleCardMouseDown(e, a, defaultX, defaultY)}
+                      >
                         <GeneratingOverlay asset={a} />
                         <AssetCard asset={a} selected={a.id === selectedId} onClick={setSelectedId}
                           onContextMenu={(e, asset) => onContextMenu?.(e, asset)} />
                       </div>
                     )
                   })}
+                  <DrawingOverlay tool={activeTool} color={drawColor} width={drawWidth} scale={scale} canvasRef={drawingCanvasRef} />
                 </div>
               </InfiniteCanvas>
-              <DrawingOverlay tool={activeTool} color={drawColor} width={drawWidth} />
             </>
           )}
-          <EditBar activeTool={activeTool} setActiveTool={setActiveTool} drawColor={drawColor} setDrawColor={setDrawColor} drawWidth={drawWidth} setDrawWidth={setDrawWidth} />
+          <EditBar activeTool={activeTool} setActiveTool={setActiveTool} drawColor={drawColor} setDrawColor={setDrawColor} drawWidth={drawWidth} setDrawWidth={setDrawWidth} onClearDrawings={handleClearDrawings} />
         </div>
       </div>
       {selectedAsset && (

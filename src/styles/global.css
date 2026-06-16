@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600&family=Outfit:wght@300;400;500;600;700;800;900&display=swap');
+
 :root {
   --bg-primary: #FFFFFF;
   --bg-elevated: #F8F8FA;
@@ -18,8 +20,8 @@
   --danger-soft: rgba(196,85,74,0.06);
   --success: #3D9B6E;
   --success-soft: rgba(61,155,110,0.06);
-  --font-display: 'Georgia', serif;
-  --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-display: 'Outfit', sans-serif;
+  --font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-mono: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
   --radius-sm: 6px;
   --radius-md: 10px;
@@ -31,14 +33,21 @@
   --shadow-md: 0 4px 16px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.04);
   --shadow-lg: 0 12px 40px rgba(0,0,0,0.12), 0 4px 12px rgba(0,0,0,0.06);
   --shadow-accent: 0 4px 20px rgba(232,168,73,0.15);
+  --overlay-dark: rgba(0, 0, 0, 0.7);
+  --border-white-subtle: rgba(255, 255, 255, 0.1);
+  --danger-border: rgba(196, 85, 74, 0.2);
+  --accent-gradient: linear-gradient(135deg, #D4942E 0%, #F5B859 100%);
+  --shimmer-gradient: linear-gradient(90deg, #F0F0F3 25%, #E8E8EC 37%, #F0F0F3 63%);
+  --shadow-accent-soft: 0 2px 8px rgba(232, 168, 73, 0.08);
+  --text-white: #FFFFFF;
 }
 
 [data-theme="dark"] {
-  --bg-primary: #1A1A1E;
-  --bg-elevated: #222228;
+  --bg-primary: #131316;
+  --bg-elevated: #1C1C22;
   --bg-surface: #2A2A30;
   --bg-hover: #34343C;
-  --bg-input: #222228;
+  --bg-input: #1C1C22;
   --border-subtle: rgba(255,255,255,0.06);
   --border-default: rgba(255,255,255,0.1);
   --border-accent: rgba(232,168,73,0.4);
@@ -57,15 +66,22 @@
   --shadow-md: 0 4px 16px rgba(0,0,0,0.3), 0 2px 4px rgba(0,0,0,0.2);
   --shadow-lg: 0 12px 40px rgba(0,0,0,0.45), 0 4px 12px rgba(0,0,0,0.25);
   --shadow-accent: 0 4px 20px rgba(232,168,73,0.2);
+  --overlay-dark: rgba(0, 0, 0, 0.85);
+  --border-white-subtle: rgba(255, 255, 255, 0.08);
+  --danger-border: rgba(232, 112, 106, 0.25);
+  --accent-gradient: linear-gradient(135deg, #E8A849 0%, #FAD285 100%);
+  --shimmer-gradient: linear-gradient(90deg, #2A2A30 25%, #34343C 37%, #2A2A30 63%);
+  --shadow-accent-soft: 0 2px 12px rgba(232, 168, 73, 0.15);
+  --text-white: #FFFFFF;
 }
 
 @media (prefers-color-scheme: dark) {
   [data-theme="system"] {
-    --bg-primary: #1A1A1E;
-    --bg-elevated: #222228;
+    --bg-primary: #131316;
+    --bg-elevated: #1C1C22;
     --bg-surface: #2A2A30;
     --bg-hover: #34343C;
-    --bg-input: #222228;
+    --bg-input: #1C1C22;
     --border-subtle: rgba(255,255,255,0.06);
     --border-default: rgba(255,255,255,0.1);
     --border-accent: rgba(232,168,73,0.4);
@@ -80,6 +96,13 @@
     --danger-soft: rgba(232,112,106,0.1);
     --success: #5ABF8A;
     --success-soft: rgba(90,191,138,0.1);
+    --overlay-dark: rgba(0, 0, 0, 0.85);
+    --border-white-subtle: rgba(255, 255, 255, 0.08);
+    --danger-border: rgba(232, 112, 106, 0.25);
+    --accent-gradient: linear-gradient(135deg, #E8A849 0%, #FAD285 100%);
+    --shimmer-gradient: linear-gradient(90deg, #2A2A30 25%, #34343C 37%, #2A2A30 63%);
+    --shadow-accent-soft: 0 2px 12px rgba(232, 168, 73, 0.15);
+    --text-white: #FFFFFF;
   }
 }
 
@@ -104,6 +127,13 @@
     --danger-soft: rgba(196,85,74,0.06);
     --success: #3D9B6E;
     --success-soft: rgba(61,155,110,0.06);
+    --overlay-dark: rgba(0, 0, 0, 0.7);
+    --border-white-subtle: rgba(255, 255, 255, 0.1);
+    --danger-border: rgba(196, 85, 74, 0.2);
+    --accent-gradient: linear-gradient(135deg, #D4942E 0%, #F5B859 100%);
+    --shimmer-gradient: linear-gradient(90deg, #F0F0F3 25%, #E8E8EC 37%, #F0F0F3 63%);
+    --shadow-accent-soft: 0 2px 8px rgba(232, 168, 73, 0.08);
+    --text-white: #FFFFFF;
   }
 }
 
@@ -188,7 +218,106 @@ select { appearance: none; cursor: pointer; }
 
 /* Glass utility */
 .glass {
-  background: var(--bg-elevated);
-  backdrop-filter: blur(12px) saturate(1.2);
-  -webkit-backdrop-filter: blur(12px) saturate(1.2);
+  background: rgba(26, 26, 30, 0.65);
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* AssetCard Styles */
+.asset-card {
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  cursor: pointer;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+  transition: border-color 0.3s var(--ease-spring), box-shadow 0.3s var(--ease-spring), transform 0.3s var(--ease-spring);
+  animation: fadeUp 0.35s ease forwards;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+}
+
+.asset-card:hover {
+  border-color: var(--border-default);
+  transform: translateY(-6px);
+  box-shadow: var(--shadow-md), 0 8px 24px var(--accent-glow);
+}
+
+.asset-card.selected {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-accent);
+}
+
+.asset-card.selected:hover {
+  transform: translateY(-6px);
+  box-shadow: var(--shadow-accent), 0 8px 24px var(--accent-glow);
+}
+
+.asset-card-media {
+  aspect-ratio: 1;
+  background: var(--bg-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  position: relative;
+  width: 100%;
+}
+
+.asset-card-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.4s var(--ease-spring);
+}
+
+.asset-card:hover .asset-card-image {
+  transform: scale(1.08);
+}
+
+.asset-card-fallback {
+  color: var(--text-ghost);
+  font-size: 24px;
+}
+
+.asset-card-selected-badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 6px rgba(232,168,73,0.4);
+  color: #ffffff;
+}
+
+.asset-card-info {
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.asset-card-label {
+  font-size: 11px;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 400;
+  transition: font-weight 0.2s;
+}
+
+.asset-card.selected .asset-card-label {
+  font-weight: 500;
+}
+
+.asset-card-model {
+  font-size: 10px;
+  color: var(--text-muted);
 }

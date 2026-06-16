@@ -301,7 +301,7 @@ export default function ChatPanel({ chat, config, lang, conversations, activeCon
               <img src={ref.url} alt={ref.label} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
               <button onClick={() => removeReference(ref.id)} style={{
                 position: 'absolute', top: -2, right: -2, width: 14, height: 14, borderRadius: '50%',
-                background: 'var(--danger)', border: 'none', color: '#fff', fontSize: 8,
+                background: 'var(--danger)', border: 'none', color: 'var(--text-white)', fontSize: 8,
                 display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
                 lineHeight: 1
               }}>×</button>
@@ -326,7 +326,7 @@ export default function ChatPanel({ chat, config, lang, conversations, activeCon
               <img src={asset.url} alt={asset.label} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
               <div style={{
                 position: 'absolute', bottom: 0, left: 0, right: 0, padding: '1px 3px',
-                background: 'rgba(0,0,0,0.6)', fontSize: 8, color: '#fff', textAlign: 'center',
+                background: 'var(--overlay-dark)', fontSize: 8, color: 'var(--text-white)', textAlign: 'center',
                 overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
               }}>{asset.type}</div>
             </div>
@@ -352,10 +352,7 @@ export default function ChatPanel({ chat, config, lang, conversations, activeCon
           onMouseEnter={e => { if (!chat.thinking) { e.currentTarget.style.borderColor = 'var(--border-accent)'; e.currentTarget.style.color = 'var(--text-secondary)' } }}
           onMouseLeave={e => { if (!chat.thinking) { e.currentTarget.style.borderColor = 'var(--border-subtle)'; e.currentTarget.style.color = 'var(--text-muted)' } }}
           >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M12 2a7 7 0 017 7c0 2.5-1.5 4.5-3 6s-2 3-2 5M12 2a7 7 0 00-7 7c0 2.5 1.5 4.5 3 6s2 3 2 5"/>
-              <circle cx="12" cy="19" r="1"/>
-            </svg>
+            <Ic n="think" size={12} />
             {lang === 'en' ? 'Think' : '深度思考'}
           </button>
 
@@ -375,7 +372,7 @@ export default function ChatPanel({ chat, config, lang, conversations, activeCon
               <Ic n="image" size={11} sw={2} />
               {lang === 'en' ? 'Reference' : '参考图'}
               {references.length > 0 && <span style={{
-                background: 'var(--accent)', color: '#fff', borderRadius: '50%',
+                background: 'var(--accent)', color: 'var(--text-white)', borderRadius: '50%',
                 width: 16, height: 16, fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600
               }}>{references.length}</span>}
             </button>
@@ -449,19 +446,19 @@ export default function ChatPanel({ chat, config, lang, conversations, activeCon
             }} />
           <button onClick={handleSend} disabled={!canSend} style={{
             background: canSend
-              ? 'linear-gradient(135deg, var(--accent) 0%, #D4942E 100%)'
+              ? 'var(--accent-gradient)'
               : 'var(--bg-hover)',
             border: 'none', borderRadius: 'var(--radius-sm)', width: 36, height: 36,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             cursor: canSend ? 'pointer' : 'default', flexShrink: 0,
             transition: 'all 0.2s ease',
-            boxShadow: canSend ? '0 2px 12px rgba(232,168,73,0.3), inset 0 1px 0 rgba(255,255,255,0.15)' : 'none',
+            boxShadow: canSend ? 'var(--shadow-accent), inset 0 1px 0 rgba(255,255,255,0.15)' : 'none',
             transform: canSend ? 'scale(1)' : 'scale(0.95)'
           }}
           onMouseEnter={e => { if (canSend) e.currentTarget.style.transform = 'scale(1.08)' }}
           onMouseLeave={e => { if (canSend) e.currentTarget.style.transform = 'scale(1)' }}
           >
-            <Ic n="send" size={15} sw={2} color={canSend ? '#FFF' : 'var(--text-muted)'} />
+            <Ic n="send" size={15} sw={2} color={canSend ? 'var(--text-white)' : 'var(--text-muted)'} />
           </button>
         </div>
       </div>

@@ -349,12 +349,12 @@ export default function App() {
             <CanvasPanel canvas={canvas} lang={config?.general?.language}
               onContextMenu={(e, asset) => setCtxMenu({ x: e.clientX, y: e.clientY, asset })} />
           </div>
-          <TaskQueue tasks={taskQueue.tasks} onRetry={taskQueue.retry} onRemove={taskQueue.remove} />
+          <TaskQueue tasks={taskQueue.tasks} onRetry={taskQueue.retry} onRemove={taskQueue.remove} lang={config?.general?.language} />
         </div>
       </div>
       <ModelBar config={config} onProviderChange={updateProvider} onOpenSettings={() => setSettingsOpen(true)} lang={config?.general?.language} />
       {settingsOpen && <Settings config={config} onSave={save} onClose={() => setSettingsOpen(false)} />}
-      {ctxMenu && <ContextMenu x={ctxMenu.x} y={ctxMenu.y} asset={ctxMenu.asset} onClose={() => setCtxMenu(null)} onAction={handleAssetAction} />}
+      {ctxMenu && <ContextMenu x={ctxMenu.x} y={ctxMenu.y} asset={ctxMenu.asset} onClose={() => setCtxMenu(null)} onAction={handleAssetAction} lang={config?.general?.language} />}
     </div>
   )
 }

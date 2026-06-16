@@ -125,15 +125,13 @@ function isAppUrl(url) {
   }
 }
 
-function registerWindowHandlers() {
-  ipcMain.on('window-minimize', () => mainWindow?.minimize())
-  ipcMain.on('window-maximize', () => {
-    if (!mainWindow) return
-    mainWindow.isMaximized() ? mainWindow.unmaximize() : mainWindow.maximize()
-  })
-  ipcMain.on('window-close', () => mainWindow?.close())
-  ipcMain.handle('window-is-maximized', () => mainWindow?.isMaximized() ?? false)
-}
+ipcMain.on('window-minimize', () => mainWindow?.minimize())
+ipcMain.on('window-maximize', () => {
+  if (!mainWindow) return
+  mainWindow.isMaximized() ? mainWindow.unmaximize() : mainWindow.maximize()
+})
+ipcMain.on('window-close', () => mainWindow?.close())
+ipcMain.handle('window-is-maximized', () => mainWindow?.isMaximized() ?? false)
 
 ipcMain.handle('config:get', () => config.redactApiKeys(config.load()))
 ipcMain.handle('config:save', (_, cfg) => {
@@ -273,7 +271,6 @@ function createWindow() {
   return mainWindow
 }
 
-registerWindowHandlers()
 
 app.whenReady().then(() => {
   electronApp.setAppUserModelId('com.gravuresse')
