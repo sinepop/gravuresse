@@ -37,7 +37,7 @@ function createStoredAsset(asset) {
 }
 
 export default function App() {
-  const { config, save, updateProvider } = useConfig()
+  const { config, providerLists, save, updateProvider } = useConfig()
   const canvas = useCanvas()
   const taskQueue = useTaskQueue(canvas)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -352,8 +352,8 @@ export default function App() {
           <TaskQueue tasks={taskQueue.tasks} onRetry={taskQueue.retry} onRemove={taskQueue.remove} lang={config?.general?.language} />
         </div>
       </div>
-      <ModelBar config={config} onProviderChange={updateProvider} onOpenSettings={() => setSettingsOpen(true)} lang={config?.general?.language} />
-      {settingsOpen && <Settings config={config} onSave={save} onClose={() => setSettingsOpen(false)} />}
+      <ModelBar config={config} providerLists={providerLists} onProviderChange={updateProvider} onOpenSettings={() => setSettingsOpen(true)} lang={config?.general?.language} />
+      {settingsOpen && <Settings config={config} providerLists={providerLists} onSave={save} onClose={() => setSettingsOpen(false)} />}
       {ctxMenu && <ContextMenu x={ctxMenu.x} y={ctxMenu.y} asset={ctxMenu.asset} onClose={() => setCtxMenu(null)} onAction={handleAssetAction} lang={config?.general?.language} />}
     </div>
   )

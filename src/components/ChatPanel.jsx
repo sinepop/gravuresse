@@ -6,11 +6,11 @@ import Ic from './icons'
 const ASPECT_RATIOS = ['1:1', '4:3', '3:4', '16:9', '9:16', '3:2']
 const STYLE_PRESETS = ['扁平插画', '3D 渲染', '写实摄影', '水彩画', '动漫风', '像素艺术', '油画', '极简主义', '赛博朋克', '剪纸']
 const RESOLUTIONS = [
-  { value: '1024', label: { zh: '标准 (1024)', en: 'Standard (1024)' } },
-  { value: '1536', label: { zh: '高清 (1536)', en: 'HD (1536)' } },
-  { value: '2048', label: { zh: '超清 (2048)', en: 'Ultra HD (2048)' } },
-  { value: '2560', label: { zh: '2K (2560)', en: '2K (2560)' } },
-  { value: '3840', label: { zh: '4K (3840)', en: '4K (3840)' } },
+  { value: '1024', label: { zh: '标准', en: 'Standard' } },
+  { value: '1536', label: { zh: '高清', en: 'High' } },
+  { value: '2048', label: { zh: '超清', en: 'Ultra HD' } },
+  { value: '2560', label: { zh: '2K', en: '2K' } },
+  { value: '3840', label: { zh: '4K', en: '4K' } },
 ]
 
 const chipBtnS = (active) => ({

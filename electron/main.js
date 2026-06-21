@@ -5,11 +5,10 @@ const { fileURLToPath } = require('url')
 const { electronApp, optimizer, is } = require('@electron-toolkit/utils')
 const config = require('./config')
 const store = require('./store')
-const chatApi = require('./api/chat')
-const imageApi = require('./api/image')
-const videoApi = require('./api/video')
 const modelsApi = require('./api/models')
 const { assertHttpsUrl, downloadToFile } = require('./api/http')
+const providerPipeline = require('./providers/pipeline')
+const { getProvidersByAction } = require('./providers/registry')
 
 let mainWindow = null
 let crashCount = 0
@@ -20,16 +19,8 @@ function getStoredProvider(track) {
   return config.load().providers?.[track] || {}
 }
 
-function getApiRequest(track, params = {}) {
-  return { ...params, ...getStoredProvider(track) }
-}
-
 function sameProviderEndpoint(a = {}, b = {}) {
   return ['id', 'baseUrl', 'protocol', 'format'].every(key => (a[key] || '') === (b[key] || ''))
-}
-
-function sameProviderHost(a = {}, b = {}) {
-  return ['id', 'baseUrl', 'format'].every(key => (a[key] || '') === (b[key] || ''))
 }
 
 function getModelFetchProvider(provider = {}) {
@@ -37,14 +28,6 @@ function getModelFetchProvider(provider = {}) {
   const stored = getStoredProvider(track)
   if (provider.apiKey && provider.apiKey !== config.REDACTED_API_KEY) return provider
   if (sameProviderEndpoint(provider, stored)) return stored
-  return { ...provider, apiKey: '' }
-}
-
-function getVideoPollProvider(provider = {}) {
-  const stored = getStoredProvider('video')
-  if (!provider || Object.keys(provider).length === 0) return stored
-  if (provider.apiKey && provider.apiKey !== config.REDACTED_API_KEY) return provider
-  if (sameProviderHost(provider, stored)) return { ...provider, apiKey: stored.apiKey || '' }
   return { ...provider, apiKey: '' }
 }
 
@@ -150,10 +133,46 @@ ipcMain.handle('conv:save', (_, id, data) => store.saveConversation(id, data))
 ipcMain.handle('conv:delete', (_, id) => store.deleteConversation(id))
 ipcMain.handle('conv:setActive', (_, id) => store.setActiveId(id))
 
-ipcMain.handle('api:chat', (_, messages) => chatApi.call(messages, getStoredProvider('chat')))
-ipcMain.handle('api:image', (_, params) => imageApi.generate(getApiRequest('image', params)))
-ipcMain.handle('api:video', (_, params) => videoApi.submit(getApiRequest('video', params)))
-ipcMain.handle('api:video:poll', (_, taskId, provider) => videoApi.poll(taskId, getVideoPollProvider(provider)))
+// Unified provider call
+ipcMain.handle('provider:call', async (_, params) => {
+  const stored = config.load()
+  const { providerId, action } = params
+  const track = action === 'chat' ? 'chat' : action === 'generate' ? 'image' : 'video'
+  const providerConfig = stored.providers?.[track] || {}
+  const credentials = { apiKey: providerConfig.apiKey || '' }
+  return await providerPipeline.execute({ ...params, credentials })
+})
+
+// List providers by action (for settings dropdown)
+ipcMain.handle('provider:list', async (_, action) => {
+  return getProvidersByAction(action || 'chat').map(p => ({
+    id: p.id,
+    name: p.name,
+    platform: p.platform,
+    meta: p.meta
+  }))
+})
+
+// Test provider connection
+ipcMain.handle('provider:test', async (_, { providerId, credentials }) => {
+  try {
+    const providerDef = require('./providers/registry').getProvider(providerId)
+    if (!providerDef) return { ok: false, message: 'Unknown provider' }
+    if (!providerDef.healthCheck) return { ok: true, message: 'No health check available' }
+    const { resolveAuth } = require('./providers/auth')
+    const { request, joinApiUrl } = require('./api/http')
+    const auth = resolveAuth(providerDef, credentials || {})
+    const url = joinApiUrl(providerDef.defaults.baseUrl, providerDef.healthCheck.url)
+    await request(url, {
+      method: providerDef.healthCheck.method,
+      headers: { ...auth.headers, 'Content-Type': 'application/json' }
+    }, providerDef.healthCheck.body)
+    return { ok: true, message: 'Connection successful' }
+  } catch (err) {
+    return { ok: false, message: err.message }
+  }
+})
+
 ipcMain.handle('api:models', (_, provider) => modelsApi.fetch(getModelFetchProvider(provider)))
 
 ipcMain.handle('api:saveAsset', async (_, { url, label, type }) => {

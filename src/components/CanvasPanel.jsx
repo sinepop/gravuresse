@@ -689,7 +689,7 @@ export default function CanvasPanel({ canvas, lang, onContextMenu }) {
               </InfiniteCanvas>
             </>
           )}
-          <EditBar activeTool={activeTool} setActiveTool={setActiveTool} drawColor={drawColor} setDrawColor={setDrawColor} drawWidth={drawWidth} setDrawWidth={setDrawWidth} onClearDrawings={handleClearDrawings} />
+          {viewMode === 'free' && <EditBar activeTool={activeTool} setActiveTool={setActiveTool} drawColor={drawColor} setDrawColor={setDrawColor} drawWidth={drawWidth} setDrawWidth={setDrawWidth} onClearDrawings={handleClearDrawings} />}
         </div>
       </div>
       {selectedAsset && (

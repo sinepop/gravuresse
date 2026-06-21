@@ -10,3 +10,12 @@ release/
 .env
 .env.*
 CLAUDE.md
+# Generated images and docs
+ChatGPT Image *.png
+图标.png
+*.docx
+# Build artifacts
+*.exe
+*.blockmap
+latest.yml
+builder-debug.yml

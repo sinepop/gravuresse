@@ -22,6 +22,11 @@ const ASPECT_RATIOS = ['1:1', '4:3', '3:4', '16:9', '9:16', '3:2']
 const STYLE_PRESETS = ['扁平插画', '3D 渲染', '写实摄影', '水彩画', '动漫风', '像素艺术', '油画', '极简主义', '赛博朋克', '剪纸']
 const DURATIONS = ['5s', '8s', '10s']
 const REDACTED_API_KEY = '********'
+const PROVIDER_ID_ALIASES = {
+  chat: { claude: 'anthropic', gemini: 'google', qwen: 'alibaba', kimi: 'moonshot', doubao: 'volcengine' },
+  image: { dalle: 'openai', gemini_img: 'google', jimeng_img: 'volcengine' },
+  video: { jimeng_vid: 'volcengine' }
+}
 
 /* ── reusable styles (all CSS variables) ── */
 const labelS = () => ({ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13, color: 'var(--text-secondary)', fontFamily: 'var(--font-body)', fontWeight: 400, letterSpacing: '0.2px' })
@@ -32,7 +37,10 @@ const btnS = (primary) => ({ padding: '8px 22px', background: primary ? 'var(--a
 /* ── ProviderTab ── */
 function ProviderTab({ track, providers, config, onChange, lang }) {
   const current = config?.providers?.[track] || {}
-  const provider = providers.find(p => p.id === current.id)
+  const selectedProviderId = providers.some(p => p.id === current.id)
+    ? current.id
+    : PROVIDER_ID_ALIASES[track]?.[current.id] || current.id || ''
+  const provider = providers.find(p => p.id === selectedProviderId)
   const apiKeyRedacted = current.apiKey === REDACTED_API_KEY
   const apiKeyValue = apiKeyRedacted ? '' : current.apiKey || ''
   const [testing, setTesting] = useState(false)
@@ -89,7 +97,7 @@ function ProviderTab({ track, providers, config, onChange, lang }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <label style={labelS()}>
         {t('provider', lang)}
-        <select value={current.id || ''} onChange={e => { const p = providers.find(pp => pp.id === e.target.value); if (p) onChange(track, { id: p.id, baseUrl: p.defaultUrl, model: p.defaultModel, protocol: p.protocol, format: p.format }); setModels([]); setTestResult(null) }} style={selectS()}>
+        <select value={selectedProviderId} onChange={e => { const p = providers.find(pp => pp.id === e.target.value); if (p) onChange(track, { id: p.id, baseUrl: p.defaultUrl || '', model: p.defaultModel || '', protocol: p.protocol, format: p.format }); setModels([]); setTestResult(null) }} style={selectS()}>
           {providers.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
         </select>
       </label>
@@ -224,20 +232,20 @@ function OtherPage({ config, onChange, lang }) {
 }
 
 /* ── Image settings page ── */
-function ImagePage({ config, onChange, lang }) {
+function ImagePage({ config, providers, onChange, lang }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <ProviderTab track="image" providers={IMG_PROVIDERS} config={config} onChange={(t2, patch) => onChange('image', patch)} lang={lang} />
+      <ProviderTab track="image" providers={providers} config={config} onChange={(t2, patch) => onChange('image', patch)} lang={lang} />
     </div>
   )
 }
 
 /* ── Video settings page ── */
-function VideoPage({ config, onChange, lang }) {
+function VideoPage({ config, providers, onChange, lang }) {
   const g = config?.general || {}
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <ProviderTab track="video" providers={VID_PROVIDERS} config={config} onChange={(t2, patch) => onChange('video', patch)} lang={lang} />
+      <ProviderTab track="video" providers={providers} config={config} onChange={(t2, patch) => onChange('video', patch)} lang={lang} />
       <label style={labelS()}>
         {t('defaultDuration', lang)}
         <select value={g.defaultDuration || '5s'} onChange={e => onChange('general', { defaultDuration: e.target.value })} style={selectS()}>
@@ -249,7 +257,7 @@ function VideoPage({ config, onChange, lang }) {
 }
 
 /* ── Main Settings ── */
-export default function Settings({ config, onSave, onClose }) {
+export default function Settings({ config, providerLists, onSave, onClose }) {
   const [page, setPage] = useState('appearance')
   const [local, setLocal] = useState(config)
   const [expanded, setExpanded] = useState({ general: true, api: true })
@@ -263,6 +271,11 @@ export default function Settings({ config, onSave, onClose }) {
   }, [onClose])
 
   const lang = local?.general?.language || 'zh'
+  const providers = {
+    chat: providerLists?.chat?.length ? providerLists.chat : CHAT_PROVIDERS,
+    image: providerLists?.image?.length ? providerLists.image : IMG_PROVIDERS,
+    video: providerLists?.video?.length ? providerLists.video : VID_PROVIDERS
+  }
 
   const handleChange = (track, patch) => {
     if (!local) return
@@ -314,9 +327,9 @@ export default function Settings({ config, onSave, onClose }) {
             {page === 'appearance' && <AppearancePage config={local} onChange={handleChange} lang={lang} />}
             {page === 'lang' && <LangPage config={local} onChange={handleChange} lang={lang} />}
             {page === 'other' && <OtherPage config={local} onChange={handleChange} lang={lang} />}
-            {page === 'chat' && <ProviderTab track="chat" providers={CHAT_PROVIDERS} config={local} onChange={(t2, patch) => handleChange('chat', patch)} lang={lang} />}
-            {page === 'image' && <ImagePage config={local} onChange={handleChange} lang={lang} />}
-            {page === 'video' && <VideoPage config={local} onChange={handleChange} lang={lang} />}
+            {page === 'chat' && <ProviderTab track="chat" providers={providers.chat} config={local} onChange={(t2, patch) => handleChange('chat', patch)} lang={lang} />}
+            {page === 'image' && <ImagePage config={local} providers={providers.image} onChange={handleChange} lang={lang} />}
+            {page === 'video' && <VideoPage config={local} providers={providers.video} onChange={handleChange} lang={lang} />}
           </div>
         </div>
         {/* Footer */}

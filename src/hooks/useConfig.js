@@ -7,10 +7,32 @@ const PROVIDER_MAP = { chat: CHAT_PROVIDERS, image: IMG_PROVIDERS, video: VID_PR
 
 const DEPRECATED_MODELS = ['pollinations']
 
-function migrateConfig(cfg) {
+function mergeProviderLists(primary, fallback) {
+  return [...primary, ...fallback.filter(p => !primary.some(item => item.id === p.id))]
+}
+
+export async function loadProviders(action) {
+  const fallback = PROVIDER_MAP[action] || []
+  if (!window.electronAPI?.providerAPI?.list) return fallback
+  try {
+    const providers = await window.electronAPI.providerAPI.list(action)
+    if (!Array.isArray(providers) || providers.length === 0) return fallback
+    return providers.map(provider => ({
+      ...provider,
+      defaultUrl: provider.defaultUrl || provider.defaults?.baseUrl || '',
+      defaultModel: provider.defaultModel || provider[action]?.defaultModel || '',
+      protocol: provider.protocol || provider[action]?.protocol,
+      format: provider.format || provider[action]?.format
+    }))
+  } catch {
+    return fallback
+  }
+}
+
+function migrateConfig(cfg, providerMap = PROVIDER_MAP) {
   if (!cfg?.providers) return cfg
   const next = { ...cfg, providers: { ...cfg.providers } }
-  for (const [track, providers] of Object.entries(PROVIDER_MAP)) {
+  for (const [track, providers] of Object.entries(providerMap)) {
     const saved = next.providers[track]
     if (!saved?.id) continue
     const matchedProvider = providers.find(p => p.id === saved.id)
@@ -26,15 +48,32 @@ function migrateConfig(cfg) {
 
 export default function useConfig() {
   const [config, setConfig] = useState(null)
+  const [providerLists, setProviderLists] = useState(PROVIDER_MAP)
   const configRef = useRef(null)
 
   useEffect(() => {
-    window.electronAPI?.getConfig().then(c => {
+    let cancelled = false
+    Promise.all([
+      loadProviders('chat'),
+      loadProviders('image'),
+      loadProviders('video'),
+      window.electronAPI?.getConfig?.()
+    ]).then(([chat, image, video, c]) => {
+      if (cancelled) return
+      const loadedProviderLists = { chat, image, video }
+      setProviderLists(loadedProviderLists)
       if (!c) return
-      const migrated = migrateConfig(c)
+      const migrationProviderMap = Object.fromEntries(
+        Object.entries(loadedProviderLists).map(([track, providers]) => [
+          track,
+          mergeProviderLists(providers, PROVIDER_MAP[track])
+        ])
+      )
+      const migrated = migrateConfig(c, migrationProviderMap)
       configRef.current = migrated
       setConfig(migrated)
     })
+    return () => { cancelled = true }
   }, [])
 
   const save = useCallback(async (newCfg) => {
@@ -60,5 +99,5 @@ export default function useConfig() {
     save(next)
   }, [save])
 
-  return { config, save, updateProvider, updateGeneral }
+  return { config, providerLists, save, updateProvider, updateGeneral }
 }

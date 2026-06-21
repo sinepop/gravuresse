@@ -6,6 +6,26 @@ import { t } from '../i18n'
 let _msgIdCounter = 0
 function nextId() { return Date.now() * 1000 + (++_msgIdCounter % 1000) }
 
+const PROVIDER_ID_ALIASES = {
+  chat: { claude: 'anthropic', gemini: 'google', qwen: 'alibaba', kimi: 'moonshot', doubao: 'volcengine' },
+  image: { dalle: 'openai', gemini_img: 'google', jimeng_img: 'volcengine' },
+  video: { jimeng_vid: 'volcengine' }
+}
+
+function getProviderId(track, id) {
+  return PROVIDER_ID_ALIASES[track]?.[id] || id
+}
+
+async function callProvider(params, fallback) {
+  if (!window.electronAPI?.providerAPI?.call) return fallback()
+  const result = await window.electronAPI.providerAPI.call(params)
+  if (!result?.ok) {
+    if (['UNKNOWN_PROVIDER', 'UNSUPPORTED_ACTION', 'NO_HANDLER'].includes(result?.error?.code)) return fallback()
+    throw new Error(result?.error?.message || 'Provider call failed')
+  }
+  return result.data
+}
+
 export default function useChat(config, canvas, onVideoTaskCreated, activeConversationId, isActiveConversation, conversationBridge) {
   const [messages, setMessages] = useState([])
   const [loading, setLoading] = useState(false)
@@ -130,7 +150,15 @@ ${modifyHint}${refHint}${styleHint}
 9. 不确定时，默认走 chat，不要猜测用户想生成。
 10. modify_image 时，新 prompt 必须基于上次 prompt 做增量修改，保留用户没提到的部分。`
 
-      const result = await window.electronAPI.chat({ history, system, thinking }, provider)
+      const result = await callProvider({
+        action: 'chat',
+        providerId: getProviderId('chat', provider.id),
+        messages: history,
+        system,
+        thinking,
+        model: provider.model,
+        baseUrl: provider.baseUrl
+      }, () => window.electronAPI.chat({ history, system, thinking }, provider))
 
       let replyText = result.text
       const thinkingText = result.thinking || ''
@@ -186,10 +214,19 @@ ${modifyHint}${refHint}${styleHint}
       if (!imgProvider?.id || !imgProvider?.apiKey) throw new Error(t('configImageApi', lang))
       const providerDef = IMG_PROVIDERS.find(p => p.id === imgProvider.id)
       const protocol = imgProvider.protocol || providerDef?.protocol || 'openai_image'
-      const url = await window.electronAPI.generateImage({
+      const imageParams = {
         prompt: task.prompt, ratio: task.ratio || '1:1', resolution: task.resolution || '1024',
         ...imgProvider, protocol
-      })
+      }
+      const url = await callProvider({
+        action: 'generate',
+        providerId: getProviderId('image', imgProvider.id),
+        prompt: imageParams.prompt,
+        ratio: imageParams.ratio,
+        resolution: imageParams.resolution,
+        model: imageParams.model,
+        baseUrl: imageParams.baseUrl
+      }, () => window.electronAPI.generateImage(imageParams))
       const elapsed = Math.round((Date.now() - startTime) / 1000)
       if (!canWriteToConversation(originConversationId)) return
       let assetId = placeholderId
@@ -214,11 +251,21 @@ ${modifyHint}${refHint}${styleHint}
       const provider = { ...vidProvider, protocol }
       const sourceAsset = task.source_image_id ? canvas.getAssetById(task.source_image_id) : null
       const sourceImageUrl = task.sourceImageUrl || sourceAsset?.url || ''
-      const result = await window.electronAPI.generateVideo({
+      const videoParams = {
         prompt: task.prompt, ratio: task.ratio || '1:1', duration: task.duration || 5,
         sourceImageUrl,
         ...provider
-      })
+      }
+      const result = await callProvider({
+        action: 'submit',
+        providerId: getProviderId('video', provider.id),
+        prompt: videoParams.prompt,
+        ratio: videoParams.ratio,
+        duration: videoParams.duration,
+        sourceImageUrl: videoParams.sourceImageUrl,
+        model: videoParams.model,
+        baseUrl: videoParams.baseUrl
+      }, () => window.electronAPI.generateVideo(videoParams))
       if (!result?.taskId) throw new Error(result?.error || 'Video task was not created')
       if (!canWriteToConversation(originConversationId)) return
       const status = result.status === 'running' ? 'running' : 'queued'
@@ -292,10 +339,19 @@ ${modifyHint}${refHint}${styleHint}
           if (!imgProvider?.id || !imgProvider?.apiKey) throw new Error(t('configImageApi', lang))
           const providerDef = IMG_PROVIDERS.find(p => p.id === imgProvider.id)
           const protocol = imgProvider.protocol || providerDef?.protocol || 'openai_image'
-          const url = await window.electronAPI.generateImage({
+          const imageParams = {
             prompt: task.prompt, ratio: task.ratio || '1:1', resolution: task.resolution || '1024',
             ...imgProvider, protocol
-          })
+          }
+          const url = await callProvider({
+            action: 'generate',
+            providerId: getProviderId('image', imgProvider.id),
+            prompt: imageParams.prompt,
+            ratio: imageParams.ratio,
+            resolution: imageParams.resolution,
+            model: imageParams.model,
+            baseUrl: imageParams.baseUrl
+          }, () => window.electronAPI.generateImage(imageParams))
           if (!canWriteToConversation(originConversationId)) return
           updateAssetInConversation(originConversationId, placeholderIds[i], { url, prompt: task.prompt, label: `${task.label} #${i + 1}`, model: imgProvider.model, ratio: task.ratio, _generating: false })
           if (config?.general?.autoSave !== false) {

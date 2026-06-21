@@ -2,7 +2,26 @@
 
 ## 中文
 
-#### v1.5.1 (2026-06-16)
+#### v1.6.0 (2026-06-21)
+
+**Provider 架构重构**
+- 统一 Provider 注册表：17 个 Provider 按平台组织（openai/anthropic/google/volcengine/alibaba/moonshot/zhipu/deepseek/siliconflow/groq/together/openrouter/xai/perplexity/lingyi/runway/happyhorse）
+- 统一 Auth 层：支持 bearer/header/query/cookie/session 五种鉴权方式
+- 统一 Request Pipeline：所有 API 调用走 `provider:call` IPC
+- 每个平台可声明多种能力（chat/image/video），不再按轨道拆分 Provider
+- 新增国内平台支持：硅基流动、零一万物、Groq、Together AI、xAI、Perplexity
+- 废弃旧的 electron/api/chat.js / image.js / video.js
+
+**UI 风格更新**
+- 配色改为冷调蓝主题（#4A6CF7），替换原来的金色/琥珀色
+- Notion 风格扁平化设计：减少阴影、边框，增加留白
+- 增加 `--space-*` 间距 Token 体系
+- 暗色模式改为深蓝灰底（#0D0D12），不再是暖灰
+- 分辨率选项改为标准命名（标准/高清/超清/2K/4K）
+- 绘图工具栏仅在自由画布模式下显示
+
+**其他**
+- 项目文件清理：移除仓库中旧 API 文件，更新 .gitignore
 
 **安全与代码质量加固**
 - **IPC 监听提升**：将窗口最小化/最大化/关闭及状态查询的 IPC 注册，从内部辅助函数范围提升至 `electron/main.js` 模块的顶级作用域，消除了潜在的内存泄露隐患，严格遵循 Electron 安全规范。
