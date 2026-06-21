@@ -23,6 +23,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   pollVideoTask: (taskId, provider) => ipcRenderer.invoke('api:video:poll', taskId, provider),
   fetchModels: (provider) => ipcRenderer.invoke('api:models', provider),
 
+  providerAPI: {
+    call: (params) => ipcRenderer.invoke('provider:call', params),
+    list: (action) => ipcRenderer.invoke('provider:list', action),
+    test: (params) => ipcRenderer.invoke('provider:test', params)
+  },
+
   saveAssetToDisk: (params) => ipcRenderer.invoke('api:saveAsset', params),
   saveAssetWithDialog: (params) => ipcRenderer.invoke('api:saveAssetWithDialog', params),
   getSaveDir: () => ipcRenderer.invoke('api:getSaveDir'),

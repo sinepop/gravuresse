@@ -1,5 +1,29 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 
+function getVideoProviderId(id) {
+  return id === 'jimeng_vid' ? 'volcengine' : id
+}
+
+async function pollVideoTask(task) {
+  if (!window.electronAPI?.providerAPI?.call) {
+    return window.electronAPI.pollVideoTask(task.taskId, task.provider)
+  }
+  const result = await window.electronAPI.providerAPI.call({
+    action: 'poll',
+    providerId: getVideoProviderId(task.provider?.id),
+    taskId: task.taskId,
+    model: task.provider?.model,
+    baseUrl: task.provider?.baseUrl
+  })
+  if (!result?.ok) {
+    if (['UNKNOWN_PROVIDER', 'UNSUPPORTED_ACTION', 'NO_HANDLER'].includes(result?.error?.code)) {
+      return window.electronAPI.pollVideoTask(task.taskId, task.provider)
+    }
+    throw new Error(result?.error?.message || 'Video polling failed')
+  }
+  return result.data
+}
+
 export default function useTaskQueue(canvas) {
   const [tasks, setTasks] = useState([])
   const pollingRef = useRef({})
@@ -50,7 +74,7 @@ export default function useTaskQueue(canvas) {
       const inFlightKey = `${task.id}:${runToken}`
       inFlightRef.current.add(inFlightKey)
       try {
-        const result = await window.electronAPI.pollVideoTask(task.taskId, task.provider)
+        const result = await pollVideoTask(task)
         if (cancelledRef.current.has(task.id) || runTokenRef.current[task.id] !== runToken) return
         const status = String(result.status || '').toLowerCase()
         const progressValue = Number(result.progress) || 0

@@ -1,17 +1,14 @@
 import { useState, useRef, useEffect } from 'react'
-import { CHAT_PROVIDERS } from '../providers/chatProviders'
-import { IMG_PROVIDERS } from '../providers/imageProviders'
-import { VID_PROVIDERS } from '../providers/videoProviders'
 import { t } from '../i18n'
 import Ic from './icons'
 
-const TRACKS = [
-  { key: 'chat', label: '对话', providers: CHAT_PROVIDERS },
-  { key: 'image', label: '图像', providers: IMG_PROVIDERS },
-  { key: 'video', label: '视频', providers: VID_PROVIDERS }
+const TRACK_KEYS = [
+  { key: 'chat', label: '对话' },
+  { key: 'image', label: '图像' },
+  { key: 'video', label: '视频' }
 ]
 
-function Dropdown({ track, current, onChange, onOpenSettings, lang }) {
+function Dropdown({ trackKey, providers, current, onChange, onOpenSettings, lang }) {
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
 
@@ -21,7 +18,7 @@ function Dropdown({ track, current, onChange, onOpenSettings, lang }) {
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
-  const currentProvider = track.providers.find(p => p.id === current?.id)
+  const currentProvider = providers.find(p => p.id === current?.id)
   const configured = current?.apiKey
 
   return (
@@ -38,7 +35,7 @@ function Dropdown({ track, current, onChange, onOpenSettings, lang }) {
       onMouseEnter={e => { if (!open) e.currentTarget.style.borderColor = 'var(--border-accent)' }}
       onMouseLeave={e => { if (!open) e.currentTarget.style.borderColor = 'var(--border-default)' }}
       >
-        <span style={{ color: 'var(--accent)', fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{t(track.key, lang)}</span>
+        <span style={{ color: 'var(--accent)', fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{t(trackKey, lang)}</span>
         <span style={{ width: 1, height: 12, background: 'var(--border-default)', flexShrink: 0 }} />
         {currentProvider?.name || t('noConfig', lang)}
         {configured ? <Ic n="chevDown" size={11} sw={2} /> : <Ic n="gear" size={11} color="var(--accent)" />}
@@ -50,8 +47,8 @@ function Dropdown({ track, current, onChange, onOpenSettings, lang }) {
           borderRadius: 'var(--radius-md)', padding: 4, minWidth: 180, zIndex: 100,
           boxShadow: 'var(--shadow-lg)', animation: 'scaleIn 0.12s ease'
         }}>
-          {track.providers.map(p => (
-            <button key={p.id} onClick={() => { onChange(track.key, p); setOpen(false) }} style={{
+          {providers.map(p => (
+            <button key={p.id} onClick={() => { onChange(trackKey, p); setOpen(false) }} style={{
               display: 'block', width: '100%', textAlign: 'left', padding: '6px 10px',
               background: p.id === current?.id ? 'var(--accent-soft)' : 'transparent',
               border: 'none', borderRadius: 4, color: 'var(--text-primary)', fontSize: 11, cursor: 'pointer',
@@ -67,7 +64,7 @@ function Dropdown({ track, current, onChange, onOpenSettings, lang }) {
   )
 }
 
-export default function ModelBar({ config, onProviderChange, onOpenSettings, lang }) {
+export default function ModelBar({ config, providerLists, onProviderChange, onOpenSettings, lang }) {
   if (!config) return null
   return (
     <div style={{
@@ -75,8 +72,9 @@ export default function ModelBar({ config, onProviderChange, onOpenSettings, lan
       display: 'flex', alignItems: 'center', gap: 10, padding: '0 16px',
       background: 'var(--bg-elevated)'
     }}>
-      {TRACKS.map(t => (
-        <Dropdown key={t.key} track={t} current={config.providers?.[t.key]}
+      {TRACK_KEYS.map(t => (
+        <Dropdown key={t.key} trackKey={t.key} providers={providerLists?.[t.key] || []}
+          current={config.providers?.[t.key]}
           onChange={onProviderChange} onOpenSettings={onOpenSettings} lang={lang} />
       ))}
       <div style={{ flex: 1 }} />
@@ -84,7 +82,7 @@ export default function ModelBar({ config, onProviderChange, onOpenSettings, lan
         fontSize: 10, color: 'var(--text-ghost)', fontFamily: 'var(--font-mono)',
         letterSpacing: '0.5px', padding: '3px 8px', borderRadius: 'var(--radius-sm)',
         background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)'
-      }}>v1.5.1</span>
+      }}>v1.6.0</span>
     </div>
   )
 }
