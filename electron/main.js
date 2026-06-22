@@ -145,11 +145,16 @@ ipcMain.handle('provider:call', async (_, params) => {
 
 // List providers by action (for settings dropdown)
 ipcMain.handle('provider:list', async (_, action) => {
-  return getProvidersByAction(action || 'chat').map(p => ({
+  const track = action || 'chat'
+  return getProvidersByAction(track).map(p => ({
     id: p.id,
     name: p.name,
     platform: p.platform,
-    meta: p.meta
+    meta: p.meta,
+    defaultUrl: p.defaults?.baseUrl || '',
+    defaultModel: p[track]?.defaultModel || '',
+    protocol: p[track]?.protocol,
+    format: p[track]?.format
   }))
 })
 
@@ -213,7 +218,7 @@ function createWindow() {
 
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     const devCsp = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data: blob:; media-src 'self' https: data: blob:; connect-src 'self' https: ws:; font-src 'self' data:"
-    const prodCsp = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data: blob:; media-src 'self' https: data: blob:; connect-src 'self' https:; font-src 'self' data:"
+    const prodCsp = "default-src 'self' file:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data: blob: file:; media-src 'self' https: data: blob:; connect-src 'self' https:; font-src 'self' data:"
     callback({
       responseHeaders: {
         ...details.responseHeaders,
