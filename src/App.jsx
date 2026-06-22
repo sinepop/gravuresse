@@ -6,6 +6,7 @@ import CanvasPanel from './components/CanvasPanel'
 import Settings from './components/Settings'
 import TaskQueue from './components/TaskQueue'
 import ContextMenu from './components/ContextMenu'
+import Ic from './components/icons'
 import useConfig from './hooks/useConfig'
 import useChat from './hooks/useChat'
 import useCanvas from './hooks/useCanvas'
@@ -13,6 +14,11 @@ import useTaskQueue from './hooks/useTaskQueue'
 import './styles/global.css'
 
 const FONT_SIZES = { small: '12px', medium: '13px', large: '14px' }
+const MODULES = [
+  { id: 'chat', icon: 'chat', labels: { zh: '对话', en: 'Chat' } },
+  { id: 'image', icon: 'image', labels: { zh: '生图', en: 'Image' } },
+  { id: 'video', icon: 'film', labels: { zh: '视频', en: 'Video' } }
+]
 let conversationsLoadPromise = null
 
 function loadConversationsOnce() {
@@ -42,6 +48,7 @@ export default function App() {
   const taskQueue = useTaskQueue(canvas)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [ctxMenu, setCtxMenu] = useState(null)
+  const [activeModule, setActiveModule] = useState('chat')
 
   // Conversation management
   const [conversations, setConversations] = useState([])
@@ -334,25 +341,48 @@ export default function App() {
     }
   }, [canvas, chat])
 
+  const lang = config?.general?.language || 'zh'
+
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
-      <TitleBar onOpenSettings={() => setSettingsOpen(true)} lang={config?.general?.language} />
+      <TitleBar onOpenSettings={() => setSettingsOpen(true)} lang={lang} />
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-        <div style={{ width: '40%', borderRight: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column' }}>
-          <ChatPanel chat={chat} config={config} lang={config?.general?.language}
-            conversations={conversations} activeConvId={activeConvId}
-            onSwitchConv={handleSwitchConv} onNewConv={handleNewConv} onDeleteConv={handleDeleteConv}
-            onRenameConv={handleRenameConv} canvas={canvas} />
-        </div>
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-          <div style={{ flex: 1, overflow: 'hidden' }}>
-            <CanvasPanel canvas={canvas} lang={config?.general?.language}
+        <nav className="module-sidebar" aria-label={lang === 'en' ? 'Workspace modules' : '工作区模块'}>
+          {MODULES.map(module => {
+            const active = activeModule === module.id
+            const label = module.labels[lang] || module.labels.zh
+            return (
+              <button
+                key={module.id}
+                className={`module-nav-button ${active ? 'active' : ''}`}
+                onClick={() => setActiveModule(module.id)}
+                title={label}
+                aria-label={label}
+                aria-current={active ? 'page' : undefined}
+              >
+                <Ic n={module.icon} size={17} sw={active ? 2 : 1.6} />
+                <span>{label}</span>
+              </button>
+            )
+          })}
+        </nav>
+        <main className="module-content">
+          <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+            <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+              <ChatPanel chat={chat} config={config} lang={lang}
+                conversations={conversations} activeConvId={activeConvId}
+                onSwitchConv={handleSwitchConv} onNewConv={handleNewConv} onDeleteConv={handleDeleteConv}
+                onRenameConv={handleRenameConv} canvas={canvas} />
+              {activeModule === 'video' && (
+                <TaskQueue tasks={taskQueue.tasks} onRetry={taskQueue.retry} onRemove={taskQueue.remove} lang={lang} />
+              )}
+            </div>
+            <CanvasPanel canvas={canvas} lang={lang}
               onContextMenu={(e, asset) => setCtxMenu({ x: e.clientX, y: e.clientY, asset })} />
           </div>
-          <TaskQueue tasks={taskQueue.tasks} onRetry={taskQueue.retry} onRemove={taskQueue.remove} lang={config?.general?.language} />
-        </div>
+        </main>
       </div>
-      <ModelBar config={config} providerLists={providerLists} onProviderChange={updateProvider} onOpenSettings={() => setSettingsOpen(true)} lang={config?.general?.language} />
+      <ModelBar config={config} providerLists={providerLists} onProviderChange={updateProvider} onOpenSettings={() => setSettingsOpen(true)} lang={lang} />
       {settingsOpen && <Settings config={config} providerLists={providerLists} onSave={save} onClose={() => setSettingsOpen(false)} />}
       {ctxMenu && <ContextMenu x={ctxMenu.x} y={ctxMenu.y} asset={ctxMenu.asset} onClose={() => setCtxMenu(null)} onAction={handleAssetAction} lang={config?.general?.language} />}
     </div>
