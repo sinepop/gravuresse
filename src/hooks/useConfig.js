@@ -12,6 +12,10 @@ function mergeProviderLists(primary, fallback) {
   return [...primary, ...fallback.filter(p => !primary.some(item => item.id === p.id))]
 }
 
+function isExecutableProvider(provider) {
+  return provider?.executable !== false && provider?.integrationStatus !== 'metadata'
+}
+
 export async function loadProviders(action) {
   const fallback = PROVIDER_MAP[action] || []
   if (!window.electronAPI?.providerAPI?.list) return fallback
@@ -43,8 +47,9 @@ function migrateConfig(cfg, providerMap = PROVIDER_MAP) {
     const saved = next.providers[track]
     if (!saved?.id) continue
     const matchedProvider = providers.find(p => p.id === saved.id)
-    if (!matchedProvider) {
-      const fallback = providers[0]
+    if (!matchedProvider || !isExecutableProvider(matchedProvider)) {
+      const fallback = providers.find(isExecutableProvider) || providers[0]
+      if (!fallback) continue
       next.providers[track] = { id: fallback.id, apiKey: '', baseUrl: fallback.defaultUrl, model: fallback.defaultModel }
     } else if (DEPRECATED_MODELS.includes(saved.model)) {
       next.providers[track] = { ...saved, model: matchedProvider.defaultModel }

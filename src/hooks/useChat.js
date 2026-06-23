@@ -7,6 +7,12 @@ import { t } from '../i18n'
 let _msgIdCounter = 0
 function nextId() { return Date.now() * 1000 + (++_msgIdCounter % 1000) }
 
+function parseDurationSeconds(value, fallback = 5) {
+  const match = String(value ?? '').trim().match(/^(\d+(?:\.\d+)?)\s*s?$/i)
+  const parsed = match ? Number(match[1]) : Number(value)
+  return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : fallback
+}
+
 async function callProvider(params, fallback) {
   if (!window.electronAPI?.providerAPI?.call) return fallback()
   const result = await window.electronAPI.providerAPI.call(params)
@@ -17,7 +23,49 @@ async function callProvider(params, fallback) {
   return result.data
 }
 
-export default function useChat(config, canvas, onVideoTaskCreated, activeConversationId, isActiveConversation, conversationBridge) {
+function findProviderDef(track, providerLists = {}, id) {
+  const providers = providerLists?.[track] || []
+  const canonicalId = resolveProviderId(track, id)
+  return providers.find(p => p.id === id || p.id === canonicalId)
+}
+
+function precheckGeneration(track, providerDef, task, extra = {}) {
+  if (!providerDef) return
+  if (providerDef.executable === false || providerDef.integrationStatus === 'metadata') {
+    throw new Error(`${providerDef.name} 当前只提供官网/购买/文档入口，请选择可执行 provider 或 Custom API。`)
+  }
+  const constraints = providerDef.constraints?.[track] || providerDef.meta?.constraints?.[track] || {}
+  const prompt = String(task.prompt || '')
+  const maxPrompt = constraints.prompt?.maxLength
+  if (maxPrompt && Array.from(prompt).length > maxPrompt) {
+    throw new Error(`Prompt 过长：当前 ${Array.from(prompt).length} 字符，${providerDef.name} 上限 ${maxPrompt} 字符。`)
+  }
+  const negativePrompt = task.negative_prompt || task.negativePrompt || ''
+  const negRule = constraints.negativePrompt
+  if (negativePrompt && negRule && negRule.supported === false && negRule.strategy === 'unsupported') {
+    throw new Error(`${providerDef.name} 不支持 Negative Prompt，请清空负面提示词或换用支持的 provider。`)
+  }
+  if (track === 'video') {
+    const durationRule = constraints.duration
+    const duration = Number(task.duration)
+    if (durationRule?.allowed?.length && Number.isFinite(duration) && !durationRule.allowed.includes(duration)) {
+      throw new Error(`${providerDef.name} 不支持 ${duration}s，请使用 ${durationRule.allowed.join('/')}s。`)
+    }
+    if (durationRule?.min && duration < durationRule.min) throw new Error(`${providerDef.name} 最小时长为 ${durationRule.min}s。`)
+    if (durationRule?.max && duration > durationRule.max) throw new Error(`${providerDef.name} 最大时长为 ${durationRule.max}s。`)
+    const sourceRule = constraints.sourceImage || {}
+    const requiresSource = sourceRule.required || sourceRule.requiredForModes?.includes(task.intent || extra.mode)
+    if (requiresSource && !extra.sourceImageUrl) {
+      throw new Error(`${providerDef.name} 需要先选择一张源图才能提交图生视频任务。`)
+    }
+  }
+}
+
+function hasProviderCredential(provider = {}) {
+  return provider.customAuth?.type === 'session' ? Boolean(provider.sessionToken) : Boolean(provider.apiKey)
+}
+
+export default function useChat(config, canvas, onVideoTaskCreated, activeConversationId, isActiveConversation, conversationBridge, providerLists) {
   const [messages, setMessages] = useState([])
   const [loading, setLoading] = useState(false)
   const [thinking, setThinking] = useState(false)
@@ -99,7 +147,7 @@ export default function useChat(config, canvas, onVideoTaskCreated, activeConver
 
     const provider = config?.providers?.chat
     const lang = config?.general?.language || 'zh'
-    if (!provider?.apiKey) {
+    if (!hasProviderCredential(provider)) {
       appendMessage(originConversationId, { role: 'assistant', content: t('configApiFirst', lang), id: nextId() })
       setLoading(false)
       loadingRef.current = false
@@ -137,16 +185,19 @@ ${references.map((r, i) => `  [参考${i + 1}] ${r.type}: "${r.label}" | URL: ${
 
       const defaultRatio = genSettings?.ratio || config?.general?.defaultRatio || '1:1'
       const defaultStyle = genSettings?.style || config?.general?.defaultStyle || ''
+      const defaultNegPrompt = config?.providers?.image?.defaultNegPrompt?.trim() || ''
+      const defaultDuration = parseDurationSeconds(config?.general?.defaultDuration, 5)
+      const customSystemPrompt = provider?.customSystemPrompt?.trim() || ''
       const styleHint = defaultStyle ? `\n用户当前选择的风格预设：${defaultStyle}。生成图片时，prompt 必须融入这个风格的视觉特征。` : ''
 
-      const system = `你是 Gravuresse，专业 AI 创意设计工作流 Agent。你主要是一个对话助手，只在用户明确要求时才触发图片/视频生成。
+      const baseSystem = `你是 Gravuresse，专业 AI 创意设计工作流 Agent。你主要是一个对话助手，只在用户明确要求时才触发图片/视频生成。
 
 ## 当前画布
 ${canvas ? canvas.allAssets?.slice(0, 10).map(a => `  [${a.id}] "${a.label}" | ${a.type} | ${a.prompt?.slice(0, 80)}`).join('\n') || '（空）' : '（空）'}
 ${modifyHint}${refHint}${styleHint}
 
 ## 响应格式（只输出纯JSON，不要markdown代码块）
-{"understanding":"一句话理解用户意图","intent":"chat|generate_image|modify_image|generate_video|image_to_video","tasks":[{"id":"t1","type":"image|video","label":"中文短标签","prompt":"高质量英文prompt，80词以上，含主体/场景/镜头/构图/光线/色彩/材质/情绪/细节","negative_prompt":"low quality, blurry, deformed, watermark, text","source_image_id":null,"duration":5,"ratio":"${defaultRatio}"}],"reply":"中文友好回复"}
+{"understanding":"一句话理解用户意图","intent":"chat|generate_image|modify_image|generate_video|image_to_video","tasks":[{"id":"t1","type":"image|video","label":"中文短标签","prompt":"高质量英文prompt，80词以上，含主体/场景/镜头/构图/光线/色彩/材质/情绪/细节","negative_prompt":${JSON.stringify(defaultNegPrompt || 'low quality, blurry, deformed, watermark, text')},"source_image_id":null,"duration":${defaultDuration},"ratio":"${defaultRatio}"}],"reply":"中文友好回复"}
 
 ## 规则（严格执行）
 1. 默认 intent=chat，tasks=[]。绝大多数对话都是纯聊天。
@@ -160,6 +211,7 @@ ${modifyHint}${refHint}${styleHint}
 9. 不确定时，默认走 chat，不要猜测用户想生成。
 10. modify_image 时，新 prompt 必须基于上次 prompt 做增量修改，保留用户没提到的部分。`
 
+      const system = customSystemPrompt ? `${baseSystem}\n\n## Custom System Prompt\n${customSystemPrompt}` : baseSystem
       const result = await callProvider({
         action: 'chat',
         providerId: resolveProviderId('chat', provider.id),
@@ -185,9 +237,9 @@ ${modifyHint}${refHint}${styleHint}
           type: task.type,
           label: task.label,
           prompt: task.prompt,
-          negative_prompt: task.negative_prompt,
+          negative_prompt: task.negative_prompt || defaultNegPrompt,
           ratio: task.ratio || defaultRatio,
-          duration: task.duration || 5,
+          duration: parseDurationSeconds(task.duration, defaultDuration),
           source_image_id: task.source_image_id,
           intent: parsed.intent,
           resolution: genSettings?.resolution || '1024',
@@ -221,11 +273,14 @@ ${modifyHint}${refHint}${styleHint}
 
     if (task.type === 'image') {
       const imgProvider = config?.providers?.image
-      if (!imgProvider?.id || !imgProvider?.apiKey) throw new Error(t('configImageApi', lang))
-      const providerDef = IMG_PROVIDERS.find(p => p.id === imgProvider.id)
+      if (!imgProvider?.id || !hasProviderCredential(imgProvider)) throw new Error(t('configImageApi', lang))
+      const providerDef = findProviderDef('image', providerLists, imgProvider.id) || IMG_PROVIDERS.find(p => p.id === imgProvider.id)
       const protocol = imgProvider.protocol || providerDef?.protocol || 'openai_image'
+      const negativePrompt = task.negative_prompt || imgProvider.defaultNegPrompt || ''
+      precheckGeneration('image', providerDef, { ...task, negative_prompt: negativePrompt })
       const imageParams = {
         prompt: task.prompt, ratio: task.ratio || '1:1', resolution: task.resolution || '1024',
+        negative_prompt: negativePrompt,
         ...imgProvider, protocol
       }
       const url = await callProvider({
@@ -234,6 +289,7 @@ ${modifyHint}${refHint}${styleHint}
         prompt: imageParams.prompt,
         ratio: imageParams.ratio,
         resolution: imageParams.resolution,
+        negative_prompt: imageParams.negative_prompt,
         model: imageParams.model,
         baseUrl: imageParams.baseUrl
       }, () => window.electronAPI.generateImage(imageParams))
@@ -255,19 +311,21 @@ ${modifyHint}${refHint}${styleHint}
         }
       }
       updateTask({ status: 'done', assetId, elapsed })
-      if (config?.general?.autoSave !== false) {
+      if (config?.general?.autoSaveImage === true) {
         try { await window.electronAPI.saveAssetToDisk?.({ url, label: task.label, type: 'image' }) } catch {}
       }
     } else if (task.type === 'video') {
       const vidProvider = config?.providers?.video
-      if (!vidProvider?.id || !vidProvider?.apiKey) throw new Error(t('configVideoApi', lang))
-      const providerDef = VID_PROVIDERS.find(p => p.id === vidProvider.id)
+      if (!vidProvider?.id || !hasProviderCredential(vidProvider)) throw new Error(t('configVideoApi', lang))
+      const providerDef = findProviderDef('video', providerLists, vidProvider.id) || VID_PROVIDERS.find(p => p.id === vidProvider.id)
       const protocol = vidProvider.protocol || providerDef?.protocol || 'ark_video_task'
       const provider = { ...vidProvider, protocol }
       const sourceAsset = task.source_image_id ? canvas.getAssetById(task.source_image_id) : null
       const sourceImageUrl = task.sourceImageUrl || sourceAsset?.url || ''
+      const duration = parseDurationSeconds(task.duration, parseDurationSeconds(config?.general?.defaultDuration, 5))
+      precheckGeneration('video', providerDef, { ...task, duration }, { sourceImageUrl, mode: task.intent })
       const videoParams = {
-        prompt: task.prompt, ratio: task.ratio || '1:1', duration: task.duration || 5,
+        prompt: task.prompt, ratio: task.ratio || '1:1', duration,
         sourceImageUrl,
         ...provider
       }
@@ -301,7 +359,7 @@ ${modifyHint}${refHint}${styleHint}
       const elapsed = Math.round((Date.now() - startTime) / 1000)
       updateTask({ status, taskId: result.taskId, queueId: queuedTask?.id, elapsed })
     }
-  }, [config, canvas, onVideoTaskCreated, canWriteToConversation, canWriteToCurrentConversation, addAssetToConversation, updateAssetInConversation, patchTask])
+  }, [config, canvas, onVideoTaskCreated, canWriteToConversation, canWriteToCurrentConversation, addAssetToConversation, updateAssetInConversation, patchTask, providerLists])
 
   const confirmGenerate = useCallback(async (msgId, task, taskIndex) => {
     const originConversationId = activeConversationIdRef.current

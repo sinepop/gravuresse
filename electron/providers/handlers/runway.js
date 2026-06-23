@@ -14,9 +14,16 @@ function normalizeStatus(status) {
   return s
 }
 
+function normalizeDuration(duration) {
+  const value = Number(duration)
+  return Number.isFinite(value) && value > 0 ? Math.round(value) : null
+}
+
 async function handleSubmit(params) {
-  const { model, baseUrl, auth, prompt, sourceImageUrl } = params
+  const { model, baseUrl, auth, prompt, sourceImageUrl, duration } = params
   const body = { model: model || 'gen4-turbo', promptText: prompt }
+  const durationSeconds = normalizeDuration(duration)
+  if (durationSeconds) body.duration = durationSeconds
   if (sourceImageUrl) body.promptImage = sourceImageUrl
   const url = joinApiUrl(baseUrl, '/v1/image_to_video')
   const res = await request(url, {
@@ -25,7 +32,8 @@ async function handleSubmit(params) {
       ...auth.headers,
       'Content-Type': 'application/json',
       'X-Runway-Version': '2024-11-06'
-    }
+    },
+    ...(params.requestOptions || {})
   }, body)
   const json = JSON.parse(res.data)
   if (json.error) throw new Error(json.error.message)
@@ -37,7 +45,8 @@ async function handlePoll(taskId, params) {
   const url = joinApiUrl(baseUrl, `/v1/tasks/${taskId}`)
   const res = await request(url, {
     method: 'GET',
-    headers: { ...auth.headers, 'X-Runway-Version': '2024-11-06' }
+    headers: { ...auth.headers, 'X-Runway-Version': '2024-11-06' },
+    ...(params.requestOptions || {})
   })
   const json = JSON.parse(res.data)
   if (json.error) throw new Error(json.error.message)

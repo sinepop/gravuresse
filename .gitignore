@@ -19,3 +19,19 @@ ChatGPT Image *.png
 *.blockmap
 latest.yml
 builder-debug.yml
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+# Editor files
+.idea/
+.vscode/
+*.sublime-*
+# Crash / debug dumps
+*.dmp
+core.*
+# Secrets (do not commit)
+*.pem
+*.key
+*.cert
+credentials.json

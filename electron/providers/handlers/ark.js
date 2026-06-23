@@ -18,8 +18,13 @@ function getSize(ratio, resolution) {
   return `${Math.min(w, 4096)}x${Math.min(h, 4096)}`
 }
 
+function normalizeDuration(duration) {
+  const value = Number(duration)
+  return Number.isFinite(value) && value > 0 ? Math.round(value) : null
+}
+
 async function handleGenerate(params) {
-  const { model, baseUrl, auth, prompt, ratio, resolution } = params
+  const { model, baseUrl, auth, prompt, ratio, resolution, negative_prompt } = params
   const size = getSize(ratio, resolution)
   const body = {
     model: model || 'doubao-seedream-4-0',
@@ -27,10 +32,12 @@ async function handleGenerate(params) {
     n: 1,
     size
   }
+  if (negative_prompt) body.negative_prompt = negative_prompt
   const url = joinApiUrl(baseUrl, '/images/generations')
   const res = await request(url, {
     method: 'POST',
-    headers: { ...auth.headers, 'Content-Type': 'application/json' }
+    headers: { ...auth.headers, 'Content-Type': 'application/json' },
+    ...(params.requestOptions || {})
   }, body)
   const json = JSON.parse(res.data)
   if (json.error) throw new Error(json.error.message)
@@ -44,16 +51,19 @@ async function handleGenerate(params) {
 // ==================== Video (ark_video_task) ====================
 
 async function handleSubmit(params) {
-  const { model, baseUrl, auth, prompt, sourceImageUrl } = params
+  const { model, baseUrl, auth, prompt, sourceImageUrl, duration } = params
   const body = {
     model: model || 'doubao-seedance-2-0-pro',
     content: [{ type: 'text', text: prompt }]
   }
+  const durationSeconds = normalizeDuration(duration)
+  if (durationSeconds) body.duration = durationSeconds
   if (sourceImageUrl) body.content.push({ type: 'image_url', image_url: { url: sourceImageUrl } })
   const url = joinApiUrl(baseUrl, '/contents/generations/tasks')
   const res = await request(url, {
     method: 'POST',
-    headers: { ...auth.headers, 'Content-Type': 'application/json' }
+    headers: { ...auth.headers, 'Content-Type': 'application/json' },
+    ...(params.requestOptions || {})
   }, body)
   const json = JSON.parse(res.data)
   if (json.error) throw new Error(json.error.message)
@@ -65,7 +75,8 @@ async function handlePoll(taskId, params) {
   const url = joinApiUrl(baseUrl, `/contents/generations/tasks/${taskId}`)
   const res = await request(url, {
     method: 'GET',
-    headers: { ...auth.headers }
+    headers: { ...auth.headers },
+    ...(params.requestOptions || {})
   })
   const json = JSON.parse(res.data)
   if (json.error) throw new Error(json.error.message)

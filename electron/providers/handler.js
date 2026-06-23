@@ -19,10 +19,14 @@ const HANDLER_MAP = {
   'openai_image': null,    // TODO: handlers/openai.js (reuse)
   'gemini_image': null,    // TODO: handlers/gemini.js (reuse)
   'ark_image': null,       // TODO: handlers/volcengine.js
+  'custom_image_openai': null,
+  'custom_image_gemini': null,
+  'custom_image_ark': null,
   // Video protocols
   'ark_video_task': null,  // TODO: handlers/volcengine.js (reuse)
   'runway_task': null,     // TODO: handlers/runway.js
-  'happyhorse_task': null  // TODO: handlers/happyhorse.js
+  'happyhorse_task': null, // TODO: handlers/happyhorse.js
+  'custom_video_task': null
 }
 
 /**

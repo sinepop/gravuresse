@@ -117,7 +117,7 @@ export default function App() {
     }))
   }), [patchStoredConversation])
 
-  const chat = useChat(config, canvas, taskQueue.add, activeConvId, isActiveConversation, conversationBridge)
+  const chat = useChat(config, canvas, taskQueue.add, activeConvId, isActiveConversation, conversationBridge, providerLists)
 
   const setChatMessages = chat.setMessages
   const replaceCanvasAssets = canvas.replaceAssets
@@ -338,10 +338,29 @@ export default function App() {
   const lang = config?.general?.language || 'zh'
 
   return (
-    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
-      <TitleBar onOpenSettings={() => setSettingsOpen(true)} lang={lang} />
-      <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-        <nav className="module-sidebar" aria-label={lang === 'en' ? 'Workspace modules' : '工作区模块'}>
+    <div className="app-background">
+      <div className="gradient-mesh" />
+
+      {/* Base Layer: Canvas Panel */}
+      <div style={{ position: 'absolute', inset: 0, paddingTop: 44, paddingLeft: 380, zIndex: 1 }}>
+        <CanvasPanel canvas={canvas} lang={lang}
+          onContextMenu={(e, asset) => setCtxMenu({ x: e.clientX, y: e.clientY, asset })} />
+      </div>
+
+      {/* Floating UI Layer */}
+      <div style={{ position: 'absolute', inset: 0, zIndex: 10, pointerEvents: 'none', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ pointerEvents: 'auto' }}>
+          <TitleBar onOpenSettings={() => setSettingsOpen(true)} lang={lang} />
+        </div>
+
+        <div style={{ flex: 1, display: 'flex', padding: '16px', gap: '16px', overflow: 'hidden' }}>
+
+          {/* Glass Sidebar + Chat Combo */}
+          <div className="glass-floating" style={{
+            width: 350, display: 'flex', overflow: 'hidden', pointerEvents: 'auto',
+            flexShrink: 0
+          }}>
+            <nav className="module-sidebar" aria-label={lang === 'en' ? 'Workspace modules' : '工作区模块'}>
           {MODULES.map(module => {
             const active = activeModule === module.id
             const label = module.labels[lang] || module.labels.zh
@@ -360,9 +379,7 @@ export default function App() {
             )
           })}
         </nav>
-        <main className="module-content">
-          <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-            <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            <main style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'transparent' }}>
               <ChatPanel chat={chat} config={config} lang={lang}
                 conversations={conversations} activeConvId={activeConvId}
                 onSwitchConv={handleSwitchConv} onNewConv={handleNewConv} onDeleteConv={handleDeleteConv}
@@ -370,13 +387,17 @@ export default function App() {
               {activeModule === 'video' && (
                 <TaskQueue tasks={taskQueue.tasks} onRetry={taskQueue.retry} onRemove={taskQueue.remove} lang={lang} />
               )}
-            </div>
-            <CanvasPanel canvas={canvas} lang={lang}
-              onContextMenu={(e, asset) => setCtxMenu({ x: e.clientX, y: e.clientY, asset })} />
+            </main>
           </div>
-        </main>
+
+          {/* Right Area for floating widgets */}
+          <div style={{ flex: 1, position: 'relative' }}>
+            <div style={{ position: 'absolute', bottom: 0, right: 0, pointerEvents: 'auto' }}>
+              <ModelBar config={config} providerLists={providerLists} onProviderChange={updateProvider} onOpenSettings={() => setSettingsOpen(true)} lang={lang} />
+            </div>
+          </div>
+        </div>
       </div>
-      <ModelBar config={config} providerLists={providerLists} onProviderChange={updateProvider} onOpenSettings={() => setSettingsOpen(true)} lang={lang} />
       {settingsOpen && <Settings config={config} providerLists={providerLists} onSave={save} onClose={() => setSettingsOpen(false)} />}
       {ctxMenu && <ContextMenu x={ctxMenu.x} y={ctxMenu.y} asset={ctxMenu.asset} onClose={() => setCtxMenu(null)} onAction={handleAssetAction} lang={config?.general?.language} />}
     </div>

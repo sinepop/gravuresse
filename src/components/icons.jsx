@@ -2,7 +2,8 @@ import {
   Send, Settings, X, ChevronDown, Trash2, Download, Image, Film,
   Sparkles, Grid3X3, Link, Check, AlertTriangle, RefreshCw, Eye, Zap,
   Minus, Square, Copy, Plus, MousePointer, Hand, Pencil, Circle, Type,
-  LayoutGrid, Move, Lightbulb
+  LayoutGrid, Move, Lightbulb, MessageSquare, ExternalLink, BookOpen,
+  CreditCard, KeyRound, Globe2, ServerCog, BadgeDollarSign
 } from 'lucide-react'
 
 const ICONS = {
@@ -38,6 +39,14 @@ const ICONS = {
   move4: Move,
   think: Lightbulb,
   copy: Copy,
+  chat: MessageSquare,
+  external: ExternalLink,
+  book: BookOpen,
+  card: CreditCard,
+  key: KeyRound,
+  globe: Globe2,
+  server: ServerCog,
+  price: BadgeDollarSign,
 }
 
 export default function Ic({ n, size = 15, color = 'currentColor', sw = 1.5 }) {
@@ -45,4 +54,3 @@ export default function Ic({ n, size = 15, color = 'currentColor', sw = 1.5 }) {
   if (!Icon) return null
   return <Icon size={size} color={color} strokeWidth={sw} style={{ flexShrink: 0, display: 'inline-block', verticalAlign: 'middle' }} />
 }
-

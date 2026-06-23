@@ -14,14 +14,23 @@ function normalizeStatus(status) {
   return s
 }
 
+function normalizeDuration(duration) {
+  const value = Number(duration)
+  return Number.isFinite(value) && value > 0 ? Math.round(value) : null
+}
+
 async function handleSubmit(params) {
-  const { model, baseUrl, auth, prompt, sourceImageUrl } = params
+  const { model, baseUrl, auth, prompt, sourceImageUrl, duration } = params
   const body = { prompt }
+  const durationSeconds = normalizeDuration(duration)
+  if (model) body.model = model
+  if (durationSeconds) body.duration = durationSeconds
   if (sourceImageUrl) body.source_image = sourceImageUrl
   const url = joinApiUrl(baseUrl, '/v1/generate')
   const res = await request(url, {
     method: 'POST',
-    headers: { ...auth.headers, 'Content-Type': 'application/json' }
+    headers: { ...auth.headers, 'Content-Type': 'application/json' },
+    ...(params.requestOptions || {})
   }, body)
   const json = JSON.parse(res.data)
   if (json.error) throw new Error(json.error.message)
@@ -33,7 +42,8 @@ async function handlePoll(taskId, params) {
   const url = joinApiUrl(baseUrl, `/v1/task/${taskId}`)
   const res = await request(url, {
     method: 'GET',
-    headers: { ...auth.headers }
+    headers: { ...auth.headers },
+    ...(params.requestOptions || {})
   })
   const json = JSON.parse(res.data)
   if (json.error) throw new Error(json.error.message)

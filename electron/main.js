@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain, dialog, shell, session } = require('electron')
 const path = require('path')
 const fs = require('fs')
+const crypto = require('crypto')
 const { fileURLToPath } = require('url')
 const { electronApp, optimizer, is } = require('@electron-toolkit/utils')
 const config = require('./config')
@@ -11,27 +12,89 @@ const providerPipeline = require('./providers/pipeline')
 // Wire handler side-effects (registerHandler): must be required so the
 // HANDLER_MAP is populated before any provider:call / api:* dispatch.
 require('./providers')
-const { getProvidersByAction } = require('./providers/registry')
+const { getProvider, getProvidersByAction } = require('./providers/registry')
+const { resolveHandler } = require('./providers/handler')
+const { validateGenerationRequest } = require('./providers/validation')
 
 let mainWindow = null
 let crashCount = 0
 
 const SAVE_DIR = path.join(app.getPath('pictures'), 'Gravuresse')
+const MAX_ASSET_BYTES = 100 * 1024 * 1024
+const ASSET_MIME_EXTENSIONS = {
+  'image/png': '.png',
+  'image/jpeg': '.jpg',
+  'image/webp': '.webp',
+  'video/mp4': '.mp4'
+}
+const ASSET_TYPE_MIMES = {
+  image: new Set(['image/png', 'image/jpeg', 'image/webp']),
+  video: new Set(['video/mp4'])
+}
+const VIDEO_POLL_SESSION_TTL_MS = 6 * 60 * 60 * 1000
+const videoPollSessions = new Map()
+const ALLOWED_PROVIDER_PAYLOAD_KEYS = [
+  'messages', 'system', 'thinking', 'model',
+  'prompt', 'ratio', 'resolution', 'negative_prompt', 'source_image_id',
+  'negativePrompt', 'duration', 'sourceImageUrl', 'taskId', 'mode', 'generationMode'
+]
+const STORED_PROVIDER_PAYLOAD_KEYS = [
+  'customAuth', 'authConfig', 'template', 'customTemplate', 'generationOptions',
+  'pathPrefix', 'path', 'submitPath', 'pollPath', 'taskIdPath', 'statusPath',
+  'videoUrlPath', 'progressPath', 'errorPath', 'imageUrlPath', 'responsePath',
+  'body', 'requestBody', 'submitBody', 'pollBody', 'method', 'submitMethod',
+  'pollMethod', 'pollInterval'
+]
 
 function getStoredProvider(track) {
   return config.load().providers?.[track] || {}
 }
 
-function sameProviderEndpoint(a = {}, b = {}) {
-  return ['id', 'baseUrl', 'protocol', 'format'].every(key => (a[key] || '') === (b[key] || ''))
+function sameProviderEndpoint(track, a = {}, b = {}) {
+  return (
+    resolveProviderIdByTrack(track, a.id) === resolveProviderIdByTrack(track, b.id) &&
+    (a.baseUrl || '') === (b.baseUrl || '')
+  )
+}
+
+function realSecret(value) {
+  return value && value !== config.REDACTED_API_KEY ? value : ''
+}
+
+function credentialsFromProvider(storedProvider = {}, override = {}) {
+  return {
+    apiKey: realSecret(override.apiKey) || storedProvider.apiKey || '',
+    sessionToken: realSecret(override.sessionToken) || storedProvider.sessionToken || ''
+  }
 }
 
 function getModelFetchProvider(provider = {}) {
   const track = inferProviderTrack(provider)
   const stored = getStoredProvider(track)
-  if (provider.apiKey && provider.apiKey !== config.REDACTED_API_KEY) return provider
-  if (sameProviderEndpoint(provider, stored)) return stored
-  return { ...provider, apiKey: '' }
+  // SECURITY: never trust a renderer-supplied baseUrl — a compromised renderer
+  // could send a real API key with an attacker-controlled baseUrl and exfiltrate
+  // the credential. Same posture as provider:call: baseUrl always comes from the
+  // stored config (falling back to the provider default), the key is honored
+  // only when it isn't the redacted placeholder.
+  const providerId = provider.id || stored.id || ''
+  const canonicalProviderId = resolveProviderIdByTrack(track, providerId)
+  const sameEndpoint = sameProviderEndpoint(track, { id: providerId, baseUrl: stored.baseUrl || '' }, stored)
+  const baseUrl = sameEndpoint ? stored.baseUrl || '' : defaultProviderBaseUrl(canonicalProviderId)
+  const rendererFields = {
+    id: provider.id || stored.id,
+    model: provider.model || stored.model,
+    protocol: provider.protocol || stored.protocol,
+    format: provider.format || stored.format
+  }
+  const credentials = credentialsFromProvider(sameEndpoint ? stored : {}, provider)
+  return {
+    ...stored,
+    ...rendererFields,
+    apiKey: credentials.apiKey,
+    sessionToken: credentials.sessionToken,
+    customAuth: provider.customAuth || stored.customAuth,
+    baseUrl
+  }
 }
 
 function inferProviderTrack(provider = {}) {
@@ -46,24 +109,42 @@ function normalizeAssetLabel(label) {
 }
 
 function tempFileFor(filePath) {
-  return `${filePath}.tmp-${Date.now()}-${Math.random().toString(36).slice(2)}`
+  return `${filePath}.tmp-${crypto.randomUUID()}`
 }
 
-function writeDataUrl(url, filePath, type) {
-  const match = /^data:([\w.+-]+\/[\w.+-]+)?;base64,([a-z0-9+/=\s]+)$/i.exec(url || '')
-  if (!match) throw new Error('Invalid data URL')
-  const mime = (match[1] || '').toLowerCase()
-  const allowed = type === 'video'
-    ? new Set(['video/mp4'])
-    : new Set(['image/png', 'image/jpeg', 'image/webp'])
-  if (!allowed.has(mime)) throw new Error('Unsupported asset data type')
+function sniffAssetMime(bytes) {
+  if (!Buffer.isBuffer(bytes) || bytes.length < 12) return ''
+  if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return 'image/png'
+  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg'
+  if (bytes.slice(0, 4).toString('ascii') === 'RIFF' && bytes.slice(8, 12).toString('ascii') === 'WEBP') return 'image/webp'
+  if (bytes.slice(4, 8).toString('ascii') === 'ftyp') return 'video/mp4'
+  return ''
+}
 
-  const base64 = match[2].replace(/\s/g, '')
-  if (base64.length > Math.ceil(100 * 1024 * 1024 * 4 / 3) + 4) {
-    throw new Error('Asset data is too large')
+function validateAssetBytes(bytes, type, declaredMime = '') {
+  if (!ASSET_TYPE_MIMES[type]) throw new Error('Unsupported asset type')
+  if (!Buffer.isBuffer(bytes) || bytes.length === 0) throw new Error('Empty asset data')
+  if (bytes.length > MAX_ASSET_BYTES) throw new Error('Asset data is too large')
+
+  const normalizedDeclared = String(declaredMime || '').toLowerCase()
+  const sniffedMime = sniffAssetMime(bytes)
+  if (!sniffedMime || !ASSET_TYPE_MIMES[type].has(sniffedMime)) {
+    throw new Error('Unsupported asset data type')
   }
-  const bytes = Buffer.from(base64, 'base64')
-  if (bytes.length > 100 * 1024 * 1024) throw new Error('Asset data is too large')
+  if (normalizedDeclared && normalizedDeclared !== sniffedMime) {
+    throw new Error('Asset MIME does not match content')
+  }
+  return sniffedMime
+}
+
+function pathWithAssetExtension(filePath, mime) {
+  const ext = ASSET_MIME_EXTENSIONS[mime]
+  if (!ext) throw new Error('Unsupported asset data type')
+  const parsed = path.parse(filePath)
+  return path.join(parsed.dir, `${parsed.name}${ext}`)
+}
+
+function writeBufferAtomic(bytes, filePath) {
   const tmpFile = tempFileFor(filePath)
   try {
     fs.writeFileSync(tmpFile, bytes)
@@ -74,18 +155,38 @@ function writeDataUrl(url, filePath, type) {
   }
 }
 
-async function writeAssetUrl(url, filePath, type) {
-  if (url.startsWith('data:')) {
-    writeDataUrl(url, filePath, type)
-    return
+function writeDataUrl(url, filePath, type) {
+  const match = /^data:([\w.+-]+\/[\w.+-]+)?;base64,([a-z0-9+/=\s]+)$/i.exec(url || '')
+  if (!match) throw new Error('Invalid data URL')
+  const mime = (match[1] || '').toLowerCase()
+  const base64 = match[2].replace(/\s/g, '')
+  if (base64.length > Math.ceil(MAX_ASSET_BYTES * 4 / 3) + 4) {
+    throw new Error('Asset data is too large')
   }
-  assertHttpsUrl(url)
-  await downloadToFile(url, filePath)
+  const bytes = Buffer.from(base64, 'base64')
+  const sniffedMime = validateAssetBytes(bytes, type, mime)
+  const resolvedPath = pathWithAssetExtension(filePath, sniffedMime)
+  writeBufferAtomic(bytes, resolvedPath)
+  return resolvedPath
 }
 
-function enforceAssetExtension(filePath, type) {
-  const expected = type === 'video' ? '.mp4' : '.png'
-  return path.extname(filePath).toLowerCase() === expected ? filePath : `${filePath}${expected}`
+async function writeAssetUrl(url, filePath, type) {
+  if (url.startsWith('data:')) {
+    return writeDataUrl(url, filePath, type)
+  }
+  assertHttpsUrl(url)
+  const downloadPath = `${filePath}.download-${crypto.randomUUID()}`
+  try {
+    await downloadToFile(url, downloadPath)
+    const bytes = fs.readFileSync(downloadPath)
+    const sniffedMime = validateAssetBytes(bytes, type)
+    const resolvedPath = pathWithAssetExtension(filePath, sniffedMime)
+    fs.renameSync(downloadPath, resolvedPath)
+    return resolvedPath
+  } catch (e) {
+    try { fs.unlinkSync(downloadPath) } catch {}
+    throw e
+  }
 }
 
 function openExternalSafe(url) {
@@ -120,13 +221,13 @@ ipcMain.on('window-close', () => mainWindow?.close())
 ipcMain.handle('window-is-maximized', () => mainWindow?.isMaximized() ?? false)
 
 ipcMain.handle('config:get', () => config.redactApiKeys(config.load()))
-ipcMain.handle('config:save', (_, cfg) => {
+ipcMain.handle('config:save', async (_, cfg) => {
   const allowedKeys = Object.keys(config.DEFAULT_CONFIG)
   const filtered = {}
   for (const key of allowedKeys) {
     if (key in cfg) filtered[key] = cfg[key]
   }
-  config.save(config.mergeRedactedApiKeys(filtered, config.load()))
+  await config.save(config.mergeRedactedApiKeys(filtered, config.load()))
 })
 
 ipcMain.handle('history:get', () => store.loadAll())
@@ -137,16 +238,98 @@ ipcMain.handle('conv:delete', (_, id) => store.deleteConversation(id))
 ipcMain.handle('conv:setActive', (_, id) => store.setActiveId(id))
 
 // Unified provider call
-ipcMain.handle('provider:call', async (_, params) => {
+ipcMain.handle('provider:call', async (_, params = {}) => {
   const stored = config.load()
   const { providerId, action } = params
   const track = action === 'chat' ? 'chat' : action === 'generate' ? 'image' : 'video'
+
+  if (track === 'video' && action === 'poll') {
+    const sessionResult = await pollVideoWithSession(params.taskId, { model: params.model })
+    if (sessionResult) return sessionResult
+  }
+
   const providerConfig = stored.providers?.[track] || {}
+  const requestedProviderId = resolveProviderIdByTrack(track, providerId)
+  if (track === 'video' && action === 'poll') {
+    const storedProviderId = resolveProviderIdByTrack(track, providerConfig.id)
+    if (requestedProviderId && storedProviderId && requestedProviderId !== storedProviderId) {
+      return {
+        ok: false,
+        error: {
+          code: 'POLL_SESSION_MISSING',
+          message: 'Video polling session is no longer available for this task. Switch back to the original video provider or submit the task again.'
+        }
+      }
+    }
+  }
+
+  const canonicalProviderId = resolveProviderIdByTrack(track, providerConfig.id || providerId)
+  const providerDef = getProvider(canonicalProviderId)
+  if (!providerDef) {
+    return { ok: false, error: { code: 'UNKNOWN_PROVIDER', message: `Unknown provider: ${canonicalProviderId}` } }
+  }
+  if (!providerDef[track]) {
+    return { ok: false, error: { code: 'UNSUPPORTED_ACTION', message: `${canonicalProviderId} does not support ${track}` } }
+  }
+  if (!resolveHandler(providerDef[track]?.protocol)) {
+    return {
+      ok: false,
+      error: {
+        code: 'PROVIDER_NOT_EXECUTABLE',
+        message: `${providerDef.name || canonicalProviderId} is listed for links and setup guidance, but this build does not include a direct ${track} handler yet. Use a Custom API entry for compatible relay endpoints.`
+      }
+    }
+  }
+  const baseUrl = providerConfig.baseUrl || defaultProviderBaseUrl(canonicalProviderId)
+  if (!baseUrl) {
+    return { ok: false, error: { code: 'PRECHECK_FAILED', message: 'Base URL is required for this provider.' } }
+  }
   // SECURITY: never trust a renderer-supplied baseUrl — a compromised renderer
   // could redirect credentials to an attacker host. Source baseUrl only from the
   // stored config (which holds the user's legitimate custom/proxy endpoint).
-  const credentials = { apiKey: providerConfig.apiKey || '' }
-  return await providerPipeline.execute({ ...params, credentials, baseUrl: providerConfig.baseUrl })
+  const credentials = credentialsFromProvider(providerConfig)
+  // SECURITY: explicitly pick only the fields a handler is allowed to consume.
+  // Spreading the raw renderer `params` would forward arbitrary keys (e.g. a
+  // rogue `headers` / `httpAgent`) into the handler, which could influence its
+  // request behaviour. Keep this list in sync with the handler signatures.
+  const safePayload = { providerId: canonicalProviderId, action }
+  for (const key of STORED_PROVIDER_PAYLOAD_KEYS) {
+    if (key in providerConfig) safePayload[key] = providerConfig[key]
+  }
+  for (const key of ALLOWED_PROVIDER_PAYLOAD_KEYS) {
+    if (key in params) safePayload[key] = params[key]
+  }
+  if (track !== 'chat' && action !== 'poll') {
+    const validation = validateGenerationRequest(track, providerDef, safePayload)
+    if (!validation.ok) {
+      return {
+        ok: false,
+        error: {
+          code: 'PRECHECK_FAILED',
+          message: validation.errors.map(item => item.suggestion ? `${item.message} ${item.suggestion}` : item.message).join('\n'),
+          details: validation.errors,
+          warnings: validation.warnings
+        }
+      }
+    }
+    Object.assign(safePayload, validation.options)
+  }
+  const result = await providerPipeline.execute({
+    ...safePayload,
+    credentials,
+    baseUrl,
+    requestOptions: requestOptionsFromConfig(stored, providerConfig)
+  })
+  if (result.ok && track === 'video' && action === 'submit' && result.data?.taskId) {
+    storeVideoPollSession(result.data.taskId, {
+      providerId: canonicalProviderId,
+      credentials,
+      baseUrl,
+      requestOptions: requestOptionsFromConfig(stored, providerConfig),
+      payload: safePayload
+    })
+  }
+  return result
 })
 
 // List providers by action (for settings dropdown)
@@ -157,26 +340,49 @@ ipcMain.handle('provider:list', async (_, action) => {
     name: p.name,
     platform: p.platform,
     meta: p.meta,
+    links: p.links || p.meta?.links || {},
+    billing: p.billing || p.meta?.billing || { mode: 'unknown' },
+    capabilities: p.capabilities || p.meta?.capabilities || {},
+    constraints: p.constraints || p.meta?.constraints || {},
+    customizable: p.customizable || p.meta?.customizable || {},
     defaultUrl: p.defaults?.baseUrl || '',
     defaultModel: p[track]?.defaultModel || '',
     protocol: p[track]?.protocol,
-    format: p[track]?.format
+    format: p[track]?.format,
+    polling: p[track]?.polling === true,
+    integrationStatus: p[track]?.integrationStatus || p.capabilities?.[track]?.integrationStatus || '',
+    executable: Boolean(resolveHandler(p[track]?.protocol))
   }))
 })
 
 // Test provider connection
-ipcMain.handle('provider:test', async (_, { providerId, credentials }) => {
+ipcMain.handle('provider:test', async (_, params = {}) => {
   try {
+    const stored = config.load()
+    const track = params.track || inferProviderTrack({ id: params.providerId || params.id, protocol: params.protocol })
+    const storedProvider = stored.providers?.[track] || {}
+    const providerId = resolveProviderIdByTrack(track, params.providerId || params.id || storedProvider.id)
     const providerDef = require('./providers/registry').getProvider(providerId)
     if (!providerDef) return { ok: false, message: 'Unknown provider' }
     if (!providerDef.healthCheck) return { ok: true, message: 'No health check available' }
+    // Use the user's configured endpoint (if any) so the test exercises the same
+    // route real calls take — otherwise the key is sent to the hardcoded default
+    // endpoint even on a user-configured proxy/relay, and the test result can
+    // diverge from actual call success/failure.
+    const sameEndpoint = sameProviderEndpoint(track, { id: params.id || params.providerId || storedProvider.id, baseUrl: storedProvider.baseUrl || '' }, storedProvider)
+    const testBaseUrl = sameEndpoint ? storedProvider.baseUrl || providerDef.defaults.baseUrl : providerDef.defaults.baseUrl
+    const credentials = credentialsFromProvider(sameEndpoint ? storedProvider : {}, {
+      apiKey: params.apiKey || params.credentials?.apiKey,
+      sessionToken: params.sessionToken || params.credentials?.sessionToken
+    })
     const { resolveAuth } = require('./providers/auth')
     const { request, joinApiUrl } = require('./api/http')
-    const auth = resolveAuth(providerDef, credentials || {})
-    const url = joinApiUrl(providerDef.defaults.baseUrl, providerDef.healthCheck.url)
+    const auth = resolveAuth(providerDef, credentials)
+    const url = joinApiUrl(testBaseUrl, providerDef.healthCheck.url)
     await request(url, {
       method: providerDef.healthCheck.method,
-      headers: { ...auth.headers, 'Content-Type': 'application/json' }
+      headers: { ...auth.headers, 'Content-Type': 'application/json' },
+      ...requestOptionsFromConfig(stored)
     }, providerDef.healthCheck.body)
     return { ok: true, message: 'Connection successful' }
   } catch (err) {
@@ -184,25 +390,84 @@ ipcMain.handle('provider:test', async (_, { providerId, credentials }) => {
   }
 })
 
-ipcMain.handle('api:models', (_, provider) => modelsApi.fetch(getModelFetchProvider(provider)))
+ipcMain.handle('api:models', (_, provider) => {
+  const stored = config.load()
+  return modelsApi.fetch({ ...getModelFetchProvider(provider), requestOptions: requestOptionsFromConfig(stored) })
+})
 
 // Map the user-facing stored provider id (e.g. 'claude', 'dalle', 'jimeng_vid')
 // to the canonical registry id (e.g. 'anthropic', 'openai', 'volcengine').
 // Mirrors PROVIDER_ID_ALIASES used on the renderer side so legacy direct-API
 // channels receive a providerId the pipeline can resolve.
-const PROVIDER_ID_ALIASES = {
-  chat: { claude: 'anthropic', gemini: 'google', qwen: 'alibaba', kimi: 'moonshot', doubao: 'volcengine' },
-  image: { dalle: 'openai', gemini_img: 'google', jimeng_img: 'volcengine' },
-  video: { jimeng_vid: 'volcengine' }
-}
+// Reuses the canonical aliases from config.js — single source of truth on the
+// main-process side.
+const { PROVIDER_ID_ALIASES } = config
 function resolveProviderIdByTrack(track, id) {
-  return PROVIDER_ID_ALIASES[track]?.[id] || id
+  return (PROVIDER_ID_ALIASES[track] || {})[id] || id
+}
+
+function defaultProviderBaseUrl(providerId) {
+  const def = require('./providers/registry').getProvider(providerId)
+  return def?.defaults?.baseUrl || ''
+}
+
+function requestOptionsFromConfig(stored = config.load(), providerConfig = {}) {
+  const timeout = Number(providerConfig.timeout || stored.general?.apiTimeout)
+  return Number.isFinite(timeout) && timeout > 0 ? { timeout } : {}
+}
+
+function cleanupVideoPollSessions() {
+  const now = Date.now()
+  for (const [taskId, sessionInfo] of videoPollSessions) {
+    if (!sessionInfo?.expiresAt || sessionInfo.expiresAt <= now) {
+      videoPollSessions.delete(taskId)
+    }
+  }
+}
+
+function storeVideoPollSession(taskId, sessionInfo) {
+  if (!taskId) return
+  cleanupVideoPollSessions()
+  videoPollSessions.set(String(taskId), {
+    ...sessionInfo,
+    expiresAt: Date.now() + VIDEO_POLL_SESSION_TTL_MS
+  })
+}
+
+function getVideoPollSession(taskId) {
+  cleanupVideoPollSessions()
+  if (!taskId) return null
+  return videoPollSessions.get(String(taskId)) || null
+}
+
+function shouldClearVideoPollSession(data = {}) {
+  const status = String(data.status || '').toLowerCase()
+  return ['succeeded', 'completed', 'failed', 'cancelled', 'canceled'].includes(status) || Boolean(data.videoUrl)
+}
+
+async function pollVideoWithSession(taskId, override = {}) {
+  const sessionInfo = getVideoPollSession(taskId)
+  if (!sessionInfo) return null
+  const result = await providerPipeline.execute({
+    ...sessionInfo.payload,
+    ...override,
+    action: 'poll',
+    providerId: sessionInfo.providerId,
+    credentials: sessionInfo.credentials,
+    taskId,
+    baseUrl: sessionInfo.baseUrl,
+    requestOptions: sessionInfo.requestOptions
+  })
+  if (result.ok && shouldClearVideoPollSession(result.data)) {
+    videoPollSessions.delete(String(taskId))
+  }
+  return result
 }
 
 // Convenience credentials pulled from stored config for a track.
 function trackCredentials(track, override = {}) {
   const stored = config.load().providers?.[track] || {}
-  return { apiKey: (override.apiKey && override.apiKey !== config.REDACTED_API_KEY) ? override.apiKey : stored.apiKey || '' }
+  return credentialsFromProvider(stored, override)
 }
 
 // SECURITY: baseUrl for a track always comes from the user's stored config, never
@@ -230,7 +495,9 @@ ipcMain.handle('api:chat', async (_, messages, provider) => {
     messages: (messages?.history || messages || []).map(m => ({ role: m.role, content: m.content })),
     system: messages?.system || provider?.system || '',
     thinking: messages?.thinking || provider?.thinking || false,
-    model: provider?.model, baseUrl: storedBaseUrl(track, providerId)
+    model: provider?.model,
+    baseUrl: storedBaseUrl(track, providerId),
+    requestOptions: requestOptionsFromConfig()
   })
   if (!result.ok) throw new Error(result.error?.message || 'Chat failed')
   return result.data
@@ -243,7 +510,10 @@ ipcMain.handle('api:image', async (_, params) => {
     action: 'generate', providerId,
     credentials: trackCredentials(track, params),
     prompt: params?.prompt, ratio: params?.ratio, resolution: params?.resolution,
-    model: params?.model, baseUrl: storedBaseUrl(track, providerId)
+    negative_prompt: params?.negative_prompt,
+    model: params?.model,
+    baseUrl: storedBaseUrl(track, providerId),
+    requestOptions: requestOptionsFromConfig()
   })
   if (!result.ok) throw new Error(result.error?.message || 'Image generation failed')
   return result.data // url string
@@ -251,50 +521,82 @@ ipcMain.handle('api:image', async (_, params) => {
 
 ipcMain.handle('api:video', async (_, params) => {
   const track = 'video'
+  const stored = config.load()
+  const providerConfig = stored.providers?.[track] || {}
   const providerId = resolveProviderIdByTrack(track, params?.id)
-  const result = await providerPipeline.execute({
+  const payload = {
     action: 'submit', providerId,
     credentials: trackCredentials(track, params),
     prompt: params?.prompt, ratio: params?.ratio, duration: params?.duration,
     sourceImageUrl: params?.sourceImageUrl,
-    model: params?.model, baseUrl: storedBaseUrl(track, providerId)
-  })
+    model: params?.model,
+    baseUrl: storedBaseUrl(track, providerId),
+    requestOptions: requestOptionsFromConfig(stored, providerConfig)
+  }
+  for (const key of STORED_PROVIDER_PAYLOAD_KEYS) {
+    if (key in providerConfig) payload[key] = providerConfig[key]
+  }
+  const result = await providerPipeline.execute(payload)
   if (!result.ok) throw new Error(result.error?.message || 'Video submit failed')
+  if (result.data?.taskId) {
+    storeVideoPollSession(result.data.taskId, {
+      providerId,
+      credentials: payload.credentials,
+      baseUrl: payload.baseUrl,
+      requestOptions: payload.requestOptions,
+      payload
+    })
+  }
   return result.data
 })
 
 ipcMain.handle('api:video:poll', async (_, taskId, provider) => {
   const track = 'video'
+  const sessionResult = await pollVideoWithSession(taskId, { model: provider?.model })
+  if (sessionResult) {
+    if (!sessionResult.ok) throw new Error(sessionResult.error?.message || 'Video poll failed')
+    return sessionResult.data
+  }
+  const stored = config.load()
+  const storedProvider = stored.providers?.[track] || {}
   const providerId = resolveProviderIdByTrack(track, provider?.id)
-  const result = await providerPipeline.execute({
+  const storedProviderId = resolveProviderIdByTrack(track, storedProvider.id)
+  if (providerId && storedProviderId && providerId !== storedProviderId) {
+    throw new Error('Video polling session is no longer available for this task. Switch back to the original video provider or submit the task again.')
+  }
+  const payload = {
     action: 'poll', providerId,
     credentials: trackCredentials(track, provider),
     taskId,
-    model: provider?.model, baseUrl: storedBaseUrl(track, providerId)
-  })
+    model: provider?.model,
+    baseUrl: storedBaseUrl(track, providerId),
+    requestOptions: requestOptionsFromConfig(stored, storedProvider)
+  }
+  for (const key of STORED_PROVIDER_PAYLOAD_KEYS) {
+    if (key in storedProvider) payload[key] = storedProvider[key]
+  }
+  const result = await providerPipeline.execute(payload)
   if (!result.ok) throw new Error(result.error?.message || 'Video poll failed')
   return result.data
 })
 
 ipcMain.handle('api:saveAsset', async (_, { url, label, type }) => {
   if (!fs.existsSync(SAVE_DIR)) fs.mkdirSync(SAVE_DIR, { recursive: true })
-  const ext = type === 'video' ? '.mp4' : '.png'
-  const filePath = path.join(SAVE_DIR, `${normalizeAssetLabel(label)}_${Date.now()}${ext}`)
-  await writeAssetUrl(url, filePath, type)
-  return filePath
+  const filePath = path.join(SAVE_DIR, `${normalizeAssetLabel(label)}_${Date.now()}`)
+  return await writeAssetUrl(url, filePath, type)
 })
 
 ipcMain.handle('api:getSaveDir', () => SAVE_DIR)
 
 ipcMain.handle('api:saveAssetWithDialog', async (_, { url, label, type }) => {
-  const ext = type === 'video' ? 'mp4' : 'png'
+  const extensions = type === 'video' ? ['mp4'] : ['png', 'jpg', 'webp']
+  const ext = extensions[0]
   const result = await dialog.showSaveDialog(mainWindow, {
     defaultPath: `${normalizeAssetLabel(label)}.${ext}`,
-    filters: [{ name: ext.toUpperCase(), extensions: [ext] }]
+    filters: [{ name: type === 'video' ? 'MP4' : 'Images', extensions }]
   })
   if (result.canceled || !result.filePath) return { canceled: true }
-  const resolved = path.resolve(enforceAssetExtension(result.filePath, type))
-  await writeAssetUrl(url, resolved, type)
+  const resolved = await writeAssetUrl(url, path.resolve(result.filePath), type)
   return { canceled: false, filePath: resolved }
 })
 
@@ -317,7 +619,7 @@ function createWindow() {
     // Prod: allow Google Fonts CDN (style-src / font-src) so the @import in
     // global.css can load Inter/JetBrains/Outfit in the packaged app; the rest
     // stays locked down (default-src 'self' file:).
-    const prodCsp = "default-src 'self' file:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' https: data: blob: file:; media-src 'self' https: data: blob:; connect-src 'self' https:; font-src 'self' data: https://fonts.gstatic.com; child-src 'self'"
+    const prodCsp = "default-src 'self' file:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' https: data: blob: file:; media-src 'self' https: data: blob:; connect-src 'self' https:; font-src 'self' data: https://fonts.gstatic.com; child-src 'self'"
     callback({
       responseHeaders: {
         ...details.responseHeaders,

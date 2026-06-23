@@ -179,10 +179,10 @@ function InfiniteCanvas({ children, assets, activeTool, scale, setScale, offset,
         {children}
       </div>
 
-      <div data-toolbar="true" className="canvas-zoom-controls" onMouseDown={e => e.stopPropagation()} style={{
-        position: 'absolute', bottom: 14, right: 14, zIndex: 10,
+      <div data-toolbar="true" className="glass-floating" onMouseDown={e => e.stopPropagation()} style={{
+        position: 'absolute', bottom: 20, right: 20, zIndex: 10,
         display: 'flex', alignItems: 'center', gap: 1,
-        borderRadius: 'var(--radius-md)', padding: 3, userSelect: 'none'
+        borderRadius: '99px', padding: '6px 12px', userSelect: 'none'
       }}>
         <button className="canvas-zoom-button" onClick={zoomOut} style={zoomCtrlBtn} title="缩小">
           <Ic n="minus" size={14} sw={2} />
@@ -206,8 +206,8 @@ function InfiniteCanvas({ children, assets, activeTool, scale, setScale, offset,
         <div style={{
           position: 'absolute', bottom: 14, left: 14, zIndex: 10,
           fontSize: 10, color: 'var(--text-ghost)', display: 'flex', alignItems: 'center', gap: 6,
-          padding: '4px 8px', background: 'var(--bg-elevated)', borderRadius: 'var(--radius-sm)',
-          border: '1px solid var(--border-subtle)', opacity: 0.7
+          padding: '6px 12px', borderRadius: '99px',
+          opacity: 0.8
         }}>
           <Ic n="move4" size={12} sw={1.5} />
           Wheel zoom / H or Space pan
@@ -363,12 +363,11 @@ function EditBar({ activeTool, setActiveTool, drawColor, setDrawColor, drawWidth
   }, [setActiveTool])
 
   return (
-    <div data-toolbar="true" onMouseDown={e => e.stopPropagation()} style={{
-      position: 'absolute', bottom: 10, left: '50%', transform: 'translateX(-50%)', zIndex: 20,
+    <div data-toolbar="true" className="glass-floating" onMouseDown={e => e.stopPropagation()} style={{
+      position: 'absolute', bottom: 20, left: '50%', transform: 'translateX(-50%)', zIndex: 20,
       display: 'flex', alignItems: 'center', gap: 2,
-      background: 'var(--bg-elevated)', border: '1px solid var(--border-default)',
-      borderRadius: 'var(--radius-lg)', padding: '4px 6px',
-      boxShadow: 'var(--shadow-md)', userSelect: 'none'
+      borderRadius: '99px', padding: '6px 12px',
+      userSelect: 'none'
     }}>
       {TOOL_GROUPS.map((group, gi) => (
         <div key={gi} style={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -584,8 +583,8 @@ export default function CanvasPanel({ canvas, lang, onContextMenu }) {
     <div style={{ display: 'flex', height: '100%' }}>
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <div style={{
-          display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px',
-          borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-elevated)'
+          display: 'flex', alignItems: 'center', gap: 6, padding: '12px 16px',
+          background: 'transparent', zIndex: 10
         }}>
           <button onClick={() => setViewMode('grid')} style={filterBtnStyle(viewMode === 'grid')}>
             <Ic n="grid" size={12} /> {lang === 'en' ? 'Grid' : '网格'}

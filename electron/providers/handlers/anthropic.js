@@ -21,7 +21,8 @@ async function anthropicHandler(params) {
       ...params.auth.headers,
       'Content-Type': 'application/json',
       'anthropic-version': '2023-06-01'
-    }
+    },
+    ...(params.requestOptions || {})
   }, payload)
   const json = JSON.parse(res.data)
   if (json.error) throw new Error(json.error.message)

@@ -214,6 +214,38 @@
 
 ## English
 
+#### v1.6.0 (2026-06-21)
+
+**Provider Architecture Refactor**
+- Unified provider registry: 17 providers are organized by platform (openai/anthropic/google/volcengine/alibaba/moonshot/zhipu/deepseek/siliconflow/groq/together/openrouter/xai/perplexity/lingyi/runway/happyhorse).
+- Unified auth layer: supports bearer, header, query, cookie, and session authentication modes.
+- Unified request pipeline: all API calls now go through the `provider:call` IPC channel.
+- Each platform can declare multiple capabilities (chat/image/video), instead of splitting providers by track.
+- Added platform support for SiliconFlow, Lingyi Wanwu, Groq, Together AI, xAI, and Perplexity.
+- Deprecated the legacy `electron/api/chat.js`, `electron/api/image.js`, and `electron/api/video.js` modules.
+
+**UI Style Refresh**
+- Updated the palette to a cool blue theme (`#4A6CF7`), replacing the previous gold/amber accents.
+- Moved toward a flatter Notion-style surface treatment with fewer shadows, fewer borders, and more whitespace.
+- Added the `--space-*` spacing token system.
+- Changed dark mode to a deep blue-gray base (`#0D0D12`) instead of warm gray.
+- Renamed resolution options to standard labels (Standard/HD/Ultra HD/2K/4K).
+- Drawing tools now appear only in Free Canvas mode.
+
+**Other**
+- Cleaned project files by removing old API files from the repository and updating `.gitignore`.
+
+**Security & Code Quality Hardening**
+- **IPC Scoping**: Lifted window minimize/maximize/close and status query IPC registration from an internal helper scope to the top-level scope of `electron/main.js`, removing a potential memory leak risk and aligning with Electron security practices.
+- **UI Style Consistency**: Added global CSS variables for overlay background, gradients, and danger borders, and migrated major components away from hardcoded colors and border values.
+- **Icon Wrapper Standardization**: Added missing window control and canvas tool icon mappings in `icons.jsx`, replacing raw `<svg>` and direct lucide imports with `<Ic />`.
+
+**State & Lifecycle Fixes**
+- **Ref State Side Effect Cleanup**: Removed direct ref mutation from the `AssetDetail.jsx` state updater and introduced synchronized `offsetRef` reads for latest drag offsets.
+- **Free-Move Card State Fix**: Added `updateAssets` batch updates in `useCanvas.js` and refactored Free Mode coordinate initialization in `CanvasPanel.jsx` to assign coordinates in one atomic batch, eliminating cascading rerenders and infinite loop risk.
+- **Event Listener Leak Fix**: Added `dragCleanupRef` and unmount cleanup in `CanvasPanel.jsx` so window drag listeners are released if the component unmounts mid-drag.
+- **i18n Gap Fixes & Propagation**: Fixed queued/polling video status translations in `MessageBubble.jsx`, passed `lang` into `ContextMenu.jsx` and `TaskQueue.jsx`, and completed model track label translation mapping.
+
 #### v1.5.1 (2026-06-16)
 
 **Security & Quality Hardening**
