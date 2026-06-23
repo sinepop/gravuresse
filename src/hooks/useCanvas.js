@@ -1,20 +1,14 @@
 import { useState, useCallback, useMemo } from 'react'
+import { createAsset } from '../utils/assetFactory'
 
 export default function useCanvas() {
   const [assets, setAssets] = useState([])
   const [selectedId, setSelectedId] = useState(null)
   const [viewMode, setViewMode] = useState('grid')
   const [filter, setFilter] = useState('all')
-  const [sort, setSort] = useState('newest')
 
   const addAsset = useCallback((asset) => {
-    const item = {
-      id: `asset_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-      type: 'image', label: asset.label || '未命名', prompt: asset.prompt || '',
-      negativePrompt: asset.negativePrompt || '', url: asset.url || '',
-      model: asset.model || '', ratio: asset.ratio || '1:1', style: asset.style || '',
-      createdAt: new Date().toISOString(), _generating: false, ...asset
-    }
+    const item = createAsset(asset)
     setAssets(prev => [item, ...prev])
     return item
   }, [])
@@ -55,13 +49,21 @@ export default function useCanvas() {
   }, [])
 
   const selectedAsset = assets.find(a => a.id === selectedId) || null
-  const filtered = assets
-    .filter(a => filter === 'all' || a.type === filter)
-    .sort((a, b) => sort === 'newest' ? new Date(b.createdAt) - new Date(a.createdAt) : a.label.localeCompare(b.label))
+
+  // filtered derives from assets+filter only; memoize so consumers (canvas object
+  // identity) stay stable unless assets/filter actually change. Previously this
+  // recomputed on every render and pulled both `filtered` and `assets` into the
+  // outer useMemo deps — redundant, since `filtered` already follows `assets`.
+  const filtered = useMemo(
+    () => assets
+      .filter(a => filter === 'all' || a.type === filter)
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)),
+    [assets, filter]
+  )
 
   return useMemo(() => ({
     assets: filtered, allAssets: assets, selectedAsset, selectedId, setSelectedId,
-    viewMode, setViewMode, filter, setFilter, sort, setSort,
+    viewMode, setViewMode, filter, setFilter,
     addAsset, addPlaceholder, removeAsset, replaceAssets, updateAsset, updateAssets, getAssetById, clear
-  }), [filtered, assets, selectedAsset, selectedId, viewMode, filter, sort, addAsset, addPlaceholder, removeAsset, replaceAssets, updateAsset, updateAssets, getAssetById, clear])
+  }), [filtered, assets, selectedAsset, selectedId, viewMode, filter, addAsset, addPlaceholder, removeAsset, replaceAssets, updateAsset, updateAssets, getAssetById, clear])
 }

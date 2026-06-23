@@ -95,12 +95,80 @@
   --divider: 1px solid rgba(255,255,255,0.04);
 }
 
-/* System dark */
+/* System theme — duplicate the dark/light token sets so data-theme="system"
+   actually resolves against the OS preference (the previous bodies were empty
+   placeholders, which left the system option stuck on the :root light values). */
 @media (prefers-color-scheme: dark) {
-  [data-theme="system"] { /* same values as dark above */ }
+  [data-theme="system"] {
+    --bg-primary: #19191C;
+    --bg-elevated: #202024;
+    --bg-surface: #2A2A30;
+    --bg-hover: #323238;
+    --bg-input: #202024;
+    --border-subtle: rgba(255,255,255,0.03);
+    --border-default: rgba(255,255,255,0.06);
+    --border-accent: rgba(55,93,230,0.25);
+    --text-primary: #E8E8E8;
+    --text-secondary: #9B9BA0;
+    --text-muted: #6B6B70;
+    --text-ghost: #4A4A50;
+    --accent: #4A7AFF;
+    --accent-secondary: #6B7FFF;
+    --accent-soft: rgba(55,93,230,0.08);
+    --accent-glow: rgba(55,93,230,0.04);
+    --danger: #E86060;
+    --danger-soft: rgba(232,96,96,0.06);
+    --success: #3CBA7A;
+    --success-soft: rgba(60,186,122,0.06);
+    --shadow-sm: 0 0.5px 1px rgba(0,0,0,0.15);
+    --shadow-md: 0 1px 3px rgba(0,0,0,0.2), 0 0.5px 1px rgba(0,0,0,0.15);
+    --shadow-lg: 0 4px 12px rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.2);
+    --shadow-accent: 0 1px 4px rgba(55,93,230,0.1);
+    --overlay-dark: rgba(0, 0, 0, 0.75);
+    --border-white-subtle: rgba(255, 255, 255, 0.05);
+    --danger-border: rgba(232,96,96,0.15);
+    --accent-gradient: linear-gradient(135deg, #4A7AFF 0%, #6B7FFF 100%);
+    --shimmer-gradient: linear-gradient(90deg, #2A2A30 25%, #323238 37%, #2A2A30 63%);
+    --shadow-accent-soft: 0 1px 4px rgba(55, 93, 230, 0.06);
+    --text-white: #FFFFFF;
+    --divider: 1px solid rgba(255,255,255,0.04);
+  }
 }
 @media (prefers-color-scheme: light) {
-  [data-theme="system"] { /* same values as light above */ }
+  [data-theme="system"] {
+    --bg-primary: #FFFFFF;
+    --bg-elevated: #FBFBFB;
+    --bg-surface: #F6F6F6;
+    --bg-hover: #EDEDED;
+    --bg-input: #FFFFFF;
+    --border-subtle: rgba(0,0,0,0.04);
+    --border-default: rgba(0,0,0,0.07);
+    --border-accent: rgba(55,93,230,0.15);
+    --text-primary: #1A1A1C;
+    --text-secondary: #6B6B73;
+    --text-muted: #9B9BA0;
+    --text-ghost: #BFBFC4;
+    --accent: #375DE6;
+    --accent-secondary: #5B6EF5;
+    --accent-soft: rgba(55,93,230,0.05);
+    --accent-glow: rgba(55,93,230,0.03);
+    --danger: #E03E3E;
+    --danger-soft: rgba(224,62,62,0.04);
+    --success: #2E9D68;
+    --success-soft: rgba(46,157,104,0.04);
+    --shadow-sm: 0 0.5px 1px rgba(0,0,0,0.02);
+    --shadow-md: 0 1px 3px rgba(0,0,0,0.03), 0 0.5px 1px rgba(0,0,0,0.02);
+    --shadow-lg: 0 4px 12px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.02);
+    --shadow-accent: 0 1px 4px rgba(55,93,230,0.06);
+    --overlay-dark: rgba(0, 0, 0, 0.5);
+    --border-white-subtle: rgba(255, 255, 255, 0.06);
+    --danger-border: rgba(224,62,62,0.1);
+    --accent-gradient: linear-gradient(135deg, #375DE6 0%, #5B6EF5 100%);
+    --shimmer-gradient: linear-gradient(90deg, #F0F0F0 25%, #E8E8E8 37%, #F0F0F0 63%);
+    --shadow-accent-soft: 0 1px 4px rgba(55, 93, 230, 0.04);
+    --text-white: #FFFFFF;
+    --divider: 1px solid rgba(0,0,0,0.06);
+  }
 }
 
 /* Reset */
@@ -137,8 +205,12 @@ body::after {
 @keyframes fadeUp { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes scaleIn { from { opacity: 0; transform: scale(0.97); } to { opacity: 1; transform: scale(1); } }
 @keyframes shimmer { from { background-position: -200% 0; } to { background-position: 200% 0; } }
+@keyframes shimmerGlow { from { background-position: 200% 0; } to { background-position: -200% 0; } }
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes pulse { 0%, 100% { opacity: 0.3; } 50% { opacity: 0.7; } }
+@keyframes genPulse { 0%, 100% { opacity: 0.55; } 50% { opacity: 0.9; } }
+@keyframes breathe { 0%, 100% { opacity: 0.65; } 50% { opacity: 1; } }
+@keyframes slideInRight { from { transform: translateX(16px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
 
 /* Focus ring — thin, flat */
 textarea:focus, input:focus, select:focus {
@@ -168,14 +240,128 @@ select { appearance: none; cursor: pointer; }
   box-shadow: var(--shadow-md);
 }
 
-/* AssetCard — minimal, flat, no lift on hover */
+/* Modular workspace and canvas */
+.module-sidebar {
+  width: 48px;
+  flex: 0 0 48px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 0;
+  background: var(--bg-elevated);
+  border-right: 1px solid var(--border-subtle);
+}
+
+.module-nav-button {
+  width: 40px;
+  height: 48px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+.module-nav-button span {
+  font-size: 9px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.module-nav-button:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.module-nav-button.active {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: var(--border-accent);
+}
+
+.module-nav-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.module-content {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg-primary);
+}
+
+.canvas-surface {
+  background-color: var(--bg-primary);
+  background-image: radial-gradient(circle, var(--border-default) 0.8px, transparent 0.9px);
+  background-size: 20px 20px;
+}
+
+.canvas-empty-state {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  color: var(--text-muted);
+}
+
+.canvas-empty-icon {
+  width: 42px;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-sm);
+}
+
+.canvas-empty-title {
+  margin-bottom: 3px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.canvas-empty-description {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.canvas-zoom-controls {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-lg);
+}
+
+.canvas-zoom-button {
+  background: transparent;
+}
+
+.canvas-zoom-button:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* AssetCard */
 .asset-card {
   border-radius: var(--radius-md);
   overflow: hidden;
   cursor: pointer;
   border: var(--divider);
   background: var(--bg-primary);
-  transition: background 0.08s ease, border-color 0.08s ease;
+  box-shadow: var(--shadow-sm);
+  transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
   display: flex;
   flex-direction: column;
 }
@@ -183,18 +369,19 @@ select { appearance: none; cursor: pointer; }
 .asset-card:hover {
   background: var(--bg-hover);
   border-color: var(--border-default);
-  transform: none;
-  box-shadow: none;
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-lg);
 }
 
 .asset-card.selected {
   border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--border-accent), var(--shadow-md);
 }
 
 .asset-card.selected:hover {
   border-color: var(--accent);
   background: var(--bg-hover);
-  box-shadow: none;
+  box-shadow: 0 0 0 1px var(--border-accent), var(--shadow-lg);
 }
 
 .asset-card-media {
@@ -212,10 +399,11 @@ select { appearance: none; cursor: pointer; }
   width: 100%;
   height: 100%;
   object-fit: cover;
+  transition: transform 0.2s ease;
 }
 
 .asset-card:hover .asset-card-image {
-  transform: none;
+  transform: scale(1.01);
 }
 
 .asset-card-fallback {
@@ -234,7 +422,7 @@ select { appearance: none; cursor: pointer; }
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
+  color: var(--text-white);
   font-size: 9px;
 }
 

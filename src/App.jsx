@@ -11,6 +11,7 @@ import useConfig from './hooks/useConfig'
 import useChat from './hooks/useChat'
 import useCanvas from './hooks/useCanvas'
 import useTaskQueue from './hooks/useTaskQueue'
+import { createAsset } from './utils/assetFactory'
 import './styles/global.css'
 
 const FONT_SIZES = { small: '12px', medium: '13px', large: '14px' }
@@ -32,15 +33,8 @@ function getConversationTitle(messages) {
   return messages.find(m => m.role === 'user')?.content?.slice(0, 30) || ''
 }
 
-function createStoredAsset(asset) {
-  return {
-    id: `asset_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-    type: 'image', label: asset.label || '未命名', prompt: asset.prompt || '',
-    negativePrompt: asset.negativePrompt || '', url: asset.url || '',
-    model: asset.model || '', ratio: asset.ratio || '1:1', style: asset.style || '',
-    createdAt: new Date().toISOString(), _generating: false, ...asset
-  }
-}
+// Stored assets use the same shape as canvas assets (see assetFactory), so the
+// conversation bridge and the live canvas stay structurally identical.
 
 export default function App() {
   const { config, providerLists, save, updateProvider } = useConfig()
@@ -109,7 +103,7 @@ export default function App() {
       })
     })),
     addAsset: (id, asset) => {
-      const item = createStoredAsset(asset)
+      const item = createAsset(asset)
       const updated = patchStoredConversation(id, conv => ({ ...conv, assets: [item, ...(conv.assets || [])] }))
       return updated ? item : null
     },

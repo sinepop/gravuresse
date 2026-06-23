@@ -2,13 +2,9 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { CHAT_PROVIDERS } from '../providers/chatProviders'
 import { IMG_PROVIDERS } from '../providers/imageProviders'
 import { VID_PROVIDERS } from '../providers/videoProviders'
+import { PROVIDER_ID_ALIASES } from '../providers/aliases'
 
 const PROVIDER_MAP = { chat: CHAT_PROVIDERS, image: IMG_PROVIDERS, video: VID_PROVIDERS }
-const PROVIDER_ID_ALIASES = {
-  chat: { claude: 'anthropic', gemini: 'google', qwen: 'alibaba', kimi: 'moonshot', doubao: 'volcengine' },
-  image: { dalle: 'openai', gemini_img: 'google', jimeng_img: 'volcengine' },
-  video: { jimeng_vid: 'volcengine' }
-}
 
 const DEPRECATED_MODELS = ['pollinations']
 
