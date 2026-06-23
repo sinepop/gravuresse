@@ -32,17 +32,25 @@ export default function useChat(config, canvas, onVideoTaskCreated, activeConver
   const [thinking, setThinking] = useState(false)
   const lastImageContext = useRef(null)
   const loadingRef = useRef(false)
+  const messagesRef = useRef([])
+  const mountedRef = useRef(true)
   const activeConversationIdRef = useRef(activeConversationId)
 
   // Keep ref in sync with state
   useEffect(() => { loadingRef.current = loading }, [loading])
+  useEffect(() => { messagesRef.current = messages }, [messages])
   useEffect(() => { activeConversationIdRef.current = activeConversationId }, [activeConversationId])
+  useEffect(() => {
+    mountedRef.current = true
+    return () => { mountedRef.current = false }
+  }, [])
 
   const canWriteToCurrentConversation = useCallback((conversationId) => {
-    return Boolean(conversationId && isActiveConversation?.(conversationId))
+    return Boolean(mountedRef.current && conversationId && isActiveConversation?.(conversationId))
   }, [isActiveConversation])
 
   const canWriteToConversation = useCallback((conversationId) => {
+    if (!mountedRef.current) return false
     return canWriteToCurrentConversation(conversationId) || Boolean(conversationBridge?.canWrite?.(conversationId))
   }, [canWriteToCurrentConversation, conversationBridge])
 
@@ -108,9 +116,20 @@ export default function useChat(config, canvas, onVideoTaskCreated, activeConver
     }
 
     try {
-      const history = [...messages, userMsg].map(m => ({ role: m.role, content: m.content }))
+      const history = [...messagesRef.current, userMsg].map(m => ({ role: m.role, content: m.content }))
 
-      const modifyContext = lastImageContext.current
+      const storedImageContext = lastImageContext.current
+      const latestImageAsset = canvas?.allAssets?.find(asset => asset.type === 'image' && asset.url)
+      const modifyContext = storedImageContext?.conversationId === originConversationId
+        ? storedImageContext
+        : latestImageAsset
+          ? {
+              conversationId: originConversationId,
+              prompt: latestImageAsset.prompt,
+              ratio: latestImageAsset.ratio || '1:1',
+              assetId: latestImageAsset.id
+            }
+          : null
       const modifyHint = modifyContext
         ? `\n\n## 最近一次生成的图片
 - 上次 prompt: "${modifyContext.prompt}"
@@ -199,10 +218,10 @@ ${modifyHint}${refHint}${styleHint}
     } catch (err) {
       appendMessage(originConversationId, { role: 'assistant', content: `Error: ${err.message}`, id: nextId(), error: true })
     } finally {
-      setLoading(false)
       loadingRef.current = false
+      if (mountedRef.current) setLoading(false)
     }
-  }, [config, messages, canvas, appendMessage])
+  }, [config, canvas, appendMessage, thinking])
 
   const doGenerate = useCallback(async (msgId, task, lang, placeholderId, taskIndex, originConversationId) => {
     const startTime = Date.now()
@@ -237,7 +256,12 @@ ${modifyHint}${refHint}${styleHint}
         assetId = asset?.id
       }
       if (canWriteToCurrentConversation(originConversationId) && assetId) {
-        lastImageContext.current = { prompt: task.prompt, ratio: task.ratio || '1:1', assetId }
+        lastImageContext.current = {
+          conversationId: originConversationId,
+          prompt: task.prompt,
+          ratio: task.ratio || '1:1',
+          assetId
+        }
       }
       updateTask({ status: 'done', assetId, elapsed })
       if (config?.general?.autoSave !== false) {
@@ -293,10 +317,11 @@ ${modifyHint}${refHint}${styleHint}
     if (!originConversationId) return
     const lang = config?.general?.language || 'zh'
     const idx = taskIndex ?? 0
+    const startTime = Date.now()
     setMessages(prev => prev.map(m => {
       if (m.id !== msgId) return m
       const tasks = [...(m.tasks || [m.task])]
-      tasks[idx] = { ...tasks[idx], status: 'generating', startTime: Date.now() }
+      tasks[idx] = { ...tasks[idx], status: 'generating', startTime }
       return { ...m, tasks }
     }))
     const placeholderId = task.type === 'image' ? canvas.addPlaceholder(task.label || '生成中...') : null
@@ -315,10 +340,11 @@ ${modifyHint}${refHint}${styleHint}
     if (!originConversationId) return
     const lang = config?.general?.language || 'zh'
     const idx = taskIndex ?? 0
+    const startTime = Date.now()
     setMessages(prev => prev.map(m => {
       if (m.id !== msgId) return m
       const tasks = [...(m.tasks || [m.task])]
-      tasks[idx] = { ...tasks[idx], status: 'generating', startTime: Date.now(), batchTotal: count, batchDone: 0 }
+      tasks[idx] = { ...tasks[idx], status: 'generating', startTime, batchTotal: count, batchDone: 0 }
       return { ...m, tasks }
     }))
 
@@ -373,11 +399,14 @@ ${modifyHint}${refHint}${styleHint}
     patchTask(originConversationId, msgId, idx, { status: done > 0 && !hasFailure ? 'done' : done > 0 ? 'partial' : 'error', batchDone: done, error: done === 0 ? 'All batch items failed' : hasFailure ? `${count - done} of ${count} failed` : undefined })
   }, [config, canvas, doGenerate, canWriteToConversation, updateAssetInConversation, removeAssetFromConversation, patchTask])
 
-  const setMessagesDirectly = useCallback((fn) => {
-    setMessages(fn)
+  const setMessagesDirectly = useCallback((update) => {
+    // No side effects inside the updater (CLAUDE.md red line) — the messagesRef
+    // is kept in sync by the dedicated useEffect on [messages] below.
+    setMessages(prev => (typeof update === 'function' ? update(prev) : update))
   }, [])
 
   const clear = useCallback(() => {
+    messagesRef.current = []
     setMessages([])
     lastImageContext.current = null
   }, [])
