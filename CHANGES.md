@@ -2,6 +2,18 @@
 
 ## 中文
 
+#### v1.6.1 (2026-06-23)
+
+**改进**
+- NSIS 安装选项：支持选择安装目录（不再一键安装）
+- Provider ID 别名去重：主进程统一从 config.js 导入，消除 main.js 重复定义
+- Fallback Provider 列表同步：Chat 从 9 个扩展到 15 个，Image 新增 SiliconFlow
+- 简化 store.js 写入队列（与 config.js 保持一致）
+- .gitignore 增强：添加 OS/编辑器/崩溃转储/密钥文件防护
+
+**清理**
+- 移除过时文件：.codex/、CODEX_TASK.md、根目录残渣图片/docx
+
 #### v1.6.0 (2026-06-21)
 
 **Provider 架构重构**
@@ -213,6 +225,18 @@
 ---
 
 ## English
+
+#### v1.6.1 (2026-06-23)
+
+**Improvements**
+- NSIS installer: added install-directory selection (no longer one-click)
+- Provider ID aliases deduplicated: main process imports from config.js
+- Fallback provider lists synced: Chat expanded from 9 to 15 providers, Image added SiliconFlow
+- Simplified store.js write queue (aligned with config.js pattern)
+- .gitignore enhanced: OS/editor/crash dump/secret file patterns
+
+**Cleanup**
+- Removed obsolete files: .codex/, CODEX_TASK.md, stray images/docx in root
 
 #### v1.6.0 (2026-06-21)
 

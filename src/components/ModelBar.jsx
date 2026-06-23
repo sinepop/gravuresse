@@ -110,7 +110,7 @@ export default function ModelBar({ config, providerLists, onProviderChange, onOp
         fontSize: 10, color: 'var(--text-ghost)', fontFamily: 'var(--font-mono)',
         letterSpacing: '0.5px', padding: '4px 10px', borderRadius: '99px',
         background: 'var(--bg-input)', border: '1px solid var(--border-subtle)'
-      }}>v1.6.0</span>
+      }}>v1.6.1</span>
     </div>
   )
 }
