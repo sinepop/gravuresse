@@ -37,11 +37,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   on: (channel, callback) => {
     const validChannels = ['window-maximized']
-    if (validChannels.includes(channel)) {
-      const handler = (_, ...args) => callback(...args)
-      ipcRenderer.on(channel, handler)
-      return handler
-    }
+    if (!validChannels.includes(channel)) return undefined
+    const handler = (_, ...args) => callback(...args)
+    ipcRenderer.on(channel, handler)
+    // Return an unsubscribe fn so listeners can clean up reliably without
+    // having to pass the ipc listener back to off().
+    return () => ipcRenderer.removeListener(channel, handler)
   },
 
   off: (channel, handler) => {

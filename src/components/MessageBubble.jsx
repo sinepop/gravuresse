@@ -192,7 +192,8 @@ export default function MessageBubble({ msg, onConfirmTask, onBatchGenerate, lan
               <a href={href} onClick={(e) => openMarkdownLink(e, href)} style={{ color: 'var(--accent)', textDecoration: 'underline' }}>
                 {children}
               </a>
-            )
+            ),
+            img: () => null
           }}>{msg.content}</ReactMarkdown>
           </>
         )}

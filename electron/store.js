@@ -25,19 +25,14 @@ function backupCorruptStore() {
 }
 
 // 简单写入队列，防止并发 read-modify-write 竞态
+// 如果写入失败，catch 会吞掉错误以保持队列活
 let writeQueue = Promise.resolve()
 
 function enqueueWrite(fn) {
-  const operation = writeQueue.then(() => {
-    return Promise.resolve().then(fn).catch(e => {
-      console.error('Store write error:', e)
-      return Promise.resolve().then(fn).catch(retryErr => {
-        console.error('Store write retry also failed:', retryErr)
-        throw retryErr
-      })
-    })
+  const operation = writeQueue.catch(() => {}).then(fn)
+  writeQueue = operation.catch(e => {
+    console.error('Store write error:', e)
   })
-  writeQueue = operation.catch(() => {})
   return operation
 }
 

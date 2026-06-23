@@ -1,9 +1,51 @@
-const { app } = require('electron')
-const path = require('path')
+/**
+ * Provider registry for chat/image/video tracks.
+ *
+ * Keep this file data-oriented: the renderer may receive these definitions in
+ * redacted form, while the main process still owns the real API keys.
+ */
+
+const IMAGE_RATIOS = ['1:1', '4:3', '3:4', '16:9', '9:16']
+const WIDE_IMAGE_RATIOS = [...IMAGE_RATIOS, '3:2', '2:3']
+const VIDEO_RATIOS = ['16:9', '9:16', '1:1']
+const COMMON_VIDEO_DURATIONS = [5, 10]
+
+const OPENAI_COMPATIBLE = {
+  auth: ['bearer'],
+  baseUrl: true,
+  model: true,
+  timeout: true,
+  relayCompatible: true
+}
+
+function imageConstraints(overrides = {}) {
+  return {
+    prompt: { maxLength: 4000 },
+    negativePrompt: { supported: true, strategy: 'native', maxLength: 1000 },
+    ratios: IMAGE_RATIOS,
+    resolutions: ['1024', '1536', '2048'],
+    sourceImage: { required: false },
+    async: false,
+    ...overrides
+  }
+}
+
+function videoConstraints(overrides = {}) {
+  return {
+    prompt: { maxLength: 2000 },
+    negativePrompt: { supported: true, strategy: 'native', maxLength: 500 },
+    ratios: VIDEO_RATIOS,
+    resolutions: ['720p', '1080p'],
+    duration: { supported: true, allowed: COMMON_VIDEO_DURATIONS, coerce: 'nearest' },
+    sourceImage: { required: false, requiredForModes: ['image_to_video'] },
+    async: true,
+    ...overrides
+  }
+}
 
 /**
  * @typedef {Object} AuthType
- * @property {'bearer'|'header'|'query'|'cookie'|'session'} type
+ * @property {'bearer'|'header'|'query'|'session'} type
  * @property {string} [key]
  * @property {string} [prefix]
  */
@@ -13,43 +55,60 @@ const path = require('path')
  * @property {string} id
  * @property {string} name
  * @property {string} platform
- * @property {Object} chat - Chat configuration (if supported)
- * @property {Object} [chat.defaultModel]
- * @property {Object} [chat.protocol]
- * @property {Object} image - Image configuration (if supported)
- * @property {Object} [image.defaultModel]
- * @property {Object} [image.protocol]
- * @property {Object} [image.sizes]
- * @property {Object} video - Video configuration (if supported)
- * @property {Object} [video.defaultModel]
- * @property {Object} [video.protocol]
- * @property {Object} [video.polling]
+ * @property {Object} [chat]
+ * @property {Object} [image]
+ * @property {Object} [video]
  * @property {AuthType} authType
  * @property {Object} defaults
  * @property {string} defaults.baseUrl
  * @property {Object} [healthCheck]
  * @property {Object} [meta]
- * @property {string} [meta.region] - 'china' | 'global' | 'both'
- * @property {string} [meta.description]
+ * @property {Object} [links]
+ * @property {Object} [billing]
+ * @property {Object} [capabilities]
+ * @property {Object} [constraints]
+ * @property {Object} [customizable]
  */
 
 /** @type {ProviderDef[]} */
 const REGISTRY = [
-  // ==================== 国际主流 ====================
-
-  // OpenAI — Chat + Image (DALL·E)
   {
     id: 'openai',
     name: 'OpenAI',
     platform: 'OpenAI',
-    chat:    { defaultModel: 'gpt-5.1',  protocol: 'openai' },
-    image:   { defaultModel: 'dall-e-3', protocol: 'openai_image', sizes: ['1:1', '4:3', '3:4', '16:9', '9:16'] },
+    chat: { defaultModel: 'gpt-5.1', protocol: 'openai' },
+    image: {
+      defaultModel: 'gpt-image-2',
+      protocol: 'openai_image',
+      sizes: IMAGE_RATIOS,
+      integrationStatus: 'handler'
+    },
     authType: { type: 'bearer' },
     defaults: { baseUrl: 'https://api.openai.com' },
-    meta: { region: 'global', description: 'ChatGPT + DALL·E 图像生成' }
+    links: {
+      home: 'https://openai.com/api/',
+      docs: 'https://developers.openai.com/api/docs/guides/images-vision',
+      pricing: 'https://openai.com/api/pricing/',
+      purchase: 'https://platform.openai.com/settings/organization/billing/overview',
+      console: 'https://platform.openai.com/',
+      apiKey: 'https://platform.openai.com/api-keys'
+    },
+    billing: { mode: 'paygo', note: 'API billing is separate from ChatGPT plans; use the official billing page for live prices.' },
+    capabilities: {
+      chat: { text: true, integrationStatus: 'handler' },
+      image: { textToImage: true, imageEdit: true, negativePrompt: 'appendToPrompt', output: ['url', 'base64'], integrationStatus: 'handler' }
+    },
+    constraints: {
+      image: imageConstraints({
+        prompt: { maxLength: 8000 },
+        negativePrompt: { supported: true, strategy: 'appendToPrompt', maxLength: 1000 },
+        ratios: IMAGE_RATIOS,
+        resolutions: ['1024', '1536', '2048', '4096']
+      })
+    },
+    customizable: { image: OPENAI_COMPATIBLE, chat: OPENAI_COMPATIBLE },
+    meta: { region: 'global', description: 'OpenAI chat and GPT-Image generation.' }
   },
-
-  // Anthropic — Claude
   {
     id: 'anthropic',
     name: 'Anthropic',
@@ -57,26 +116,77 @@ const REGISTRY = [
     chat: { defaultModel: 'claude-sonnet-4-6', protocol: 'anthropic', thinking: true },
     authType: { type: 'header', key: 'x-api-key' },
     defaults: { baseUrl: 'https://api.anthropic.com' },
+    links: {
+      home: 'https://www.anthropic.com/api',
+      docs: 'https://docs.anthropic.com/',
+      pricing: 'https://www.anthropic.com/pricing#api',
+      purchase: 'https://console.anthropic.com/settings/billing',
+      console: 'https://console.anthropic.com/',
+      apiKey: 'https://console.anthropic.com/settings/keys'
+    },
+    billing: { mode: 'paygo', note: 'Chat API provider; media generation is not configured here.' },
+    capabilities: { chat: { text: true, thinking: true, integrationStatus: 'handler' } },
+    customizable: { chat: { auth: ['header'], baseUrl: true, model: true, timeout: true } },
     healthCheck: {
-      url: '/v1/messages', method: 'POST',
+      url: '/v1/messages',
+      method: 'POST',
       body: { max_tokens: 1, model: 'claude-sonnet-4-6', messages: [{ role: 'user', content: 'ping' }] }
     },
-    meta: { region: 'global', description: 'Claude 深度思考与对话' }
+    meta: { region: 'global', description: 'Claude chat and reasoning models.' }
   },
-
-  // Google — Gemini (Chat + Image)
   {
     id: 'google',
     name: 'Google Gemini',
     platform: 'Google',
-    chat:  { defaultModel: 'gemini-2.5-pro',        protocol: 'gemini' },
-    image: { defaultModel: 'gemini-2.5-flash-image', protocol: 'gemini_image' },
+    chat: { defaultModel: 'gemini-2.5-pro', protocol: 'gemini' },
+    image: {
+      defaultModel: 'gemini-2.5-flash-image',
+      protocol: 'gemini_image',
+      sizes: IMAGE_RATIOS,
+      integrationStatus: 'handler'
+    },
+    video: {
+      defaultModel: 'veo-3.1',
+      protocol: 'gemini_video_task',
+      polling: true,
+      integrationStatus: 'metadata'
+    },
     authType: { type: 'query', key: 'key' },
     defaults: { baseUrl: 'https://generativelanguage.googleapis.com' },
-    meta: { region: 'global', description: 'Gemini 对话与图像生成' }
+    links: {
+      home: 'https://ai.google.dev/gemini-api',
+      docs: 'https://ai.google.dev/gemini-api/docs',
+      pricing: 'https://ai.google.dev/gemini-api/docs/pricing',
+      purchase: 'https://aistudio.google.com/usage',
+      console: 'https://aistudio.google.com/',
+      apiKey: 'https://aistudio.google.com/apikey'
+    },
+    billing: { mode: 'paygo', note: 'Gemini API usage is billed in Google AI Studio / Google Cloud; check pricing before video calls.' },
+    capabilities: {
+      chat: { text: true, multimodal: true, integrationStatus: 'handler' },
+      image: { textToImage: true, imageEdit: true, nativeImage: 'Nano Banana', integrationStatus: 'handler' },
+      video: { textToVideo: true, imageToVideo: true, async: true, modelFamily: 'Veo', integrationStatus: 'metadata' }
+    },
+    constraints: {
+      image: imageConstraints({
+        prompt: { maxLength: 32000 },
+        negativePrompt: { supported: true, strategy: 'appendToPrompt', maxLength: 2000 },
+        ratios: WIDE_IMAGE_RATIOS,
+        resolutions: ['1024', '2048']
+      }),
+      video: videoConstraints({
+        prompt: { maxLength: 4000 },
+        negativePrompt: { supported: false, strategy: 'unsupported' },
+        ratios: VIDEO_RATIOS,
+        duration: { supported: true, allowed: [4, 6, 8], coerce: 'nearest' }
+      })
+    },
+    customizable: {
+      image: { auth: ['query'], baseUrl: true, model: true, timeout: true, relayCompatible: true, presets: ['gemini-compatible'] },
+      video: { auth: ['query'], baseUrl: true, model: true, timeout: true, relayCompatible: true }
+    },
+    meta: { region: 'global', description: 'Gemini chat, Nano Banana image generation, and Veo video metadata.' }
   },
-
-  // DeepSeek
   {
     id: 'deepseek',
     name: 'DeepSeek',
@@ -84,10 +194,19 @@ const REGISTRY = [
     chat: { defaultModel: 'deepseek-chat', protocol: 'openai' },
     authType: { type: 'bearer' },
     defaults: { baseUrl: 'https://api.deepseek.com' },
-    meta: { region: 'both', description: 'DeepSeek 大语言模型' }
+    links: {
+      home: 'https://www.deepseek.com/',
+      docs: 'https://api-docs.deepseek.com/',
+      pricing: 'https://api-docs.deepseek.com/quick_start/pricing',
+      purchase: 'https://platform.deepseek.com/usage',
+      console: 'https://platform.deepseek.com/',
+      apiKey: 'https://platform.deepseek.com/api_keys'
+    },
+    billing: { mode: 'paygo', note: 'OpenAI-compatible chat provider.' },
+    capabilities: { chat: { text: true, openaiCompatible: true, integrationStatus: 'handler' } },
+    customizable: { chat: OPENAI_COMPATIBLE },
+    meta: { region: 'both', description: 'DeepSeek OpenAI-compatible chat models.' }
   },
-
-  // Groq — 极速推理
   {
     id: 'groq',
     name: 'Groq',
@@ -95,10 +214,19 @@ const REGISTRY = [
     chat: { defaultModel: 'llama-3.3-70b-versatile', protocol: 'openai' },
     authType: { type: 'bearer' },
     defaults: { baseUrl: 'https://api.groq.com/openai' },
-    meta: { region: 'global', description: '极速开源模型推理' }
+    links: {
+      home: 'https://groq.com/',
+      docs: 'https://console.groq.com/docs/overview',
+      pricing: 'https://groq.com/pricing/',
+      purchase: 'https://console.groq.com/settings/billing',
+      console: 'https://console.groq.com/',
+      apiKey: 'https://console.groq.com/keys'
+    },
+    billing: { mode: 'paygo', note: 'OpenAI-compatible chat provider.' },
+    capabilities: { chat: { text: true, openaiCompatible: true, integrationStatus: 'handler' } },
+    customizable: { chat: OPENAI_COMPATIBLE },
+    meta: { region: 'global', description: 'Fast OpenAI-compatible inference.' }
   },
-
-  // Together AI
   {
     id: 'together',
     name: 'Together AI',
@@ -106,10 +234,19 @@ const REGISTRY = [
     chat: { defaultModel: 'meta-llama/Llama-4-17B-128E-Instruct-FP8', protocol: 'openai' },
     authType: { type: 'bearer' },
     defaults: { baseUrl: 'https://api.together.xyz' },
-    meta: { region: 'global', description: '开源模型聚合平台' }
+    links: {
+      home: 'https://www.together.ai/',
+      docs: 'https://docs.together.ai/',
+      pricing: 'https://www.together.ai/pricing',
+      purchase: 'https://api.together.ai/settings/billing',
+      console: 'https://api.together.ai/',
+      apiKey: 'https://api.together.ai/settings/api-keys'
+    },
+    billing: { mode: 'paygo', note: 'OpenAI-compatible model platform.' },
+    capabilities: { chat: { text: true, openaiCompatible: true, integrationStatus: 'handler' } },
+    customizable: { chat: OPENAI_COMPATIBLE },
+    meta: { region: 'global', description: 'Open model aggregation platform.' }
   },
-
-  // OpenRouter — 多模型聚合
   {
     id: 'openrouter',
     name: 'OpenRouter',
@@ -117,10 +254,19 @@ const REGISTRY = [
     chat: { defaultModel: 'openai/gpt-5.1', protocol: 'openai' },
     authType: { type: 'bearer' },
     defaults: { baseUrl: 'https://openrouter.ai/api' },
-    meta: { region: 'global', description: '多模型统一接入' }
+    links: {
+      home: 'https://openrouter.ai/',
+      docs: 'https://openrouter.ai/docs',
+      pricing: 'https://openrouter.ai/models',
+      purchase: 'https://openrouter.ai/credits',
+      console: 'https://openrouter.ai/settings',
+      apiKey: 'https://openrouter.ai/settings/keys'
+    },
+    billing: { mode: 'credits', note: 'OpenAI-compatible model router with prepaid credits.' },
+    capabilities: { chat: { text: true, openaiCompatible: true, integrationStatus: 'handler' } },
+    customizable: { chat: OPENAI_COMPATIBLE },
+    meta: { region: 'global', description: 'Multi-model OpenAI-compatible router.' }
   },
-
-  // xAI — Grok
   {
     id: 'xai',
     name: 'xAI Grok',
@@ -128,10 +274,19 @@ const REGISTRY = [
     chat: { defaultModel: 'grok-3', protocol: 'openai' },
     authType: { type: 'bearer' },
     defaults: { baseUrl: 'https://api.x.ai' },
-    meta: { region: 'global', description: 'Grok 系列模型' }
+    links: {
+      home: 'https://x.ai/api',
+      docs: 'https://docs.x.ai/docs/overview',
+      pricing: 'https://docs.x.ai/docs/models',
+      purchase: 'https://console.x.ai/team/default/billing',
+      console: 'https://console.x.ai/',
+      apiKey: 'https://console.x.ai/team/default/api-keys'
+    },
+    billing: { mode: 'paygo', note: 'OpenAI-compatible chat provider.' },
+    capabilities: { chat: { text: true, openaiCompatible: true, integrationStatus: 'handler' } },
+    customizable: { chat: OPENAI_COMPATIBLE },
+    meta: { region: 'global', description: 'Grok OpenAI-compatible chat models.' }
   },
-
-  // Perplexity
   {
     id: 'perplexity',
     name: 'Perplexity',
@@ -139,36 +294,91 @@ const REGISTRY = [
     chat: { defaultModel: 'sonar-pro', protocol: 'openai' },
     authType: { type: 'bearer' },
     defaults: { baseUrl: 'https://api.perplexity.ai' },
-    meta: { region: 'global', description: 'AI 搜索与对话' }
+    links: {
+      home: 'https://www.perplexity.ai/',
+      docs: 'https://docs.perplexity.ai/',
+      pricing: 'https://docs.perplexity.ai/getting-started/pricing',
+      purchase: 'https://www.perplexity.ai/settings/api',
+      console: 'https://www.perplexity.ai/settings/api',
+      apiKey: 'https://www.perplexity.ai/settings/api'
+    },
+    billing: { mode: 'paygo', note: 'OpenAI-compatible search/chat provider.' },
+    capabilities: { chat: { text: true, search: true, openaiCompatible: true, integrationStatus: 'handler' } },
+    customizable: { chat: OPENAI_COMPATIBLE },
+    meta: { region: 'global', description: 'AI search and chat API.' }
   },
-
-  // ==================== 国内平台 ====================
-
-  // 火山引擎 (Volcengine ARK) — Chat + Image + Video
   {
     id: 'volcengine',
-    name: '火山引擎',
+    name: 'Volcengine ModelArk',
     platform: 'Volcengine',
-    chat:  { defaultModel: 'doubao-pro-32k',            protocol: 'openai' },
-    image: { defaultModel: 'doubao-seedream-4-0',       protocol: 'ark_image', sizes: ['1:1', '4:3', '3:4', '16:9', '9:16'] },
-    video: { defaultModel: 'doubao-seedance-2-0-pro',   protocol: 'ark_video_task', polling: true },
+    chat: { defaultModel: 'doubao-pro-32k', protocol: 'openai' },
+    image: {
+      defaultModel: 'doubao-seedream-4-0-250828',
+      protocol: 'ark_image',
+      sizes: IMAGE_RATIOS,
+      integrationStatus: 'handler'
+    },
+    video: {
+      defaultModel: 'doubao-seedance-2-0-pro-250528',
+      protocol: 'ark_video_task',
+      polling: true,
+      integrationStatus: 'handler'
+    },
     authType: { type: 'bearer' },
     defaults: { baseUrl: 'https://ark.cn-beijing.volces.com/api/v3' },
-    meta: { region: 'china', description: '豆包 / 即梦 / Seedance — 统一接口' }
+    links: {
+      home: 'https://www.volcengine.com/product/ark',
+      docs: 'https://docs.byteplus.com/en/docs/ModelArk/1541523',
+      pricing: 'https://docs.byteplus.com/en/docs/ModelArk/1544106',
+      purchase: 'https://console.volcengine.com/ark',
+      console: 'https://console.volcengine.com/ark',
+      apiKey: 'https://console.volcengine.com/ark'
+    },
+    billing: { mode: 'credits', note: 'ModelArk / BytePlus billing varies by model; use the official console for token packages and prices.' },
+    capabilities: {
+      chat: { text: true, openaiCompatible: true, integrationStatus: 'handler' },
+      image: { textToImage: true, imageEdit: true, modelFamily: 'Seedream', integrationStatus: 'handler' },
+      video: { textToVideo: true, imageToVideo: true, async: true, modelFamily: 'Seedance', integrationStatus: 'handler' }
+    },
+    constraints: {
+      image: imageConstraints({
+        prompt: { maxLength: 2000 },
+        ratios: IMAGE_RATIOS,
+        resolutions: ['1024', '2048', '4096']
+      }),
+      video: videoConstraints({
+        prompt: { maxLength: 2000 },
+        ratios: VIDEO_RATIOS,
+        duration: { supported: true, allowed: [5, 10], coerce: 'nearest' }
+      })
+    },
+    customizable: {
+      chat: OPENAI_COMPATIBLE,
+      image: { ...OPENAI_COMPATIBLE, presets: ['ark-compatible'] },
+      video: { ...OPENAI_COMPATIBLE, presets: ['ark-compatible-task'], polling: true }
+    },
+    meta: { region: 'china', description: 'Doubao chat, Seedream image, and Seedance video through ModelArk.' }
   },
-
-  // 阿里云百炼 (Alibaba DashScope) — Qwen
   {
     id: 'alibaba',
-    name: '阿里云百炼',
+    name: 'Alibaba Qwen',
     platform: 'Alibaba',
     chat: { defaultModel: 'qwen-plus', protocol: 'openai' },
     authType: { type: 'bearer' },
     defaults: { baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode' },
-    meta: { region: 'china', description: '通义千问系列模型' }
+    links: {
+      home: 'https://www.alibabacloud.com/product/modelstudio',
+      docs: 'https://www.alibabacloud.com/help/en/model-studio/',
+      pricing: 'https://www.alibabacloud.com/help/en/model-studio/models',
+      purchase: 'https://bailian.console.aliyun.com/',
+      console: 'https://bailian.console.aliyun.com/',
+      apiKey: 'https://bailian.console.aliyun.com/'
+    },
+    billing: { mode: 'paygo', note: 'Qwen OpenAI-compatible chat endpoint; Wan media uses the Alibaba Wan provider entry.' },
+    capabilities: { chat: { text: true, openaiCompatible: true, integrationStatus: 'handler' } },
+    customizable: { chat: OPENAI_COMPATIBLE },
+    meta: { region: 'china', description: 'Qwen OpenAI-compatible chat models.' }
   },
-
-  // Moonshot — Kimi
   {
     id: 'moonshot',
     name: 'Moonshot',
@@ -176,99 +386,796 @@ const REGISTRY = [
     chat: { defaultModel: 'kimi-k2-0711-preview', protocol: 'openai' },
     authType: { type: 'bearer' },
     defaults: { baseUrl: 'https://api.moonshot.cn' },
-    meta: { region: 'china', description: 'Kimi 长文本对话' }
+    links: {
+      home: 'https://www.moonshot.cn/',
+      docs: 'https://platform.moonshot.cn/docs',
+      pricing: 'https://platform.moonshot.cn/docs/pricing',
+      purchase: 'https://platform.moonshot.cn/console/account',
+      console: 'https://platform.moonshot.cn/console',
+      apiKey: 'https://platform.moonshot.cn/console/api-keys'
+    },
+    billing: { mode: 'paygo', note: 'OpenAI-compatible chat provider.' },
+    capabilities: { chat: { text: true, openaiCompatible: true, integrationStatus: 'handler' } },
+    customizable: { chat: OPENAI_COMPATIBLE },
+    meta: { region: 'china', description: 'Kimi chat models.' }
   },
-
-  // 智谱 (BigModel / Zhipu)
   {
     id: 'zhipu',
-    name: '智谱 AI',
+    name: 'Zhipu AI',
     platform: 'Zhipu',
     chat: { defaultModel: 'glm-4-plus', protocol: 'openai' },
     authType: { type: 'bearer' },
     defaults: { baseUrl: 'https://open.bigmodel.cn/api/paas/v4' },
-    meta: { region: 'china', description: 'GLM 系列模型' }
+    links: {
+      home: 'https://open.bigmodel.cn/',
+      docs: 'https://docs.bigmodel.cn/',
+      pricing: 'https://open.bigmodel.cn/pricing',
+      purchase: 'https://open.bigmodel.cn/usercenter/account',
+      console: 'https://open.bigmodel.cn/usercenter',
+      apiKey: 'https://open.bigmodel.cn/usercenter/apikeys'
+    },
+    billing: { mode: 'paygo', note: 'OpenAI-compatible chat provider.' },
+    capabilities: { chat: { text: true, openaiCompatible: true, integrationStatus: 'handler' } },
+    customizable: { chat: OPENAI_COMPATIBLE },
+    meta: { region: 'china', description: 'GLM chat models.' }
   },
-
-  // 硅基流动 (SiliconFlow)
   {
     id: 'siliconflow',
-    name: '硅基流动',
+    name: 'SiliconFlow',
     platform: 'SiliconFlow',
     chat: { defaultModel: 'Qwen/Qwen2.5-72B-Instruct', protocol: 'openai' },
-    image: { defaultModel: 'black-forest-labs/FLUX.1-dev', protocol: 'openai_image', sizes: ['1:1', '4:3', '3:4', '16:9', '9:16'] },
+    image: {
+      defaultModel: 'black-forest-labs/FLUX.1-dev',
+      protocol: 'openai_image',
+      sizes: IMAGE_RATIOS,
+      integrationStatus: 'handler'
+    },
     authType: { type: 'bearer' },
     defaults: { baseUrl: 'https://api.siliconflow.cn' },
-    meta: { region: 'china', description: '开源模型低价推理 + 图像生成' }
+    links: {
+      home: 'https://siliconflow.cn/',
+      docs: 'https://docs.siliconflow.cn/',
+      pricing: 'https://siliconflow.cn/pricing',
+      purchase: 'https://cloud.siliconflow.cn/account/billing',
+      console: 'https://cloud.siliconflow.cn/',
+      apiKey: 'https://cloud.siliconflow.cn/account/ak'
+    },
+    billing: { mode: 'paygo', note: 'OpenAI-compatible model platform with image models.' },
+    capabilities: {
+      chat: { text: true, openaiCompatible: true, integrationStatus: 'handler' },
+      image: { textToImage: true, openaiCompatible: true, modelFamily: 'FLUX', integrationStatus: 'handler' }
+    },
+    constraints: {
+      image: imageConstraints({
+        prompt: { maxLength: 4000 },
+        negativePrompt: { supported: true, strategy: 'appendToPrompt', maxLength: 1000 },
+        ratios: IMAGE_RATIOS
+      })
+    },
+    customizable: { chat: OPENAI_COMPATIBLE, image: { ...OPENAI_COMPATIBLE, presets: ['openai-images-compatible'] } },
+    meta: { region: 'china', description: 'Open model inference and image generation.' }
   },
-
-  // 月之暗面 (已经归到 moonshot，不用重复)
-  // 深度求索 (已经归到 deepseek)
-  // 零一万物 — Yi
   {
     id: 'lingyi',
-    name: '零一万物',
+    name: '01.AI',
     platform: '01.AI',
     chat: { defaultModel: 'yi-lightning', protocol: 'openai' },
     authType: { type: 'bearer' },
     defaults: { baseUrl: 'https://api.lingyiwanwu.com' },
-    meta: { region: 'china', description: 'Yi 系列模型' }
+    links: {
+      home: 'https://www.lingyiwanwu.com/',
+      docs: 'https://platform.lingyiwanwu.com/docs',
+      pricing: 'https://platform.lingyiwanwu.com/pricing',
+      purchase: 'https://platform.lingyiwanwu.com/account',
+      console: 'https://platform.lingyiwanwu.com/',
+      apiKey: 'https://platform.lingyiwanwu.com/apikeys'
+    },
+    billing: { mode: 'paygo', note: 'OpenAI-compatible chat provider.' },
+    capabilities: { chat: { text: true, openaiCompatible: true, integrationStatus: 'handler' } },
+    customizable: { chat: OPENAI_COMPATIBLE },
+    meta: { region: 'china', description: 'Yi chat models.' }
   },
-
-  // ==================== 视频专用 ====================
-
-  // Runway
+  {
+    id: 'alibaba-wan',
+    name: 'Alibaba Wan',
+    platform: 'Alibaba',
+    image: {
+      defaultModel: 'wan2.5-t2i-preview',
+      protocol: 'wan_image_task',
+      sizes: WIDE_IMAGE_RATIOS,
+      integrationStatus: 'metadata'
+    },
+    video: {
+      defaultModel: 'wan2.6-t2v',
+      protocol: 'wan_video_task',
+      polling: true,
+      integrationStatus: 'metadata'
+    },
+    authType: { type: 'bearer' },
+    defaults: { baseUrl: 'https://dashscope.aliyuncs.com/api/v1' },
+    links: {
+      home: 'https://www.alibabacloud.com/product/modelstudio',
+      docs: 'https://www.alibabacloud.com/help/en/model-studio/text-to-video-api-reference',
+      pricing: 'https://www.alibabacloud.com/help/en/model-studio/models',
+      purchase: 'https://bailian.console.aliyun.com/',
+      console: 'https://bailian.console.aliyun.com/',
+      apiKey: 'https://bailian.console.aliyun.com/'
+    },
+    billing: { mode: 'paygo', note: 'Wan media APIs are async tasks; prompt, size, and duration constraints vary by model.' },
+    capabilities: {
+      image: { textToImage: true, async: true, modelFamily: 'Wan', integrationStatus: 'metadata' },
+      video: { textToVideo: true, imageToVideo: true, async: true, modelFamily: 'Wan', integrationStatus: 'metadata' }
+    },
+    constraints: {
+      image: imageConstraints({
+        prompt: { maxLength: 1500 },
+        negativePrompt: { supported: true, strategy: 'native', maxLength: 500 },
+        ratios: WIDE_IMAGE_RATIOS,
+        resolutions: ['1024', '1440', '2048'],
+        async: true
+      }),
+      video: videoConstraints({
+        prompt: { maxLength: 1500 },
+        negativePrompt: { supported: true, strategy: 'native', maxLength: 500 },
+        ratios: VIDEO_RATIOS,
+        resolutions: ['720p', '1080p'],
+        duration: { supported: true, min: 2, max: 10, allowed: [2, 3, 4, 5, 6, 7, 8, 9, 10], coerce: 'nearest' }
+      })
+    },
+    customizable: {
+      image: { auth: ['bearer'], baseUrl: true, model: true, timeout: true },
+      video: { auth: ['bearer'], baseUrl: true, model: true, timeout: true, polling: true }
+    },
+    meta: { region: 'china', description: 'Wan image and video generation metadata.' }
+  },
+  {
+    id: 'stability',
+    name: 'Stability AI',
+    platform: 'Stability AI',
+    image: {
+      defaultModel: 'stable-image-core',
+      protocol: 'stability_image',
+      sizes: WIDE_IMAGE_RATIOS,
+      integrationStatus: 'metadata'
+    },
+    authType: { type: 'bearer' },
+    defaults: { baseUrl: 'https://api.stability.ai' },
+    links: {
+      home: 'https://platform.stability.ai/',
+      docs: 'https://platform.stability.ai/docs/api-reference',
+      pricing: 'https://platform.stability.ai/pricing',
+      purchase: 'https://platform.stability.ai/account/credits',
+      console: 'https://platform.stability.ai/account/credits',
+      apiKey: 'https://platform.stability.ai/account/keys'
+    },
+    billing: { mode: 'credits', note: 'Credit-based image API; live credit prices are on the official pricing page.' },
+    capabilities: {
+      image: { textToImage: true, imageToImage: true, negativePrompt: 'native', modelFamily: 'Stable Image', integrationStatus: 'metadata' }
+    },
+    constraints: {
+      image: imageConstraints({
+        prompt: { maxLength: 10000 },
+        negativePrompt: { supported: true, strategy: 'native', maxLength: 10000 },
+        ratios: WIDE_IMAGE_RATIOS,
+        resolutions: ['1024', '1536', '2048']
+      })
+    },
+    customizable: { image: { auth: ['bearer'], baseUrl: true, model: true, timeout: true, relayCompatible: true } },
+    meta: { region: 'global', description: 'Stable Image generation API metadata.' }
+  },
+  {
+    id: 'ideogram',
+    name: 'Ideogram',
+    platform: 'Ideogram',
+    image: {
+      defaultModel: 'ideogram-v4',
+      protocol: 'ideogram_image',
+      sizes: WIDE_IMAGE_RATIOS,
+      integrationStatus: 'metadata'
+    },
+    authType: { type: 'bearer' },
+    defaults: { baseUrl: 'https://api.ideogram.ai' },
+    links: {
+      home: 'https://ideogram.ai/api',
+      docs: 'https://developer.ideogram.ai/ideogram-api/api-overview',
+      pricing: 'https://ideogram.ai/api-pricing/',
+      purchase: 'https://ideogram.ai/manage-api',
+      console: 'https://ideogram.ai/manage-api',
+      apiKey: 'https://ideogram.ai/manage-api'
+    },
+    billing: { mode: 'paygo', note: 'Image API is priced per generated image/model tier on the official pricing page.' },
+    capabilities: {
+      image: { textToImage: true, imageEdit: true, styleReference: true, modelFamily: 'Ideogram', integrationStatus: 'metadata' }
+    },
+    constraints: {
+      image: imageConstraints({
+        prompt: { maxLength: 4000 },
+        negativePrompt: { supported: false, strategy: 'unsupported' },
+        ratios: WIDE_IMAGE_RATIOS,
+        resolutions: ['1024', '2048']
+      })
+    },
+    customizable: { image: { auth: ['bearer'], baseUrl: true, model: true, timeout: true } },
+    meta: { region: 'global', description: 'Ideogram image generation API metadata.' }
+  },
   {
     id: 'runway',
     name: 'Runway',
     platform: 'Runway',
-    video: { defaultModel: 'gen4-turbo', protocol: 'runway_task', polling: true, imageToVideo: true },
+    image: {
+      defaultModel: 'gen4-image',
+      protocol: 'runway_image_task',
+      sizes: WIDE_IMAGE_RATIOS,
+      integrationStatus: 'metadata'
+    },
+    video: {
+      defaultModel: 'gen4_turbo',
+      protocol: 'runway_task',
+      polling: true,
+      imageToVideo: true,
+      integrationStatus: 'handler'
+    },
     authType: { type: 'bearer' },
     defaults: { baseUrl: 'https://api.dev.runwayml.com' },
-    meta: { region: 'global', description: 'AI 视频生成' }
+    links: {
+      home: 'https://runwayml.com/en/api',
+      docs: 'https://docs.dev.runwayml.com/',
+      pricing: 'https://docs.dev.runwayml.com/guides/pricing/',
+      purchase: 'https://dev.runwayml.com/billing',
+      console: 'https://dev.runwayml.com/',
+      apiKey: 'https://dev.runwayml.com/api-keys'
+    },
+    billing: { mode: 'credits', note: 'Runway API uses developer-portal credits; image/video rates vary by model.' },
+    capabilities: {
+      image: { textToImage: true, async: true, modelFamily: 'Gen', integrationStatus: 'metadata' },
+      video: { imageToVideo: true, async: true, polling: true, modelFamily: 'Gen', integrationStatus: 'handler' }
+    },
+    constraints: {
+      image: imageConstraints({
+        prompt: { maxLength: 1000 },
+        negativePrompt: { supported: false, strategy: 'unsupported' },
+        ratios: WIDE_IMAGE_RATIOS,
+        async: true
+      }),
+      video: videoConstraints({
+        prompt: { maxLength: 1000 },
+        negativePrompt: { supported: false, strategy: 'unsupported' },
+        ratios: VIDEO_RATIOS,
+        duration: { supported: true, allowed: [5, 10], coerce: 'nearest' },
+        sourceImage: { required: true, requiredForModes: ['image_to_video'] }
+      })
+    },
+    customizable: { video: { auth: ['bearer'], baseUrl: true, model: true, timeout: true, polling: true } },
+    meta: { region: 'global', description: 'Runway image metadata and image-to-video handler.' }
   },
-
-  // HappyHorse
+  {
+    id: 'luma',
+    name: 'Luma AI',
+    platform: 'Luma',
+    image: {
+      defaultModel: 'photon-1',
+      protocol: 'luma_image_task',
+      sizes: WIDE_IMAGE_RATIOS,
+      integrationStatus: 'metadata'
+    },
+    video: {
+      defaultModel: 'ray-2',
+      protocol: 'luma_video_task',
+      polling: true,
+      integrationStatus: 'metadata'
+    },
+    authType: { type: 'bearer' },
+    defaults: { baseUrl: 'https://api.lumalabs.ai' },
+    links: {
+      home: 'https://lumalabs.ai/api',
+      docs: 'https://docs.lumalabs.ai/docs/api',
+      pricing: 'https://lumalabs.ai/pricing',
+      purchase: 'https://lumalabs.ai/pricing',
+      console: 'https://lumalabs.ai/api',
+      apiKey: 'https://lumalabs.ai/api'
+    },
+    billing: { mode: 'subscription', note: 'Luma plans include image/video usage; API workflows are async request plus status polling.' },
+    capabilities: {
+      image: { textToImage: true, imageToImage: true, referenceImage: true, async: true, modelFamily: 'Photon', integrationStatus: 'metadata' },
+      video: { textToVideo: true, imageToVideo: true, async: true, modelFamily: 'Ray', integrationStatus: 'metadata' }
+    },
+    constraints: {
+      image: imageConstraints({
+        prompt: { maxLength: 5000 },
+        negativePrompt: { supported: false, strategy: 'unsupported' },
+        ratios: WIDE_IMAGE_RATIOS,
+        async: true
+      }),
+      video: videoConstraints({
+        prompt: { maxLength: 5000 },
+        negativePrompt: { supported: false, strategy: 'unsupported' },
+        ratios: VIDEO_RATIOS,
+        duration: { supported: true, min: 5, max: 20 }
+      })
+    },
+    customizable: {
+      image: { auth: ['bearer'], baseUrl: true, model: true, timeout: true, polling: true },
+      video: { auth: ['bearer'], baseUrl: true, model: true, timeout: true, polling: true }
+    },
+    meta: { region: 'global', description: 'Luma Dream Machine image and video API metadata.' }
+  },
+  {
+    id: 'minimax',
+    name: 'MiniMax Hailuo',
+    platform: 'MiniMax',
+    video: {
+      defaultModel: 'MiniMax-Hailuo-2.3',
+      protocol: 'minimax_video_task',
+      polling: true,
+      integrationStatus: 'metadata'
+    },
+    authType: { type: 'bearer' },
+    defaults: { baseUrl: 'https://api.minimax.io' },
+    links: {
+      home: 'https://www.minimax.io/',
+      docs: 'https://platform.minimax.io/docs/api-reference/video-generation-t2v',
+      pricing: 'https://platform.minimax.io/docs/pricing/overview',
+      purchase: 'https://platform.minimax.io/docs/guides/pricing-video',
+      console: 'https://platform.minimax.io/',
+      apiKey: 'https://platform.minimax.io/docs/guides/quickstart-preparation'
+    },
+    billing: { mode: 'subscription', note: 'Supports pay-as-you-go plus video packages/subscription plans; use official pages for current rates.' },
+    capabilities: {
+      video: { textToVideo: true, imageToVideo: true, async: true, modelFamily: 'Hailuo', integrationStatus: 'metadata' }
+    },
+    constraints: {
+      video: videoConstraints({
+        prompt: { maxLength: 2000 },
+        negativePrompt: { supported: false, strategy: 'unsupported' },
+        ratios: VIDEO_RATIOS,
+        resolutions: ['768p', '1080p'],
+        duration: { supported: true, allowed: [6, 10], coerce: 'nearest' }
+      })
+    },
+    customizable: { video: { auth: ['bearer'], baseUrl: true, model: true, timeout: true, polling: true } },
+    meta: { region: 'global', description: 'MiniMax Hailuo video API metadata.' }
+  },
+  {
+    id: 'kling',
+    name: 'Kling AI',
+    platform: 'Kling',
+    video: {
+      defaultModel: 'kling-v2.6',
+      protocol: 'kling_video_task',
+      polling: true,
+      integrationStatus: 'metadata'
+    },
+    authType: { type: 'bearer' },
+    defaults: { baseUrl: 'https://api-singapore.klingai.com' },
+    links: {
+      home: 'https://kling.ai/',
+      docs: 'https://kling.ai/document-api/quickStart/productIntroduction/overview',
+      pricing: 'https://kling.ai/dev/pricing',
+      purchase: 'https://kling.ai/dev/pricing',
+      console: 'https://kling.ai/dev',
+      apiKey: 'https://kling.ai/dev'
+    },
+    billing: { mode: 'credits', note: 'Kling Open Platform video pricing is credit/unit based; verify regional availability in the console.' },
+    capabilities: {
+      video: { textToVideo: true, imageToVideo: true, async: true, modelFamily: 'Kling', integrationStatus: 'metadata' }
+    },
+    constraints: {
+      video: videoConstraints({
+        prompt: { maxLength: 2500 },
+        negativePrompt: { supported: true, strategy: 'native', maxLength: 2500 },
+        ratios: VIDEO_RATIOS,
+        resolutions: ['720p', '1080p'],
+        duration: { supported: true, allowed: [5, 10], coerce: 'nearest' }
+      })
+    },
+    customizable: { video: { auth: ['bearer', 'header'], baseUrl: true, model: true, timeout: true, polling: true } },
+    meta: { region: 'global', description: 'Kling video generation API metadata.' }
+  },
+  {
+    id: 'pixverse',
+    name: 'PixVerse',
+    platform: 'PixVerse',
+    video: {
+      defaultModel: 'pixverse-v6',
+      protocol: 'pixverse_video_task',
+      polling: true,
+      integrationStatus: 'metadata'
+    },
+    authType: { type: 'header', key: 'API-KEY' },
+    defaults: { baseUrl: 'https://platform.pixverse.ai' },
+    links: {
+      home: 'https://platform.pixverse.ai/',
+      docs: 'https://docs.platform.pixverse.ai/quick-start-796052m0',
+      pricing: 'https://docs.platform.pixverse.ai/pricing-796039m0',
+      purchase: 'https://platform.pixverse.ai/billing',
+      console: 'https://platform.pixverse.ai/',
+      apiKey: 'https://platform.pixverse.ai/'
+    },
+    billing: { mode: 'subscription', note: 'API memberships and credits are separate from PixVerse Web memberships.' },
+    capabilities: {
+      video: { textToVideo: true, imageToVideo: true, async: true, modelFamily: 'PixVerse', integrationStatus: 'metadata' }
+    },
+    constraints: {
+      video: videoConstraints({
+        prompt: { maxLength: 2048 },
+        negativePrompt: { supported: true, strategy: 'native', maxLength: 1024 },
+        ratios: VIDEO_RATIOS,
+        resolutions: ['360p', '540p', '720p', '1080p'],
+        duration: { supported: true, allowed: [5, 8, 10], coerce: 'nearest' }
+      })
+    },
+    customizable: { video: { auth: ['header'], baseUrl: true, model: true, timeout: true, polling: true, requiredHeaders: ['API-KEY', 'AI-trace-id'] } },
+    meta: { region: 'global', description: 'PixVerse text/image-to-video API metadata.' }
+  },
+  {
+    id: 'fal',
+    name: 'fal',
+    platform: 'fal',
+    image: {
+      defaultModel: 'fal-ai/flux-pro',
+      protocol: 'fal_image_task',
+      sizes: WIDE_IMAGE_RATIOS,
+      integrationStatus: 'relay'
+    },
+    video: {
+      defaultModel: 'fal-ai/wan/v2.5/t2v',
+      protocol: 'fal_video_task',
+      polling: true,
+      integrationStatus: 'relay'
+    },
+    authType: { type: 'bearer' },
+    defaults: { baseUrl: 'https://fal.run' },
+    links: {
+      home: 'https://fal.ai/',
+      docs: 'https://fal.ai/docs',
+      pricing: 'https://fal.ai/pricing',
+      purchase: 'https://fal.ai/dashboard/billing',
+      console: 'https://fal.ai/dashboard',
+      apiKey: 'https://fal.ai/dashboard/keys'
+    },
+    billing: { mode: 'paygo', note: 'Aggregator/relay platform; image and video units depend on the selected model.' },
+    capabilities: {
+      image: { textToImage: true, imageToImage: true, relay: true, modelCatalog: true, integrationStatus: 'relay' },
+      video: { textToVideo: true, imageToVideo: true, async: true, relay: true, modelCatalog: true, integrationStatus: 'relay' }
+    },
+    constraints: {
+      image: imageConstraints({
+        prompt: { maxLength: 10000 },
+        negativePrompt: { supported: true, strategy: 'modelDependent', maxLength: 2000 },
+        ratios: WIDE_IMAGE_RATIOS,
+        resolutions: ['1024', '2048', '4096'],
+        modelDependent: true
+      }),
+      video: videoConstraints({
+        prompt: { maxLength: 5000 },
+        negativePrompt: { supported: true, strategy: 'modelDependent', maxLength: 2000 },
+        ratios: VIDEO_RATIOS,
+        duration: { supported: true, min: 1, max: 20 },
+        modelDependent: true
+      })
+    },
+    customizable: {
+      image: { auth: ['bearer'], baseUrl: true, model: true, timeout: true, relayCompatible: true, pathPrefix: true },
+      video: { auth: ['bearer'], baseUrl: true, model: true, timeout: true, polling: true, relayCompatible: true, pathPrefix: true }
+    },
+    meta: { region: 'global', description: 'Aggregator for many image/video model APIs.' }
+  },
+  {
+    id: 'replicate',
+    name: 'Replicate',
+    platform: 'Replicate',
+    image: {
+      defaultModel: 'black-forest-labs/flux-schnell',
+      protocol: 'replicate_prediction',
+      sizes: WIDE_IMAGE_RATIOS,
+      integrationStatus: 'relay'
+    },
+    video: {
+      defaultModel: 'wan-video/wan-2.2-t2v-fast',
+      protocol: 'replicate_prediction',
+      polling: true,
+      integrationStatus: 'relay'
+    },
+    authType: { type: 'bearer' },
+    defaults: { baseUrl: 'https://api.replicate.com' },
+    links: {
+      home: 'https://replicate.com/',
+      docs: 'https://replicate.com/docs',
+      pricing: 'https://replicate.com/pricing',
+      purchase: 'https://replicate.com/account/billing',
+      console: 'https://replicate.com/account',
+      apiKey: 'https://replicate.com/account/api-tokens'
+    },
+    billing: { mode: 'paygo', note: 'Aggregator/relay platform; official models can have stable APIs and predictable pricing.' },
+    capabilities: {
+      image: { textToImage: true, imageToImage: true, relay: true, modelCatalog: true, integrationStatus: 'relay' },
+      video: { textToVideo: true, imageToVideo: true, async: true, relay: true, modelCatalog: true, integrationStatus: 'relay' }
+    },
+    constraints: {
+      image: imageConstraints({
+        prompt: { maxLength: 10000 },
+        negativePrompt: { supported: true, strategy: 'modelDependent', maxLength: 2000 },
+        ratios: WIDE_IMAGE_RATIOS,
+        resolutions: ['1024', '2048', '4096'],
+        modelDependent: true
+      }),
+      video: videoConstraints({
+        prompt: { maxLength: 5000 },
+        negativePrompt: { supported: true, strategy: 'modelDependent', maxLength: 2000 },
+        ratios: VIDEO_RATIOS,
+        duration: { supported: true, min: 1, max: 20 },
+        modelDependent: true
+      })
+    },
+    customizable: {
+      image: { auth: ['bearer'], baseUrl: true, model: true, timeout: true, relayCompatible: true, pathPrefix: true },
+      video: { auth: ['bearer'], baseUrl: true, model: true, timeout: true, polling: true, relayCompatible: true, pathPrefix: true }
+    },
+    meta: { region: 'global', description: 'Model aggregator with image/video prediction APIs.' }
+  },
+  {
+    id: 'custom-image',
+    name: 'Custom Image API (OpenAI-compatible)',
+    platform: 'Custom',
+    image: {
+      defaultModel: '',
+      protocol: 'custom_image_openai',
+      format: 'custom',
+      sizes: WIDE_IMAGE_RATIOS,
+      presets: ['openai-images-compatible', 'gemini-compatible', 'ark-compatible'],
+      integrationStatus: 'handler'
+    },
+    authType: { type: 'bearer' },
+    defaults: { baseUrl: '' },
+    links: {
+      docs: 'https://platform.openai.com/docs/api-reference/images',
+      pricing: 'https://openai.com/api/pricing/'
+    },
+    billing: { mode: 'unknown', note: 'Custom relay billing depends on the relay provider; configure only trusted HTTPS endpoints.' },
+    capabilities: {
+      image: { textToImage: true, imageToImage: true, relay: true, customBaseUrl: true, integrationStatus: 'custom-template' }
+    },
+    constraints: {
+      image: imageConstraints({
+        prompt: { maxLength: 10000 },
+        negativePrompt: { supported: true, strategy: 'templateDependent', maxLength: 2000 },
+        ratios: WIDE_IMAGE_RATIOS,
+        resolutions: ['1024', '1536', '2048', '4096'],
+        modelDependent: true
+      })
+    },
+    customizable: {
+      image: {
+        auth: ['bearer', 'api-key', 'header', 'session'],
+        baseUrl: true,
+        headerName: true,
+        model: true,
+        pathPrefix: true,
+        timeout: true,
+        presets: ['openai-images-compatible', 'gemini-compatible', 'ark-compatible'],
+        relayCompatible: true
+      }
+    },
+    meta: { region: 'both', description: 'Custom image relay entry for OpenAI Images-compatible APIs.' }
+  },
+  {
+    id: 'custom-image-gemini',
+    name: 'Custom Image API (Gemini-compatible)',
+    platform: 'Custom',
+    image: {
+      defaultModel: '',
+      protocol: 'custom_image_gemini',
+      format: 'custom',
+      sizes: WIDE_IMAGE_RATIOS,
+      presets: ['gemini-compatible'],
+      integrationStatus: 'handler'
+    },
+    authType: { type: 'bearer' },
+    defaults: { baseUrl: '' },
+    links: {
+      docs: 'https://ai.google.dev/gemini-api/docs/image-generation',
+      pricing: 'https://ai.google.dev/gemini-api/docs/pricing'
+    },
+    billing: { mode: 'unknown', note: 'Custom relay billing depends on the relay provider; configure only trusted HTTPS endpoints.' },
+    capabilities: {
+      image: { textToImage: true, imageToImage: true, relay: true, customBaseUrl: true, integrationStatus: 'handler' }
+    },
+    constraints: {
+      image: imageConstraints({
+        prompt: { maxLength: 10000 },
+        negativePrompt: { supported: true, strategy: 'templateDependent', maxLength: 2000 },
+        ratios: WIDE_IMAGE_RATIOS,
+        resolutions: ['1024', '1536', '2048', '4096'],
+        modelDependent: true
+      })
+    },
+    customizable: {
+      image: {
+        auth: ['bearer', 'api-key', 'header', 'session'],
+        baseUrl: true,
+        headerName: true,
+        model: true,
+        pathPrefix: true,
+        timeout: true,
+        presets: ['gemini-compatible'],
+        relayCompatible: true
+      }
+    },
+    meta: { region: 'both', description: 'Custom image relay entry for Gemini-compatible APIs.' }
+  },
+  {
+    id: 'custom-image-ark',
+    name: 'Custom Image API (Ark-compatible)',
+    platform: 'Custom',
+    image: {
+      defaultModel: '',
+      protocol: 'custom_image_ark',
+      format: 'custom',
+      sizes: WIDE_IMAGE_RATIOS,
+      presets: ['ark-compatible'],
+      integrationStatus: 'handler'
+    },
+    authType: { type: 'bearer' },
+    defaults: { baseUrl: '' },
+    links: {
+      docs: 'https://docs.byteplus.com/en/docs/ModelArk/1541523',
+      pricing: 'https://docs.byteplus.com/en/docs/ModelArk/1544106'
+    },
+    billing: { mode: 'unknown', note: 'Custom relay billing depends on the relay provider; configure only trusted HTTPS endpoints.' },
+    capabilities: {
+      image: { textToImage: true, imageToImage: true, relay: true, customBaseUrl: true, integrationStatus: 'handler' }
+    },
+    constraints: {
+      image: imageConstraints({
+        prompt: { maxLength: 10000 },
+        negativePrompt: { supported: true, strategy: 'templateDependent', maxLength: 2000 },
+        ratios: WIDE_IMAGE_RATIOS,
+        resolutions: ['1024', '1536', '2048', '4096'],
+        modelDependent: true
+      })
+    },
+    customizable: {
+      image: {
+        auth: ['bearer', 'api-key', 'header', 'session'],
+        baseUrl: true,
+        headerName: true,
+        model: true,
+        pathPrefix: true,
+        timeout: true,
+        presets: ['ark-compatible'],
+        relayCompatible: true
+      }
+    },
+    meta: { region: 'both', description: 'Custom image relay entry for Ark-compatible APIs.' }
+  },
+  {
+    id: 'custom-video',
+    name: 'Custom Video API',
+    platform: 'Custom',
+    video: {
+      defaultModel: '',
+      protocol: 'custom_video_task',
+      format: 'custom',
+      polling: true,
+      presets: ['submit-poll-json'],
+      integrationStatus: 'handler'
+    },
+    authType: { type: 'bearer' },
+    defaults: { baseUrl: '' },
+    links: {
+      docs: 'https://www.rfc-editor.org/rfc/rfc9535.html',
+      pricing: 'https://replicate.com/pricing'
+    },
+    billing: { mode: 'unknown', note: 'Custom relay billing depends on the relay provider; configure only trusted HTTPS endpoints.' },
+    capabilities: {
+      video: { textToVideo: true, imageToVideo: true, async: true, relay: true, customTemplate: true, integrationStatus: 'handler' }
+    },
+    constraints: {
+      video: videoConstraints({
+        prompt: { maxLength: 10000 },
+        negativePrompt: { supported: true, strategy: 'templateDependent', maxLength: 2000 },
+        ratios: VIDEO_RATIOS,
+        resolutions: ['480p', '720p', '1080p', '2k'],
+        duration: { supported: true, min: 1, max: 30 },
+        modelDependent: true
+      })
+    },
+    customizable: {
+      video: {
+        auth: ['bearer', 'api-key', 'header', 'session'],
+        baseUrl: true,
+        headerName: true,
+        model: true,
+        pathPrefix: true,
+        timeout: true,
+        pollInterval: true,
+        submitPath: true,
+        pollPath: true,
+        taskIdPath: true,
+        statusPath: true,
+        videoUrlPath: true,
+        allowedTemplateVariables: ['prompt', 'model', 'ratio', 'resolution', 'duration', 'sourceImageUrl', 'negativePrompt'],
+        relayCompatible: true
+      }
+    },
+    meta: { region: 'both', description: 'Custom async video relay entry using submit plus poll JSON templates.' }
+  },
   {
     id: 'happyhorse',
     name: 'HappyHorse',
     platform: 'HappyHorse',
-    video: { defaultModel: 'happyhorse-1.0/video', protocol: 'happyhorse_task', polling: true },
+    video: {
+      defaultModel: 'happyhorse-1.0/video',
+      protocol: 'happyhorse_task',
+      polling: true,
+      integrationStatus: 'handler'
+    },
     authType: { type: 'bearer' },
     defaults: { baseUrl: 'https://happyhorse.app' },
-    meta: { region: 'global', description: 'AI 视频生成' }
+    links: {
+      home: 'https://happyhorse.app',
+      docs: 'https://happyhorse.app',
+      pricing: 'https://happyhorse.app',
+      purchase: 'https://happyhorse.app',
+      console: 'https://happyhorse.app',
+      apiKey: 'https://happyhorse.app'
+    },
+    billing: { mode: 'unknown', note: 'Existing video provider; confirm current plans on the official site.' },
+    capabilities: {
+      video: { textToVideo: true, async: true, polling: true, integrationStatus: 'handler' }
+    },
+    constraints: {
+      video: videoConstraints({
+        prompt: { maxLength: 2000 },
+        negativePrompt: { supported: false, strategy: 'unsupported' },
+        ratios: VIDEO_RATIOS,
+        duration: { supported: true, min: 1, max: 30 }
+      })
+    },
+    customizable: { video: { auth: ['bearer'], baseUrl: true, model: true, timeout: true, polling: true } },
+    meta: { region: 'global', description: 'Existing HappyHorse video generation provider.' }
   }
 ]
 
-// ==================== 查询函数 ====================
+for (const provider of REGISTRY) {
+  provider.meta = {
+    ...(provider.meta || {}),
+    links: provider.links || {},
+    billing: provider.billing || { mode: 'unknown', note: '' },
+    capabilities: provider.capabilities || {},
+    constraints: provider.constraints || {},
+    customizable: provider.customizable || {}
+  }
+}
 
-/** Get a single provider by id */
 function getProvider(id) {
   return REGISTRY.find(p => p.id === id) || null
 }
 
-/** Get all providers that support a specific action */
 function getProvidersByAction(action) {
   return REGISTRY.filter(p => p[action])
 }
 
-/** Get all providers by region */
 function getProvidersByRegion(region) {
   return REGISTRY.filter(p => p.meta?.region === region || p.meta?.region === 'both')
 }
 
-/** Get the default model for a provider's action */
 function getDefaultModel(providerId, action) {
   const p = getProvider(providerId)
   if (!p || !p[action]) return null
   return p[action].defaultModel
 }
 
-/** Get the protocol for a provider's action */
 function getProtocol(providerId, action) {
   const p = getProvider(providerId)
   if (!p || !p[action]) return null
   return p[action].protocol
+}
+
+function getConstraints(providerId, action) {
+  const p = getProvider(providerId)
+  if (!p) return null
+  return p.constraints?.[action] || null
 }
 
 module.exports = {
@@ -277,5 +1184,6 @@ module.exports = {
   getProvidersByAction,
   getProvidersByRegion,
   getDefaultModel,
-  getProtocol
+  getProtocol,
+  getConstraints
 }

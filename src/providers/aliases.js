@@ -13,3 +13,7 @@ export const PROVIDER_ID_ALIASES = {
 export function resolveProviderId(track, id) {
   return PROVIDER_ID_ALIASES[track]?.[id] || id
 }
+
+export function sameProviderId(track, a, b) {
+  return Boolean(a && b && resolveProviderId(track, a) === resolveProviderId(track, b))
+}

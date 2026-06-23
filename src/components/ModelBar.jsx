@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { t } from '../i18n'
+import { sameProviderId } from '../providers/aliases'
 import Ic from './icons'
 
 const TRACK_KEYS = [
@@ -7,6 +8,11 @@ const TRACK_KEYS = [
   { key: 'image', label: '图像' },
   { key: 'video', label: '视频' }
 ]
+
+function executableProviders(providers = []) {
+  const filtered = providers.filter(provider => provider?.executable !== false && provider?.integrationStatus !== 'metadata')
+  return filtered.length ? filtered : providers
+}
 
 function Dropdown({ trackKey, providers, current, onChange, onOpenSettings, lang }) {
   const [open, setOpen] = useState(false)
@@ -18,16 +24,38 @@ function Dropdown({ trackKey, providers, current, onChange, onOpenSettings, lang
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
-  const currentProvider = providers.find(p => p.id === current?.id)
-  const configured = current?.apiKey
+  const currentProvider = providers.find(p => sameProviderId(trackKey, p.id, current?.id))
+  const configured = current?.apiKey || current?.sessionToken
+
+  const handleProviderSelect = (provider) => {
+    const changedProvider = !sameProviderId(trackKey, provider.id, current?.id)
+    const patch = changedProvider
+      ? {
+          id: provider.id,
+          apiKey: '',
+          sessionToken: '',
+          customAuth: {},
+          baseUrl: provider.defaultUrl || '',
+          model: provider.defaultModel || '',
+          protocol: provider.protocol,
+          format: provider.format
+        }
+      : {
+          ...(current?.id !== provider.id ? { id: provider.id } : {}),
+          ...(provider.protocol && current?.protocol !== provider.protocol ? { protocol: provider.protocol } : {}),
+          ...(provider.format && current?.format !== provider.format ? { format: provider.format } : {})
+        }
+    if (Object.keys(patch).length > 0) onChange(trackKey, patch)
+    setOpen(false)
+  }
 
   return (
     <div ref={ref} style={{ position: 'relative' }}>
       <button onClick={() => configured ? setOpen(!open) : onOpenSettings()} style={{
-        background: open ? 'var(--accent-soft)' : 'var(--bg-surface)',
-        border: `1px solid ${open ? 'var(--border-accent)' : 'var(--border-default)'}`,
+        background: open ? 'var(--accent-soft)' : 'transparent',
+        border: `1px solid ${open ? 'var(--border-accent)' : 'transparent'}`,
         color: configured ? 'var(--text-primary)' : 'var(--text-muted)',
-        padding: '6px 14px', borderRadius: 'var(--radius-sm)', fontSize: 12,
+        padding: '6px 14px', borderRadius: '99px', fontSize: 11,
         display: 'flex', alignItems: 'center', gap: 7, cursor: 'pointer',
         transition: 'all 0.2s ease', fontWeight: configured ? 500 : 400,
         boxShadow: open ? '0 0 0 2px var(--accent-glow)' : 'none'
@@ -41,23 +69,24 @@ function Dropdown({ trackKey, providers, current, onChange, onOpenSettings, lang
         {configured ? <Ic n="chevDown" size={11} sw={2} /> : <Ic n="gear" size={11} color="var(--accent)" />}
       </button>
       {open && (
-        <div style={{
-          position: 'absolute', bottom: '100%', left: 0, marginBottom: 6,
-          background: 'var(--bg-elevated)', border: '1px solid var(--border-default)',
-          borderRadius: 'var(--radius-md)', padding: 4, minWidth: 180, zIndex: 100,
-          boxShadow: 'var(--shadow-lg)', animation: 'scaleIn 0.12s ease'
+        <div className="glass-floating" style={{
+          position: 'absolute', bottom: '100%', left: 0, marginBottom: 8,
+          padding: 6, minWidth: 180, zIndex: 100,
+          animation: 'scaleIn 0.12s ease'
         }}>
-          {providers.map(p => (
-            <button key={p.id} onClick={() => { onChange(trackKey, p); setOpen(false) }} style={{
+          {providers.map(p => {
+            const selected = sameProviderId(trackKey, p.id, current?.id)
+            return (
+            <button key={p.id} onClick={() => handleProviderSelect(p)} style={{
               display: 'block', width: '100%', textAlign: 'left', padding: '6px 10px',
-              background: p.id === current?.id ? 'var(--accent-soft)' : 'transparent',
-              border: 'none', borderRadius: 4, color: 'var(--text-primary)', fontSize: 11, cursor: 'pointer',
-              fontWeight: p.id === current?.id ? 500 : 400, transition: 'background 0.12s'
+              background: selected ? 'var(--accent-soft)' : 'transparent',
+              border: 'none', borderRadius: 'var(--radius-sm)', color: 'var(--text-primary)', fontSize: 11, cursor: 'pointer',
+              fontWeight: selected ? 500 : 400, transition: 'background 0.12s'
             }}
             onMouseEnter={e => e.target.style.background = 'var(--bg-hover)'}
-            onMouseLeave={e => e.target.style.background = p.id === current?.id ? 'var(--accent-soft)' : 'transparent'}
+            onMouseLeave={e => e.target.style.background = selected ? 'var(--accent-soft)' : 'transparent'}
             >{p.name}</button>
-          ))}
+          )})}
         </div>
       )}
     </div>
@@ -67,21 +96,20 @@ function Dropdown({ trackKey, providers, current, onChange, onOpenSettings, lang
 export default function ModelBar({ config, providerLists, onProviderChange, onOpenSettings, lang }) {
   if (!config) return null
   return (
-    <div style={{
-      height: 48, borderTop: '1px solid var(--border-subtle)',
-      display: 'flex', alignItems: 'center', gap: 10, padding: '0 16px',
-      background: 'var(--bg-elevated)'
+    <div className="glass-floating" style={{
+      display: 'flex', alignItems: 'center', gap: 4, padding: '6px 12px',
+      borderRadius: '99px'
     }}>
       {TRACK_KEYS.map(t => (
-        <Dropdown key={t.key} trackKey={t.key} providers={providerLists?.[t.key] || []}
+        <Dropdown key={t.key} trackKey={t.key} providers={executableProviders(providerLists?.[t.key] || [])}
           current={config.providers?.[t.key]}
           onChange={onProviderChange} onOpenSettings={onOpenSettings} lang={lang} />
       ))}
       <div style={{ flex: 1 }} />
       <span style={{
         fontSize: 10, color: 'var(--text-ghost)', fontFamily: 'var(--font-mono)',
-        letterSpacing: '0.5px', padding: '3px 8px', borderRadius: 'var(--radius-sm)',
-        background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)'
+        letterSpacing: '0.5px', padding: '4px 10px', borderRadius: '99px',
+        background: 'var(--bg-input)', border: '1px solid var(--border-subtle)'
       }}>v1.6.0</span>
     </div>
   )

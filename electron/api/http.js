@@ -1,6 +1,7 @@
 const fs = require('fs')
 const https = require('https')
 const dns = require('dns').promises
+const net = require('net')
 
 const DEFAULT_TIMEOUT = 60000
 const DEFAULT_DOWNLOAD_TIMEOUT = 60000
@@ -50,12 +51,14 @@ function isPrivateHost(host) {
   // Strip surrounding brackets used for IPv6 literals in URLs (e.g. [::1])
   const unbracketed = host.replace(/^\[|]$/g, '')
   if (BLOCKED_HOSTNAMES.has(unbracketed.toLowerCase())) return true
-  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(unbracketed)) return isPrivateIPv4(unbracketed)
-  if (unbracketed.includes(':')) return isPrivateIPv6(unbracketed)
+  const ipVersion = net.isIP(unbracketed)
+  if (ipVersion === 4) return isPrivateIPv4(unbracketed)
+  if (ipVersion === 6) return isPrivateIPv6(unbracketed)
   return false
 }
 
 async function assertNoDnsRebind(hostname) {
+  if (net.isIP(hostname.replace(/^\[|]$/g, '')) !== 0) return
   let addrs
   try { addrs = await dns.lookup(hostname, { all: true }) }
   catch { return } // resolution failure is surfaced by the request itself; not a security signal
@@ -88,6 +91,12 @@ function assertHttpsUrl(urlStr) {
   return parsed
 }
 
+async function assertSafeHttpsUrl(urlStr) {
+  const parsed = assertHttpsUrl(urlStr)
+  await assertNoDnsRebind(parsed.hostname)
+  return parsed
+}
+
 function assertApiBaseUrl(urlStr) {
   const parsed = assertHttpsUrl(urlStr)
   parsed.username = ''
@@ -101,19 +110,14 @@ function joinApiUrl(baseUrl, path) {
   return new URL(`${base.href.replace(/\/$/, '')}${path}`)
 }
 
-function downloadToFile(url, filePath, options = {}, depth = 0) {
-  if (depth > MAX_REDIRECTS) return Promise.reject(new Error('Too many redirects'))
-  const parsed = assertHttpsUrl(url)
+async function downloadToFile(url, filePath, options = {}, depth = 0) {
+  if (depth > MAX_REDIRECTS) throw new Error('Too many redirects')
+  const parsed = await assertSafeHttpsUrl(url)
   const timeout = options.timeout || DEFAULT_DOWNLOAD_TIMEOUT
   const maxBytes = options.maxBytes || DEFAULT_MAX_DOWNLOAD_BYTES
   const tmpFile = `${filePath}.tmp-${Date.now()}-${Math.random().toString(36).slice(2)}`
 
-  // For named (non-IP-literal) hosts, resolve first and reject if any address
-  // is private/internal. IP-literal hosts are already checked synchronously
-  // by assertHttpsUrl above.
-  const isLiteralHost = /^\[?[0-9a-fA-F:.]+\]?$/.test(parsed.hostname)
-  const guard = isLiteralHost ? Promise.resolve() : assertNoDnsRebind(parsed.hostname)
-  return guard.then(() => new Promise((resolve, reject) => {
+  return new Promise((resolve, reject) => {
     let settled = false
     let written = 0
     let file = null
@@ -134,11 +138,11 @@ function downloadToFile(url, filePath, options = {}, depth = 0) {
     const req = https.get(parsed, { timeout }, (res) => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
         res.resume()
-        const nextUrl = new URL(res.headers.location, parsed).href
+        let nextUrl
         try {
-          assertHttpsUrl(nextUrl)
-        } catch (e) {
-          return fail(e)
+          nextUrl = new URL(res.headers.location, parsed).href
+        } catch {
+          return fail(new Error('Invalid URL'))
         }
         settled = true
         if (deadline) clearTimeout(deadline)
@@ -186,27 +190,47 @@ function downloadToFile(url, filePath, options = {}, depth = 0) {
     req.on('timeout', () => req.destroy(new Error(`Download timed out after ${timeout}ms`)))
     req.on('error', fail)
     deadline = setTimeout(() => req.destroy(new Error(`Download timed out after ${timeout}ms`)), timeout)
-  }))
+  })
 }
 
-function httpRequest(url, options = {}, body = null) {
+async function httpRequest(url, options = {}, body = null) {
   const timeout = options.timeout || DEFAULT_TIMEOUT
   const maxResponseBytes = options.maxResponseBytes || DEFAULT_MAX_RESPONSE_BYTES
   const { maxResponseBytes: _unusedMaxResponseBytes, ...requestOptions } = options
+  const parsedUrl = await assertSafeHttpsUrl(url)
   return new Promise((resolve, reject) => {
-    const parsedUrl = assertHttpsUrl(url)
     const req = https.request(parsedUrl, { ...requestOptions, timeout }, (res) => {
-      let data = ''
-      let bytes = 0
-      res.on('data', chunk => {
-        bytes += chunk.length
-        if (bytes > maxResponseBytes) {
-          req.destroy(new Error('Response is too large'))
+      const collectResponse = () => {
+        let data = ''
+        let bytes = 0
+        res.on('data', chunk => {
+          bytes += chunk.length
+          if (bytes > maxResponseBytes) {
+            req.destroy(new Error('Response is too large'))
+            return
+          }
+          data += chunk
+        })
+        res.on('end', () => resolve({ status: res.statusCode, data, headers: res.headers }))
+      }
+
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        let nextUrl
+        try {
+          nextUrl = new URL(res.headers.location, parsedUrl).href
+        } catch {
+          res.resume()
+          reject(new Error('Invalid URL'))
           return
         }
-        data += chunk
-      })
-      res.on('end', () => resolve({ status: res.statusCode, data, headers: res.headers }))
+        assertSafeHttpsUrl(nextUrl).then(collectResponse, (err) => {
+          res.resume()
+          reject(err)
+        })
+        return
+      }
+
+      collectResponse()
     })
     req.on('error', reject)
     req.on('timeout', () => {

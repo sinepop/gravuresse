@@ -28,7 +28,8 @@ async function handleChat(params) {
   const url = joinApiUrl(params.baseUrl, '/v1/chat/completions')
   const res = await request(url, {
     method: 'POST',
-    headers: { ...params.auth.headers, 'Content-Type': 'application/json' }
+    headers: { ...params.auth.headers, 'Content-Type': 'application/json' },
+    ...(params.requestOptions || {})
   }, body)
   const json = JSON.parse(res.data)
   if (json.error) throw new Error(json.error.message)
@@ -37,13 +38,15 @@ async function handleChat(params) {
 }
 
 async function handleGenerate(params) {
-  const { model, baseUrl, auth, prompt, ratio, resolution } = params
+  const { model, baseUrl, auth, prompt, ratio, resolution, negative_prompt } = params
   const size = getSize(ratio, resolution)
-  const body = { model: model || 'dall-e-3', prompt, n: 1, size }
+  const finalPrompt = negative_prompt ? `${prompt}\n\nNegative prompt: ${negative_prompt}` : prompt
+  const body = { model: model || 'dall-e-3', prompt: finalPrompt, n: 1, size }
   const url = joinApiUrl(baseUrl, '/v1/images/generations')
   const res = await request(url, {
     method: 'POST',
-    headers: { ...auth.headers, 'Content-Type': 'application/json' }
+    headers: { ...auth.headers, 'Content-Type': 'application/json' },
+    ...(params.requestOptions || {})
   }, body)
   const json = JSON.parse(res.data)
   if (json.error) throw new Error(json.error.message)

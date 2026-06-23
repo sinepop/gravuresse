@@ -1,20 +1,19 @@
 /**
  * Auth resolver for Gravuresse Provider Pipeline.
  *
- * Supports three active auth types:
+ * Supports active auth types:
  *   - bearer:  Authorization: Bearer <key>
  *   - header:  <key>: <value>
  *   - query:   ?<key>=<value>
- *
- * Also reserves (stub-only) types for future subscription integration:
- *   - cookie:  Cookie: <session-cookie>
  *   - session: X-Session-Token: <token>
+ *
+ * Cookie authentication is intentionally unsupported.
  */
 
 /**
  * Resolve authentication headers and query params for a provider.
  * @param {Object} providerDef - Provider definition from registry
- * @param {Object} credentials - { apiKey?, cookie?, sessionToken? }
+ * @param {Object} credentials - { apiKey?, sessionToken? }
  * @returns {{ headers: Object, queryParams: Object }}
  */
 function resolveAuth(providerDef, credentials) {
@@ -36,14 +35,10 @@ function resolveAuth(providerDef, credentials) {
       break
 
     case 'cookie':
-      // TODO: Subscription integration — user provides browser Cookie from developer tools
-      headers['Cookie'] = credentials.cookie || ''
-      if (authType.headers) Object.assign(headers, authType.headers)
-      break
+      throw new Error('Cookie authentication is not supported. Use a session token header instead.')
 
     case 'session':
-      // TODO: Subscription integration — user provides session token
-      headers[authType.key || 'X-Session-Token'] = credentials.sessionToken || ''
+      headers[authType.headerName || authType.key || 'X-Session-Token'] = credentials.sessionToken || ''
       break
 
     default:

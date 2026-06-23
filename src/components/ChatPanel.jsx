@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react'
 import MessageBubble from './MessageBubble'
 import { t } from '../i18n'
 import Ic from './icons'
@@ -73,11 +73,13 @@ export default function ChatPanel({ chat, config, lang, conversations, activeCon
     endRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [chat.messages])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = textareaRef.current
     if (el) {
-      el.style.height = 'auto'
-      el.style.height = Math.min(el.scrollHeight, 120) + 'px'
+      el.style.height = '0px'
+      const nextHeight = Math.min(el.scrollHeight, 120)
+      el.style.height = `${nextHeight}px`
+      el.style.overflowY = el.scrollHeight > 120 ? 'auto' : 'hidden'
     }
   }, [input])
 
@@ -87,7 +89,6 @@ export default function ChatPanel({ chat, config, lang, conversations, activeCon
     chat.send(input, refs, { ratio: genRatio, style: genStyle, resolution: genResolution })
     setInput('')
     setReferences([])
-    if (textareaRef.current) textareaRef.current.style.height = 'auto'
   }, [input, chat, references, genRatio, genStyle, genResolution])
 
   const addReference = useCallback((asset) => {
@@ -101,6 +102,7 @@ export default function ChatPanel({ chat, config, lang, conversations, activeCon
   }, [])
 
   const handleKeyDown = (e) => {
+    if (e.nativeEvent?.isComposing || e.isComposing) return
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() }
   }
 
@@ -139,15 +141,15 @@ export default function ChatPanel({ chat, config, lang, conversations, activeCon
     return m > 0 ? `${m}:${sec.toString().padStart(2, '0')}` : `${sec}s`
   }
 
-  const canSend = input.trim() && !chat.loading
+  const canSend = Boolean(input.trim()) && !chat.loading
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       {/* Conversation bar */}
       <div style={{
-        display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px',
-        borderBottom: '1px solid var(--border-subtle)', flexShrink: 0,
-        background: 'var(--bg-elevated)'
+        display: 'flex', alignItems: 'center', gap: 6, padding: '12px 16px',
+        borderBottom: '1px solid var(--border-glass)', flexShrink: 0,
+        background: 'transparent'
       }}>
         <button onClick={() => setShowConvList(!showConvList)} style={{
           background: showConvList ? 'var(--accent-soft)' : 'transparent',
@@ -183,9 +185,9 @@ export default function ChatPanel({ chat, config, lang, conversations, activeCon
 
       {/* Conversation list dropdown */}
       {showConvList && (
-        <div style={{
-          borderBottom: '1px solid var(--border-subtle)', maxHeight: 220, overflow: 'auto',
-          background: 'var(--bg-elevated)', padding: 6, animation: 'scaleIn 0.15s ease'
+        <div className="glass-floating" style={{
+          borderBottom: '1px solid var(--border-glass)', maxHeight: 220, overflow: 'auto',
+          padding: 6, animation: 'scaleIn 0.15s ease', position: 'absolute', top: 50, left: 12, right: 12, zIndex: 50
         }}>
           {conversations.length === 0 ? (
             <div style={{ padding: 16, textAlign: 'center', fontSize: 11, color: 'var(--text-muted)' }}>
@@ -312,9 +314,8 @@ export default function ChatPanel({ chat, config, lang, conversations, activeCon
 
       {/* Reference picker dropdown */}
       {enableReference && showRefPicker && canvas?.allAssets?.length > 0 && (
-        <div style={{
-          padding: '6px 14px', maxHeight: 160, overflow: 'auto',
-          background: 'var(--bg-elevated)', borderBottom: '1px solid var(--border-subtle)',
+        <div className="glass-floating" style={{
+          padding: '10px 14px', maxHeight: 160, overflow: 'auto', position: 'absolute', bottom: 120, left: 12, right: 12, zIndex: 40,
           display: 'flex', gap: 6, flexWrap: 'wrap', animation: 'scaleIn 0.12s ease'
         }}>
           {canvas.allAssets.filter(a => a.url).map(asset => (
@@ -335,7 +336,7 @@ export default function ChatPanel({ chat, config, lang, conversations, activeCon
       )}
 
       {/* Input */}
-      <div style={{ padding: '8px 14px 14px', borderTop: '1px solid var(--border-subtle)', background: 'var(--bg-primary)' }}>
+      <div style={{ padding: '8px 14px 14px', borderTop: '1px solid var(--border-glass)', background: 'transparent' }}>
         {/* Toolbar row */}
         <div style={{
           display: 'flex', alignItems: 'center', gap: 4, marginBottom: 8, flexWrap: 'wrap'
@@ -431,12 +432,9 @@ export default function ChatPanel({ chat, config, lang, conversations, activeCon
         )}
 
         {/* Input box */}
-        <div style={{
+        <div className="glass-input" style={{
           display: 'flex', gap: 10, alignItems: 'flex-end',
-          background: 'var(--bg-input)', border: `1px solid ${canSend ? 'var(--border-accent)' : 'var(--border-default)'}`,
-          borderRadius: 'var(--radius-md)', padding: '10px 12px',
-          transition: 'border-color 0.25s, box-shadow 0.25s',
-          boxShadow: canSend ? '0 0 0 2px var(--accent-glow), var(--shadow-accent)' : 'none'
+          padding: '10px 12px',
         }}>
           <textarea ref={textareaRef} value={input} onChange={e => setInput(e.target.value)} onKeyDown={handleKeyDown}
             placeholder={t('inputPlaceholder', lang)} rows={1}

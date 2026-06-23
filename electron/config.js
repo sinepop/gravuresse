@@ -8,9 +8,9 @@ const REDACTED_API_KEY = '********'
 
 const DEFAULT_CONFIG = {
   providers: {
-    chat: { id: 'claude', apiKey: '', baseUrl: 'https://api.anthropic.com', model: 'claude-sonnet-4-6' },
-    image: { id: 'dalle', apiKey: '', baseUrl: 'https://api.openai.com', model: 'gpt-image-2' },
-    video: { id: 'jimeng_vid', apiKey: '', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3', model: 'doubao-seedance-2-0-pro-250528' }
+    chat: { id: 'claude', apiKey: '', sessionToken: '', baseUrl: 'https://api.anthropic.com', model: 'claude-sonnet-4-6' },
+    image: { id: 'dalle', apiKey: '', sessionToken: '', baseUrl: 'https://api.openai.com', model: 'gpt-image-2' },
+    video: { id: 'jimeng_vid', apiKey: '', sessionToken: '', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3', model: 'doubao-seedance-2-0-pro-250528' }
   },
   general: {
     theme: 'dark', language: 'zh', fontSize: 'medium',
@@ -23,7 +23,7 @@ function ensureDir() {
   if (!fs.existsSync(CONFIG_DIR)) fs.mkdirSync(CONFIG_DIR, { recursive: true })
 }
 
-// 深层合并：保留嵌套对象的默认值
+// Deep merge preserves nested default values.
 function deepMerge(target, source) {
   const result = { ...target }
   for (const key of Object.keys(source)) {
@@ -39,12 +39,40 @@ function deepMerge(target, source) {
   return result
 }
 
-// API key 字段路径
-const API_KEY_PATHS = [
+// Provider secret field paths.
+const SECRET_PATHS = [
   ['providers', 'chat', 'apiKey'],
+  ['providers', 'chat', 'sessionToken'],
   ['providers', 'image', 'apiKey'],
-  ['providers', 'video', 'apiKey']
+  ['providers', 'image', 'sessionToken'],
+  ['providers', 'video', 'apiKey'],
+  ['providers', 'video', 'sessionToken']
 ]
+
+const PROVIDER_ID_ALIASES = {
+  chat: { claude: 'anthropic', gemini: 'google', qwen: 'alibaba', kimi: 'moonshot', doubao: 'volcengine' },
+  image: { dalle: 'openai', gemini_img: 'google', jimeng_img: 'volcengine' },
+  video: { jimeng_vid: 'volcengine' }
+}
+
+let writeQueue = Promise.resolve()
+
+function enqueueWrite(fn) {
+  const next = writeQueue.catch(() => {}).then(fn)
+  writeQueue = next.catch(() => {})
+  return next
+}
+
+function canonicalProviderId(track, id) {
+  return PROVIDER_ID_ALIASES[track]?.[id] || id || ''
+}
+
+function sameProviderEndpoint(track, nextProvider = {}, currentProvider = {}) {
+  return (
+    canonicalProviderId(track, nextProvider.id) === canonicalProviderId(track, currentProvider.id) &&
+    (nextProvider.baseUrl || '') === (currentProvider.baseUrl || '')
+  )
+}
 
 function getNestedValue(obj, keys) {
   return keys.reduce((o, k) => o?.[k], obj)
@@ -57,11 +85,11 @@ function setNestedValue(obj, keys, value) {
   target[last] = value
 }
 
-// 加密 API keys
+// Encrypt provider secrets before writing config to disk.
 function encryptApiKeys(cfg) {
   if (!safeStorage.isEncryptionAvailable()) return cfg
   const result = JSON.parse(JSON.stringify(cfg)) // deep clone
-  for (const keyPath of API_KEY_PATHS) {
+  for (const keyPath of SECRET_PATHS) {
     const val = getNestedValue(result, [...keyPath])
     if (val && typeof val === 'string' && val.length > 0) {
       setNestedValue(result, [...keyPath], '__ENCRYPTED__' + safeStorage.encryptString(val).toString('base64'))
@@ -70,18 +98,18 @@ function encryptApiKeys(cfg) {
   return result
 }
 
-// 解密 API keys
+// Decrypt provider secrets after reading config from disk.
 function decryptApiKeys(cfg) {
   if (!safeStorage.isEncryptionAvailable()) return cfg
   const result = JSON.parse(JSON.stringify(cfg))
-  for (const keyPath of API_KEY_PATHS) {
+  for (const keyPath of SECRET_PATHS) {
     const val = getNestedValue(result, [...keyPath])
     if (val && typeof val === 'string' && val.startsWith('__ENCRYPTED__')) {
       const b64 = val.slice('__ENCRYPTED__'.length)
       try {
         setNestedValue(result, [...keyPath], safeStorage.decryptString(Buffer.from(b64, 'base64')))
       } catch {
-        // 解密失败（OS key 变更、profile 迁移等），清空避免发送垃圾 key
+        // OS key/profile changes can make safeStorage data unreadable.
         setNestedValue(result, [...keyPath], '')
       }
     }
@@ -91,7 +119,7 @@ function decryptApiKeys(cfg) {
 
 function redactApiKeys(cfg) {
   const result = JSON.parse(JSON.stringify(cfg))
-  for (const keyPath of API_KEY_PATHS) {
+  for (const keyPath of SECRET_PATHS) {
     const val = getNestedValue(result, [...keyPath])
     if (val && typeof val === 'string') {
       setNestedValue(result, [...keyPath], REDACTED_API_KEY)
@@ -102,14 +130,13 @@ function redactApiKeys(cfg) {
 
 function mergeRedactedApiKeys(nextCfg, currentCfg) {
   const result = JSON.parse(JSON.stringify(nextCfg))
-  for (const keyPath of API_KEY_PATHS) {
+  for (const keyPath of SECRET_PATHS) {
     const nextVal = getNestedValue(result, [...keyPath])
     if (nextVal === REDACTED_API_KEY) {
       const track = keyPath[1]
       const nextProvider = result.providers?.[track] || {}
       const currentProvider = currentCfg.providers?.[track] || {}
-      const sameEndpoint = ['id', 'baseUrl', 'protocol', 'format']
-        .every(key => (nextProvider[key] || '') === (currentProvider[key] || ''))
+      const sameEndpoint = sameProviderEndpoint(track, nextProvider, currentProvider)
       setNestedValue(result, [...keyPath], sameEndpoint ? (getNestedValue(currentCfg, [...keyPath]) || '') : '')
     }
   }
@@ -127,12 +154,13 @@ function load() {
 }
 
 function save(cfg) {
-  ensureDir()
-  const encrypted = encryptApiKeys(cfg)
-  // 原子写入：先写临时文件再 rename，防止崩溃导致数据损坏
-  const tmpFile = CONFIG_FILE + '.tmp'
-  fs.writeFileSync(tmpFile, JSON.stringify(encrypted, null, 2), 'utf-8')
-  fs.renameSync(tmpFile, CONFIG_FILE)
+  return enqueueWrite(() => {
+    ensureDir()
+    const encrypted = encryptApiKeys(cfg)
+    const tmpFile = CONFIG_FILE + '.tmp'
+    fs.writeFileSync(tmpFile, JSON.stringify(encrypted, null, 2), 'utf-8')
+    fs.renameSync(tmpFile, CONFIG_FILE)
+  })
 }
 
-module.exports = { load, save, redactApiKeys, mergeRedactedApiKeys, REDACTED_API_KEY, DEFAULT_CONFIG }
+module.exports = { load, save, redactApiKeys, mergeRedactedApiKeys, REDACTED_API_KEY, DEFAULT_CONFIG, PROVIDER_ID_ALIASES }

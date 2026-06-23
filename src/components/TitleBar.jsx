@@ -8,15 +8,10 @@ export default function TitleBar({ onOpenSettings, lang }) {
 
   useEffect(() => {
     const handler = (val) => setIsMax(val)
-    const subscription = window.electronAPI?.on?.('window-maximized', handler)
+    const unsubscribe = window.electronAPI?.on?.('window-maximized', handler)
     return () => {
-      if (typeof subscription === 'function' && subscription.length === 0) {
-        subscription()
-      } else if (subscription && window.electronAPI?.off) {
-        window.electronAPI.off('window-maximized', subscription)
-      } else {
-        window.electronAPI?.off?.('window-maximized', handler)
-      }
+      if (typeof unsubscribe === 'function') unsubscribe()
+      else window.electronAPI?.off?.('window-maximized', handler)
     }
   }, [])
 
@@ -42,7 +37,7 @@ export default function TitleBar({ onOpenSettings, lang }) {
     <div style={{
       height: 44, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
       padding: '0 10px 0 16px', WebkitAppRegion: 'drag',
-      background: 'var(--bg-elevated)', borderBottom: '1px solid var(--border-subtle)',
+      background: 'transparent',
       position: 'relative', zIndex: 10
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>

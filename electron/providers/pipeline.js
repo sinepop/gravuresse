@@ -37,7 +37,7 @@ function redactSecrets(text) {
  * @param {Object} params
  * @param {'chat'|'image'|'video'} params.action - Which capability to use
  * @param {string} params.providerId - Provider id from registry (e.g. 'openai', 'anthropic')
- * @param {Object} [params.credentials] - { apiKey?, cookie?, sessionToken? }
+ * @param {Object} [params.credentials] - { apiKey?, sessionToken? }
  * @param {...*} [params.*] - Action-specific payload (messages, prompt, ratio, etc.)
  * @returns {Promise<{ok: boolean, data?: any, error?: {code: string, message: string}}>}
  */
@@ -84,9 +84,11 @@ async function execute(params) {
     ...payload,
     provider: providerDef,
     auth,
+    credentials: credentials || {},
     action,
     model: payload.model || defaultModel,
-    baseUrl: payload.baseUrl || providerDef.defaults.baseUrl
+    baseUrl: payload.baseUrl || providerDef.defaults.baseUrl,
+    requestOptions: payload.requestOptions || {}
   }
 
   // 7. Execute handler

@@ -99,7 +99,8 @@ export default function useTaskQueue(canvas) {
           cleanupTaskRefs(task.id)
           return
         }
-        pollingRef.current[task.id] = setTimeout(poll, 3000)
+        const interval = Number(task.provider?.pollInterval)
+        pollingRef.current[task.id] = setTimeout(poll, Number.isFinite(interval) && interval > 0 ? interval : 3000)
       } catch (e) {
         if (cancelledRef.current.has(task.id) || runTokenRef.current[task.id] !== runToken) return
         setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: 'failed', error: e.message } : t))
@@ -110,7 +111,8 @@ export default function useTaskQueue(canvas) {
         if (cancelledRef.current.has(task.id) && !hasInFlight(task.id)) cleanupTaskRefs(task.id)
       }
     }
-    pollingRef.current[task.id] = setTimeout(poll, 2000)
+    const initialInterval = Number(task.provider?.pollInterval)
+    pollingRef.current[task.id] = setTimeout(poll, Number.isFinite(initialInterval) && initialInterval > 0 ? initialInterval : 2000)
   }, [cleanupTaskRefs, clearPolling, hasInFlight])
 
   const add = useCallback((task) => {
