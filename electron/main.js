@@ -8,6 +8,9 @@ const store = require('./store')
 const modelsApi = require('./api/models')
 const { assertHttpsUrl, downloadToFile } = require('./api/http')
 const providerPipeline = require('./providers/pipeline')
+// Wire handler side-effects (registerHandler): must be required so the
+// HANDLER_MAP is populated before any provider:call / api:* dispatch.
+require('./providers')
 const { getProvidersByAction } = require('./providers/registry')
 
 let mainWindow = null
@@ -139,8 +142,11 @@ ipcMain.handle('provider:call', async (_, params) => {
   const { providerId, action } = params
   const track = action === 'chat' ? 'chat' : action === 'generate' ? 'image' : 'video'
   const providerConfig = stored.providers?.[track] || {}
+  // SECURITY: never trust a renderer-supplied baseUrl — a compromised renderer
+  // could redirect credentials to an attacker host. Source baseUrl only from the
+  // stored config (which holds the user's legitimate custom/proxy endpoint).
   const credentials = { apiKey: providerConfig.apiKey || '' }
-  return await providerPipeline.execute({ ...params, credentials })
+  return await providerPipeline.execute({ ...params, credentials, baseUrl: providerConfig.baseUrl })
 })
 
 // List providers by action (for settings dropdown)
@@ -180,6 +186,96 @@ ipcMain.handle('provider:test', async (_, { providerId, credentials }) => {
 
 ipcMain.handle('api:models', (_, provider) => modelsApi.fetch(getModelFetchProvider(provider)))
 
+// Map the user-facing stored provider id (e.g. 'claude', 'dalle', 'jimeng_vid')
+// to the canonical registry id (e.g. 'anthropic', 'openai', 'volcengine').
+// Mirrors PROVIDER_ID_ALIASES used on the renderer side so legacy direct-API
+// channels receive a providerId the pipeline can resolve.
+const PROVIDER_ID_ALIASES = {
+  chat: { claude: 'anthropic', gemini: 'google', qwen: 'alibaba', kimi: 'moonshot', doubao: 'volcengine' },
+  image: { dalle: 'openai', gemini_img: 'google', jimeng_img: 'volcengine' },
+  video: { jimeng_vid: 'volcengine' }
+}
+function resolveProviderIdByTrack(track, id) {
+  return PROVIDER_ID_ALIASES[track]?.[id] || id
+}
+
+// Convenience credentials pulled from stored config for a track.
+function trackCredentials(track, override = {}) {
+  const stored = config.load().providers?.[track] || {}
+  return { apiKey: (override.apiKey && override.apiKey !== config.REDACTED_API_KEY) ? override.apiKey : stored.apiKey || '' }
+}
+
+// SECURITY: baseUrl for a track always comes from the user's stored config, never
+// from the renderer payload — otherwise a compromised renderer could redirect the
+// API key to an attacker host (SSRF/credential exfil). Falls back to the
+// provider's default when the user has not configured a custom endpoint.
+function storedBaseUrl(track, providerId) {
+  const stored = config.load().providers?.[track] || {}
+  if (stored.baseUrl) return stored.baseUrl
+  const def = require('./providers/registry').getProvider(providerId)
+  return def?.defaults?.baseUrl || ''
+}
+
+// Legacy direct API channels — kept functional by routing them through the
+// unified pipeline. The renderer reaches these only through the preload helpers
+// (chat/generateImage/generateVideo/pollVideoTask); the new pipeline path
+// (provider:call) is preferred, but these must not be left without handlers or
+// ipcRenderer.invoke would hang forever.
+ipcMain.handle('api:chat', async (_, messages, provider) => {
+  const track = 'chat'
+  const providerId = resolveProviderIdByTrack(track, provider?.id)
+  const result = await providerPipeline.execute({
+    action: 'chat', providerId,
+    credentials: trackCredentials(track, provider),
+    messages: (messages?.history || messages || []).map(m => ({ role: m.role, content: m.content })),
+    system: messages?.system || provider?.system || '',
+    thinking: messages?.thinking || provider?.thinking || false,
+    model: provider?.model, baseUrl: storedBaseUrl(track, providerId)
+  })
+  if (!result.ok) throw new Error(result.error?.message || 'Chat failed')
+  return result.data
+})
+
+ipcMain.handle('api:image', async (_, params) => {
+  const track = 'image'
+  const providerId = resolveProviderIdByTrack(track, params?.id)
+  const result = await providerPipeline.execute({
+    action: 'generate', providerId,
+    credentials: trackCredentials(track, params),
+    prompt: params?.prompt, ratio: params?.ratio, resolution: params?.resolution,
+    model: params?.model, baseUrl: storedBaseUrl(track, providerId)
+  })
+  if (!result.ok) throw new Error(result.error?.message || 'Image generation failed')
+  return result.data // url string
+})
+
+ipcMain.handle('api:video', async (_, params) => {
+  const track = 'video'
+  const providerId = resolveProviderIdByTrack(track, params?.id)
+  const result = await providerPipeline.execute({
+    action: 'submit', providerId,
+    credentials: trackCredentials(track, params),
+    prompt: params?.prompt, ratio: params?.ratio, duration: params?.duration,
+    sourceImageUrl: params?.sourceImageUrl,
+    model: params?.model, baseUrl: storedBaseUrl(track, providerId)
+  })
+  if (!result.ok) throw new Error(result.error?.message || 'Video submit failed')
+  return result.data
+})
+
+ipcMain.handle('api:video:poll', async (_, taskId, provider) => {
+  const track = 'video'
+  const providerId = resolveProviderIdByTrack(track, provider?.id)
+  const result = await providerPipeline.execute({
+    action: 'poll', providerId,
+    credentials: trackCredentials(track, provider),
+    taskId,
+    model: provider?.model, baseUrl: storedBaseUrl(track, providerId)
+  })
+  if (!result.ok) throw new Error(result.error?.message || 'Video poll failed')
+  return result.data
+})
+
 ipcMain.handle('api:saveAsset', async (_, { url, label, type }) => {
   if (!fs.existsSync(SAVE_DIR)) fs.mkdirSync(SAVE_DIR, { recursive: true })
   const ext = type === 'video' ? '.mp4' : '.png'
@@ -217,8 +313,11 @@ function createWindow() {
   })
 
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
-    const devCsp = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data: blob:; media-src 'self' https: data: blob:; connect-src 'self' https: ws:; font-src 'self' data:"
-    const prodCsp = "default-src 'self' file:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data: blob: file:; media-src 'self' https: data: blob:; connect-src 'self' https:; font-src 'self' data:"
+    const devCsp = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' https: data: blob:; media-src 'self' https: data: blob:; connect-src 'self' https: ws:; font-src 'self' data: https://fonts.gstatic.com; child-src 'self'"
+    // Prod: allow Google Fonts CDN (style-src / font-src) so the @import in
+    // global.css can load Inter/JetBrains/Outfit in the packaged app; the rest
+    // stays locked down (default-src 'self' file:).
+    const prodCsp = "default-src 'self' file:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' https: data: blob: file:; media-src 'self' https: data: blob:; connect-src 'self' https:; font-src 'self' data: https://fonts.gstatic.com; child-src 'self'"
     callback({
       responseHeaders: {
         ...details.responseHeaders,
