@@ -215,7 +215,9 @@ export default function AssetDetail({ asset, onClose, onDelete, onRegenerate, la
           <button onClick={handleSave} disabled={saving} style={{ flex: 1, padding: '6px 0', background: 'var(--accent-soft)', border: '1px solid var(--border-accent)', borderRadius: 'var(--radius-sm)', color: 'var(--accent)', fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
             <Ic n="download" size={11} /> {saving ? '...' : t('saveToLocal', lang)}
           </button>
-          <button onClick={onRegenerate} style={{ padding: '6px 10px', background: 'var(--bg-surface)', border: '1px solid var(--border-default)', borderRadius: 'var(--radius-sm)', color: 'var(--text-secondary)', fontSize: 11, cursor: 'pointer' }}><Ic n="refresh" size={11} /></button>
+          {onRegenerate && (
+            <button onClick={onRegenerate} title={lang === 'en' ? 'Regenerate' : '重新生成'} style={{ padding: '6px 10px', background: 'var(--bg-surface)', border: '1px solid var(--border-default)', borderRadius: 'var(--radius-sm)', color: 'var(--text-secondary)', fontSize: 11, cursor: 'pointer' }}><Ic n="refresh" size={11} /></button>
+          )}
           <button onClick={onDelete} style={{ padding: '6px 10px', background: 'var(--danger-soft)', border: '1px solid var(--danger-border)', borderRadius: 'var(--radius-sm)', color: 'var(--danger)', fontSize: 11, cursor: 'pointer' }}><Ic n="trash" size={11} /></button>
         </div>
       </div>

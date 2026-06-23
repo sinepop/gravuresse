@@ -165,11 +165,9 @@ function InfiniteCanvas({ children, assets, activeTool, scale, setScale, offset,
   }, [])
 
   return (
-    <div ref={containerRef} style={{
+    <div ref={containerRef} className="canvas-surface" style={{
       flex: 1, overflow: 'hidden', position: 'relative',
       cursor: isPanning ? 'grabbing' : activeTool === 'move' ? 'grab' : 'default',
-      background: 'var(--bg-primary)',
-      backgroundImage: 'radial-gradient(circle, var(--border-subtle) 1px, transparent 1px)',
       backgroundSize: `${20 * scale}px ${20 * scale}px`,
       backgroundPosition: `${offset.x}px ${offset.y}px`
     }}>
@@ -181,14 +179,12 @@ function InfiniteCanvas({ children, assets, activeTool, scale, setScale, offset,
         {children}
       </div>
 
-      <div data-toolbar="true" onMouseDown={e => e.stopPropagation()} style={{
+      <div data-toolbar="true" className="canvas-zoom-controls" onMouseDown={e => e.stopPropagation()} style={{
         position: 'absolute', bottom: 14, right: 14, zIndex: 10,
-        display: 'flex', alignItems: 'center', gap: 2,
-        background: 'var(--bg-elevated)', border: '1px solid var(--border-default)',
-        borderRadius: 'var(--radius-md)', padding: '3px 4px',
-        boxShadow: 'var(--shadow-md)', userSelect: 'none'
+        display: 'flex', alignItems: 'center', gap: 1,
+        borderRadius: 'var(--radius-md)', padding: 3, userSelect: 'none'
       }}>
-        <button onClick={zoomOut} style={zoomCtrlBtn} title="缩小">
+        <button className="canvas-zoom-button" onClick={zoomOut} style={zoomCtrlBtn} title="缩小">
           <Ic n="minus" size={14} sw={2} />
         </button>
         <span style={{
@@ -197,11 +193,11 @@ function InfiniteCanvas({ children, assets, activeTool, scale, setScale, offset,
         }} onClick={resetZoom} title="重置为 100%">
           {Math.round(scale * 100)}%
         </span>
-        <button onClick={zoomIn} style={zoomCtrlBtn} title="放大">
+        <button className="canvas-zoom-button" onClick={zoomIn} style={zoomCtrlBtn} title="放大">
           <Ic n="plus" size={14} sw={2} />
         </button>
         <div style={{ width: 1, height: 16, background: 'var(--border-subtle)', margin: '0 2px' }} />
-        <button onClick={fitToView} style={{ ...zoomCtrlBtn, width: 'auto', padding: '2px 6px', fontSize: 10 }} title="适应视图">
+        <button className="canvas-zoom-button" onClick={fitToView} style={{ ...zoomCtrlBtn, width: 'auto', padding: '2px 6px', fontSize: 10 }} title="适应视图">
           适应
         </button>
       </div>
@@ -222,10 +218,10 @@ function InfiniteCanvas({ children, assets, activeTool, scale, setScale, offset,
 }
 
 const zoomCtrlBtn = {
-  background: 'transparent', border: 'none', color: 'var(--text-secondary)',
+  border: 'none', color: 'var(--text-secondary)',
   width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center',
   borderRadius: 'var(--radius-sm)', cursor: 'pointer', padding: 0,
-  transition: 'background 0.12s, color 0.12s'
+  transition: 'background 0.2s ease, color 0.2s ease'
 }
 
 function DrawingOverlay({ tool, color, width: strokeWidth, scale, canvasRef }) {
@@ -474,7 +470,7 @@ function GeneratingOverlay({ asset }) {
     }}>
       <div style={{
         position: 'absolute', inset: 0,
-        background: 'linear-gradient(90deg, transparent 0%, rgba(232,168,73,0.08) 25%, rgba(232,168,73,0.18) 50%, rgba(232,168,73,0.08) 75%, transparent 100%)',
+        background: 'linear-gradient(90deg, transparent 0%, var(--accent-glow) 25%, var(--accent-soft) 50%, var(--accent-glow) 75%, transparent 100%)',
         backgroundSize: '300% 100%',
         animation: 'shimmerGlow 2s ease-in-out infinite',
         borderRadius: 'var(--radius-md)'
@@ -605,22 +601,17 @@ export default function CanvasPanel({ canvas, lang, onContextMenu }) {
           <div style={{ flex: 1 }} />
           <span style={{ fontSize: 10, color: 'var(--text-ghost)', fontFamily: 'var(--font-mono)' }}>{assets.length} {lang === 'en' ? 'assets' : '个资产'}</span>
         </div>
-        <div style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column' }}>
+        <div className={assets.length === 0 ? 'canvas-surface' : undefined} style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column' }}>
           {assets.length === 0 ? (
-            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-muted)' }}>
-                <div style={{
-                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                  width: 56, height: 56, borderRadius: '50%',
-                  background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)',
-                  marginBottom: 16
-                }}>
-                  <Ic n="image" size={24} color="var(--text-ghost)" />
-                </div>
-                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 4 }}>
+            <div className="canvas-empty-state">
+              <div className="canvas-empty-icon">
+                <Ic n="layoutGrid" size={22} color="var(--text-muted)" />
+              </div>
+              <div>
+                <div className="canvas-empty-title">
                   {lang === 'en' ? 'Canvas is empty' : '画布为空'}
                 </div>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                <div className="canvas-empty-description">
                   {lang === 'en' ? 'Describe what you want to create in the chat' : '在对话中描述你想创作的内容'}
                 </div>
               </div>
@@ -694,7 +685,7 @@ export default function CanvasPanel({ canvas, lang, onContextMenu }) {
       </div>
       {selectedAsset && (
         <AssetDetail asset={selectedAsset} onClose={() => setSelectedId(null)}
-          onDelete={() => canvas.removeAsset(selectedAsset.id)} onRegenerate={() => {}} lang={lang} />
+          onDelete={() => canvas.removeAsset(selectedAsset.id)} onRegenerate={null} lang={lang} />
       )}
     </div>
   )

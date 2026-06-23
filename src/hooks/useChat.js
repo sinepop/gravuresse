@@ -1,20 +1,11 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { IMG_PROVIDERS } from '../providers/imageProviders'
 import { VID_PROVIDERS } from '../providers/videoProviders'
+import { resolveProviderId } from '../providers/aliases'
 import { t } from '../i18n'
 
 let _msgIdCounter = 0
 function nextId() { return Date.now() * 1000 + (++_msgIdCounter % 1000) }
-
-const PROVIDER_ID_ALIASES = {
-  chat: { claude: 'anthropic', gemini: 'google', qwen: 'alibaba', kimi: 'moonshot', doubao: 'volcengine' },
-  image: { dalle: 'openai', gemini_img: 'google', jimeng_img: 'volcengine' },
-  video: { jimeng_vid: 'volcengine' }
-}
-
-function getProviderId(track, id) {
-  return PROVIDER_ID_ALIASES[track]?.[id] || id
-}
 
 async function callProvider(params, fallback) {
   if (!window.electronAPI?.providerAPI?.call) return fallback()
@@ -171,7 +162,7 @@ ${modifyHint}${refHint}${styleHint}
 
       const result = await callProvider({
         action: 'chat',
-        providerId: getProviderId('chat', provider.id),
+        providerId: resolveProviderId('chat', provider.id),
         messages: history,
         system,
         thinking,
@@ -239,7 +230,7 @@ ${modifyHint}${refHint}${styleHint}
       }
       const url = await callProvider({
         action: 'generate',
-        providerId: getProviderId('image', imgProvider.id),
+        providerId: resolveProviderId('image', imgProvider.id),
         prompt: imageParams.prompt,
         ratio: imageParams.ratio,
         resolution: imageParams.resolution,
@@ -282,7 +273,7 @@ ${modifyHint}${refHint}${styleHint}
       }
       const result = await callProvider({
         action: 'submit',
-        providerId: getProviderId('video', provider.id),
+        providerId: resolveProviderId('video', provider.id),
         prompt: videoParams.prompt,
         ratio: videoParams.ratio,
         duration: videoParams.duration,
@@ -358,32 +349,11 @@ ${modifyHint}${refHint}${styleHint}
     const failedIds = []
     for (let i = 0; i < count; i++) {
       try {
-        if (i === 0) {
-          await doGenerate(msgId, task, lang, placeholderIds[i], idx, originConversationId)
-        } else {
-          const imgProvider = config?.providers?.image
-          if (!imgProvider?.id || !imgProvider?.apiKey) throw new Error(t('configImageApi', lang))
-          const providerDef = IMG_PROVIDERS.find(p => p.id === imgProvider.id)
-          const protocol = imgProvider.protocol || providerDef?.protocol || 'openai_image'
-          const imageParams = {
-            prompt: task.prompt, ratio: task.ratio || '1:1', resolution: task.resolution || '1024',
-            ...imgProvider, protocol
-          }
-          const url = await callProvider({
-            action: 'generate',
-            providerId: getProviderId('image', imgProvider.id),
-            prompt: imageParams.prompt,
-            ratio: imageParams.ratio,
-            resolution: imageParams.resolution,
-            model: imageParams.model,
-            baseUrl: imageParams.baseUrl
-          }, () => window.electronAPI.generateImage(imageParams))
-          if (!canWriteToConversation(originConversationId)) return
-          updateAssetInConversation(originConversationId, placeholderIds[i], { url, prompt: task.prompt, label: `${task.label} #${i + 1}`, model: imgProvider.model, ratio: task.ratio, _generating: false })
-          if (config?.general?.autoSave !== false) {
-            try { await window.electronAPI.saveAssetToDisk?.({ url, label: `${task.label}_${i + 1}`, type: 'image' }) } catch {}
-          }
-        }
+        // Delegate every iteration to doGenerate (single image-gen path) rather
+        // than duplicating provider lookup / callProvider / autosave here. The
+        // per-item task clone just adjusts the asset label to "#N".
+        const itemTask = count > 1 ? { ...task, label: `${task.label} #${i + 1}` } : task
+        await doGenerate(msgId, itemTask, lang, placeholderIds[i], idx, originConversationId)
         done++
         if (!canWriteToConversation(originConversationId)) return
         patchTask(originConversationId, msgId, idx, { batchDone: done })
@@ -397,7 +367,7 @@ ${modifyHint}${refHint}${styleHint}
     if (!canWriteToConversation(originConversationId)) return
     failedIds.forEach(id => removeAssetFromConversation(originConversationId, id))
     patchTask(originConversationId, msgId, idx, { status: done > 0 && !hasFailure ? 'done' : done > 0 ? 'partial' : 'error', batchDone: done, error: done === 0 ? 'All batch items failed' : hasFailure ? `${count - done} of ${count} failed` : undefined })
-  }, [config, canvas, doGenerate, canWriteToConversation, updateAssetInConversation, removeAssetFromConversation, patchTask])
+  }, [config, canvas, doGenerate, canWriteToConversation, removeAssetFromConversation, patchTask])
 
   const setMessagesDirectly = useCallback((update) => {
     // No side effects inside the updater (CLAUDE.md red line) — the messagesRef

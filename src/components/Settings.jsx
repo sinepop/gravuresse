@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { CHAT_PROVIDERS } from '../providers/chatProviders'
 import { IMG_PROVIDERS } from '../providers/imageProviders'
 import { VID_PROVIDERS } from '../providers/videoProviders'
+import { PROVIDER_ID_ALIASES } from '../providers/aliases'
 import { t } from '../i18n'
 import Ic from './icons'
 
@@ -22,10 +23,16 @@ const ASPECT_RATIOS = ['1:1', '4:3', '3:4', '16:9', '9:16', '3:2']
 const STYLE_PRESETS = ['扁平插画', '3D 渲染', '写实摄影', '水彩画', '动漫风', '像素艺术', '油画', '极简主义', '赛博朋克', '剪纸']
 const DURATIONS = ['5s', '8s', '10s']
 const REDACTED_API_KEY = '********'
-const PROVIDER_ID_ALIASES = {
-  chat: { claude: 'anthropic', gemini: 'google', qwen: 'alibaba', kimi: 'moonshot', doubao: 'volcengine' },
-  image: { dalle: 'openai', gemini_img: 'google', jimeng_img: 'volcengine' },
-  video: { jimeng_vid: 'volcengine' }
+
+function resolveProviderId(track, id, providers) {
+  if (!id) return providers[0]?.id || ''
+  if (providers.some(provider => provider.id === id)) return id
+  const canonicalId = PROVIDER_ID_ALIASES[track]?.[id]
+  if (canonicalId && providers.some(provider => provider.id === canonicalId)) return canonicalId
+  const legacyId = Object.entries(PROVIDER_ID_ALIASES[track] || {})
+    .find(([, canonical]) => canonical === id)?.[0]
+  if (legacyId && providers.some(provider => provider.id === legacyId)) return legacyId
+  return providers[0]?.id || ''
 }
 
 /* ── reusable styles (all CSS variables) ── */
@@ -37,9 +44,7 @@ const btnS = (primary) => ({ padding: '8px 22px', background: primary ? 'var(--a
 /* ── ProviderTab ── */
 function ProviderTab({ track, providers, config, onChange, lang }) {
   const current = config?.providers?.[track] || {}
-  const selectedProviderId = providers.some(p => p.id === current.id)
-    ? current.id
-    : PROVIDER_ID_ALIASES[track]?.[current.id] || current.id || ''
+  const selectedProviderId = resolveProviderId(track, current.id, providers)
   const provider = providers.find(p => p.id === selectedProviderId)
   const apiKeyRedacted = current.apiKey === REDACTED_API_KEY
   const apiKeyValue = apiKeyRedacted ? '' : current.apiKey || ''
