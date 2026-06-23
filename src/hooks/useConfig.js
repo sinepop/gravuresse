@@ -4,6 +4,11 @@ import { IMG_PROVIDERS } from '../providers/imageProviders'
 import { VID_PROVIDERS } from '../providers/videoProviders'
 
 const PROVIDER_MAP = { chat: CHAT_PROVIDERS, image: IMG_PROVIDERS, video: VID_PROVIDERS }
+const PROVIDER_ID_ALIASES = {
+  chat: { claude: 'anthropic', gemini: 'google', qwen: 'alibaba', kimi: 'moonshot', doubao: 'volcengine' },
+  image: { dalle: 'openai', gemini_img: 'google', jimeng_img: 'volcengine' },
+  video: { jimeng_vid: 'volcengine' }
+}
 
 const DEPRECATED_MODELS = ['pollinations']
 
@@ -17,13 +22,19 @@ export async function loadProviders(action) {
   try {
     const providers = await window.electronAPI.providerAPI.list(action)
     if (!Array.isArray(providers) || providers.length === 0) return fallback
-    return providers.map(provider => ({
-      ...provider,
-      defaultUrl: provider.defaultUrl || provider.defaults?.baseUrl || '',
-      defaultModel: provider.defaultModel || provider[action]?.defaultModel || '',
-      protocol: provider.protocol || provider[action]?.protocol,
-      format: provider.format || provider[action]?.format
-    }))
+    return providers.map(provider => {
+      const fallbackProvider = fallback.find(item =>
+        item.id === provider.id || PROVIDER_ID_ALIASES[action]?.[item.id] === provider.id
+      )
+      const capability = provider[action] || provider.capabilities?.[action] || {}
+      return {
+        ...provider,
+        defaultUrl: provider.defaultUrl || provider.defaults?.baseUrl || capability.baseUrl || fallbackProvider?.defaultUrl || '',
+        defaultModel: provider.defaultModel || capability.defaultModel || fallbackProvider?.defaultModel || '',
+        protocol: provider.protocol || capability.protocol || fallbackProvider?.protocol,
+        format: provider.format || capability.format || fallbackProvider?.format
+      }
+    })
   } catch {
     return fallback
   }
@@ -77,9 +88,24 @@ export default function useConfig() {
   }, [])
 
   const save = useCallback(async (newCfg) => {
+    // Persist first, then reload the redacted config from the main process.
+    // Keeping the plaintext key the user just typed in renderer state risks
+    // exposure via a heap snapshot / XSS; main is the sole custodian. The
+    // redacted value ('********') is still truthy/non-empty so downstream
+    // "has an API key been configured?" guards keep working, and provider
+    // calls resolve the real key from disk on the main side.
     configRef.current = newCfg
     setConfig(newCfg)
     await window.electronAPI?.saveConfig(newCfg)
+    try {
+      const redacted = await window.electronAPI?.getConfig?.()
+      if (redacted) {
+        configRef.current = redacted
+        setConfig(redacted)
+      }
+    } catch {
+      // Persisted fine; if reload fails we just keep the previous state.
+    }
   }, [])
 
   const updateProvider = useCallback((track, patch) => {
