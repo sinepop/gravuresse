@@ -180,7 +180,7 @@ ipcMain.handle('provider:test', async (_, { providerId, credentials }) => {
     }, providerDef.healthCheck.body)
     return { ok: true, message: 'Connection successful' }
   } catch (err) {
-    return { ok: false, message: err.message }
+    return { ok: false, message: require('./providers/pipeline').redactSecrets(err?.message || 'Test failed') }
   }
 })
 
