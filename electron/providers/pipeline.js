@@ -12,6 +12,26 @@ const { resolveAuth } = require('./auth')
 const { resolveHandler } = require('./handler')
 
 /**
+ * Redact anything that looks like an API key / bearer token from a string before
+ * it leaves the main process for the renderer. Provider error bodies sometimes
+ * echo the submitted credential (e.g. "Invalid API key: sk-ant-..."), which would
+ * expose the real key if forwarded verbatim. Conservative: prefer over-redaction
+ * to never leaking a key.
+ */
+const KEY_PATTERNS = [
+  /sk-ant-[A-Za-z0-9_-]{20,}/g,            // Anthropic
+  /sk-[A-Za-z0-9_-]{20,}/g,                // OpenAI / generic "sk-"
+  /Bearer\s+[A-Za-z0-9_.\-]{20,}/gi,       // Authorization header echoes
+  /(?:api[_-]?key|secret|token)["'\s:=]+[A-Za-z0-9_\-]{16,}/gi // "api_key":"..." etc.
+]
+function redactSecrets(text) {
+  if (typeof text !== 'string' || !text) return text
+  let out = text
+  for (const re of KEY_PATTERNS) out = out.replace(re, (m) => `${m.slice(0, Math.min(8, m.length))}…[redacted]`)
+  return out
+}
+
+/**
  * Execute a provider action through the unified pipeline.
  *
  * @param {Object} params
@@ -37,9 +57,12 @@ async function execute(params) {
     return { ok: false, error: { code: 'UNSUPPORTED_ACTION', message: `${providerId} does not support ${action}` } }
   }
 
-  // 3. Resolve protocol and default model from the action config
-  const protocol = getProtocol(providerId, action)
-  const defaultModel = getDefaultModel(providerId, action)
+  // 3. Resolve protocol and default model from the capability config.
+  // Note: registry defs key capabilities by track (chat/image/video), not by
+  // action verb, so we must pass the mapped capKey — not the raw action —
+  // otherwise generate/submit/poll resolve to null and NO_HANDLER follows.
+  const protocol = getProtocol(providerId, capKey)
+  const defaultModel = getDefaultModel(providerId, capKey)
 
   // 4. Resolve authentication
   const auth = resolveAuth(providerDef, credentials || {})
@@ -71,8 +94,8 @@ async function execute(params) {
     const data = await handler(handlerParams)
     return { ok: true, data }
   } catch (err) {
-    return { ok: false, error: { code: 'PROVIDER_ERROR', message: err.message } }
+    return { ok: false, error: { code: 'PROVIDER_ERROR', message: redactSecrets(err?.message || 'Provider error') } }
   }
 }
 
-module.exports = { execute }
+module.exports = { execute, redactSecrets }
