@@ -19,8 +19,6 @@ nsis:
   createDesktopShortcut: always
   oneClick: false
   allowToChangeInstallationDirectory: true
-  installerIcon: build/icon.png
-  uninstallerIcon: build/icon.png
 forceCodeSigning: false
 win:
   icon: build/icon.png
