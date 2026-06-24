@@ -24,6 +24,11 @@ const HANDLER_MAP = {
   'custom_image_ark': null,
   // Video protocols
   'ark_video_task': null,  // TODO: handlers/volcengine.js (reuse)
+  'wan_image_task': null,
+  'wan_video_task': null,
+  'baidu_qianfan_image': null,
+  'baidu_qianfan_video_task': null,
+  'tencent_tokenhub_video_task': null,
   'runway_task': null,     // TODO: handlers/runway.js
   'happyhorse_task': null, // TODO: handlers/happyhorse.js
   'custom_video_task': null

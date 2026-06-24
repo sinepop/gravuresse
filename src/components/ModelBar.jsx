@@ -52,10 +52,10 @@ function Dropdown({ trackKey, providers, current, onChange, onOpenSettings, lang
   return (
     <div ref={ref} style={{ position: 'relative' }}>
       <button onClick={() => configured ? setOpen(!open) : onOpenSettings()} style={{
-        background: open ? 'var(--accent-soft)' : 'transparent',
-        border: `1px solid ${open ? 'var(--border-accent)' : 'transparent'}`,
+        background: open ? 'var(--accent-soft)' : 'var(--bg-surface)',
+        border: `1px solid ${open ? 'var(--border-accent)' : 'var(--border-default)'}`,
         color: configured ? 'var(--text-primary)' : 'var(--text-muted)',
-        padding: '6px 14px', borderRadius: '99px', fontSize: 11,
+        padding: '6px 14px', borderRadius: 'var(--radius-sm)', fontSize: 12,
         display: 'flex', alignItems: 'center', gap: 7, cursor: 'pointer',
         transition: 'all 0.2s ease', fontWeight: configured ? 500 : 400,
         boxShadow: open ? '0 0 0 2px var(--accent-glow)' : 'none'
@@ -69,9 +69,11 @@ function Dropdown({ trackKey, providers, current, onChange, onOpenSettings, lang
         {configured ? <Ic n="chevDown" size={11} sw={2} /> : <Ic n="gear" size={11} color="var(--accent)" />}
       </button>
       {open && (
-        <div className="glass-floating" style={{
-          position: 'absolute', bottom: '100%', left: 0, marginBottom: 8,
-          padding: 6, minWidth: 180, zIndex: 100,
+        <div style={{
+          position: 'absolute', bottom: '100%', left: 0, marginBottom: 6,
+          background: 'var(--bg-elevated)', border: '1px solid var(--border-default)',
+          borderRadius: 'var(--radius-md)', padding: 4, minWidth: 180, zIndex: 100,
+          boxShadow: 'var(--shadow-lg)',
           animation: 'scaleIn 0.12s ease'
         }}>
           {providers.map(p => {
@@ -96,9 +98,10 @@ function Dropdown({ trackKey, providers, current, onChange, onOpenSettings, lang
 export default function ModelBar({ config, providerLists, onProviderChange, onOpenSettings, lang }) {
   if (!config) return null
   return (
-    <div className="glass-floating" style={{
-      display: 'flex', alignItems: 'center', gap: 4, padding: '6px 12px',
-      borderRadius: '99px'
+    <div style={{
+      height: 48, borderTop: '1px solid var(--border-subtle)',
+      display: 'flex', alignItems: 'center', gap: 10, padding: '0 16px',
+      background: 'var(--bg-elevated)', flexShrink: 0
     }}>
       {TRACK_KEYS.map(t => (
         <Dropdown key={t.key} trackKey={t.key} providers={executableProviders(providerLists?.[t.key] || [])}
@@ -108,9 +111,9 @@ export default function ModelBar({ config, providerLists, onProviderChange, onOp
       <div style={{ flex: 1 }} />
       <span style={{
         fontSize: 10, color: 'var(--text-ghost)', fontFamily: 'var(--font-mono)',
-        letterSpacing: '0.5px', padding: '4px 10px', borderRadius: '99px',
-        background: 'var(--bg-input)', border: '1px solid var(--border-subtle)'
-      }}>v1.6.1</span>
+        letterSpacing: '0.5px', padding: '3px 8px', borderRadius: 'var(--radius-sm)',
+        background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)'
+      }}>v1.7.0</span>
     </div>
   )
 }

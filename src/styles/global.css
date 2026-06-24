@@ -270,35 +270,6 @@ button {
 }
 select { appearance: none; cursor: pointer; }
 
-/* Background Mesh Gradient Setup */
-.app-background {
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  overflow: hidden;
-  background-color: var(--bg-primary);
-  /* The subtle dotted canvas grid as the absolute base layer */
-  background-image: radial-gradient(circle, var(--border-default) 0.8px, transparent 0.9px);
-  background-size: 20px 20px;
-}
-
-.gradient-mesh {
-  position: absolute;
-  inset: -50%;
-  z-index: -1;
-  background: radial-gradient(circle at 50% 50%, rgba(130, 150, 255, 0.04) 0%, transparent 60%),
-              radial-gradient(circle at 80% 20%, rgba(200, 130, 255, 0.03) 0%, transparent 50%),
-              radial-gradient(circle at 20% 80%, rgba(100, 200, 255, 0.03) 0%, transparent 50%);
-  animation: meshFlow 30s ease-in-out infinite alternate;
-  pointer-events: none;
-}
-
-@keyframes meshFlow {
-  0% { transform: rotate(0deg) scale(1); }
-  50% { transform: rotate(5deg) scale(1.1); }
-  100% { transform: rotate(-5deg) scale(1); }
-}
-
 /* Glassmorphism Utilities */
 .glass-panel {
   background: var(--bg-glass);
@@ -334,7 +305,7 @@ select { appearance: none; cursor: pointer; }
   box-shadow: 0 0 0 2px var(--accent-glow), var(--shadow-accent);
 }
 
-/* Modular workspace and canvas (Redesigned for floating layout) */
+/* Modular workspace and canvas */
 .module-sidebar {
   width: 56px;
   flex: 0 0 56px;
@@ -343,7 +314,8 @@ select { appearance: none; cursor: pointer; }
   align-items: center;
   gap: 8px;
   padding: 12px 0;
-  border-right: 1px solid var(--border-glass);
+  background: var(--bg-elevated);
+  border-right: 1px solid var(--border-subtle);
 }
 
 .module-nav-button {
@@ -385,20 +357,23 @@ select { appearance: none; cursor: pointer; }
 
 .module-content {
   min-width: 0;
+  min-height: 0;
   flex: 1;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  /* background removed to let absolute positioning flow */
+  background: var(--bg-primary);
 }
 
 .canvas-surface {
-  /* Inherits from .app-background or is transparent to let mesh show */
+  min-width: 0;
+  min-height: 0;
   background: transparent;
 }
 
 .canvas-empty-state {
   flex: 1;
+  min-height: 0;
   display: flex;
   align-items: center;
   justify-content: center;
