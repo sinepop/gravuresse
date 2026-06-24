@@ -2,6 +2,29 @@
 
 ## 中文
 
+#### v1.7.0 (2026-06-24)
+
+**国内媒体 Provider 扩展**
+- 新增阿里万相 / Wan：生图（wan2.6-t2i）+ 生视频（wan2.7-t2v），异步任务 submit/poll handler
+- 新增百度千帆：生图（qwen-image）+ 生视频（qianfan-video-latest），异步任务 handler
+- 新增腾讯混元 / TokenHub：生视频（hy-video-1.5），OpenAI 兼容 submit/query handler
+- 新增 Vidu metadata 入口
+- 新增火山方舟 Coding Plan / OpenCode 资料入口
+- Custom Image/Video 新增千帆、混元、万相、Vidu 中转预设
+
+**UI 重构**
+- 布局从绝对定位+渐变网格背景重构为 flexbox 系统
+- ModelBar 移到底部固定栏（48px），全局可见
+- 侧栏改为固定结构（sidebar + 聊天面板 + 画布三栏）
+- 移除 glass-floating 样式，统一为 elevated 卡片风格
+- 设置页新增 Coding Plan / OpenCode / 即梦 链接按钮
+- 国内 Provider 自动排序置顶
+
+**Provider 注册表完善**
+- 火山方舟链接全面更新为中文文档
+- 阿里万相 integrationStatus 从 metadata → handler
+- 各 Provider 补充中文名称和国内友好链接
+
 #### v1.6.1 (2026-06-23)
 
 **改进**
@@ -225,6 +248,29 @@
 ---
 
 ## English
+
+#### v1.7.0 (2026-06-24)
+
+**China Media Provider Expansion**
+- Added Alibaba Wan: image (wan2.6-t2i) + video (wan2.7-t2v), async submit/poll handlers
+- Added Baidu Qianfan: image (qwen-image) + video (qianfan-video-latest), async task handlers
+- Added Tencent Hunyuan / TokenHub: video (hy-video-1.5), OpenAI-compatible submit/query handler
+- Added Vidu metadata entry
+- Added Volcengine Coding Plan / OpenCode reference entry
+- Custom Image/Video presets expanded: Qianfan, Hunyuan, Wan, Vidu relay templates
+
+**UI Refactor**
+- Layout rebuilt from absolute-positioned gradient mesh to flexbox system
+- ModelBar relocated to fixed bottom bar (48px), always visible
+- Sidebar restructured: sidebar nav + chat panel + canvas as three-column layout
+- Removed glass-floating styles; unified elevated card design
+- Settings: added Coding Plan / OpenCode / Jimeng link buttons
+- Domestic providers auto-sorted to top
+
+**Provider Registry Polish**
+- Volcengine links fully updated to Chinese docs
+- Alibaba Wan integrationStatus promoted from metadata → handler
+- Chinese display names and domestic-friendly links across providers
 
 #### v1.6.1 (2026-06-23)
 

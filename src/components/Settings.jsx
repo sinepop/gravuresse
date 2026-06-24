@@ -32,6 +32,23 @@ const LINK_BUTTONS = [
   { key: 'purchase', labelKey: 'purchaseTopup', icon: 'card' },
   { key: 'console', labelKey: 'console', icon: 'server' },
   { key: 'apiKey', labelKey: 'apiKeyPage', icon: 'key' },
+  { key: 'codingPlan', labelKey: 'codingPlan', icon: 'book' },
+  { key: 'openCode', labelKey: 'openCode', icon: 'external' },
+  { key: 'jimeng', labelKey: 'jimeng', icon: 'sparkle' },
+]
+
+const DOMESTIC_PROVIDER_ORDER = [
+  'volcengine',
+  'alibaba-wan',
+  'baidu-qianfan',
+  'tencent-tokenhub',
+  'vidu',
+  'minimax',
+  'kling',
+  'pixverse',
+  'siliconflow',
+  'custom-image-ark',
+  'custom-video'
 ]
 
 const FALLBACK_PROVIDER_METADATA = {
@@ -62,9 +79,13 @@ const FALLBACK_PROVIDER_METADATA = {
   volcengine: {
     links: {
       home: 'https://www.volcengine.com/product/ark',
-      pricing: 'https://docs.byteplus.com/en/docs/ModelArk/1544106',
+      docs: 'https://www.volcengine.com/docs/82379/1520757?lang=zh',
+      pricing: 'https://www.volcengine.com/docs/82379/1544106?lang=zh',
       console: 'https://console.volcengine.com/ark',
-      apiKey: 'https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey'
+      apiKey: 'https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey',
+      codingPlan: 'https://www.volcengine.com/docs/82379/1928261?lang=zh',
+      openCode: 'https://www.volcengine.com/docs/82379/2188958?lang=zh',
+      jimeng: 'https://www.volcengine.com/product/jimeng'
     },
     billing: { mode: 'paygo' },
     meta: { region: 'china' },
@@ -136,6 +157,54 @@ const FALLBACK_PROVIDER_METADATA = {
       apiKey: 'https://bailian.console.aliyun.com'
     },
     billing: { mode: 'paygo' },
+    meta: { region: 'china' }
+  },
+  'alibaba-wan': {
+    links: {
+      home: 'https://www.aliyun.com/product/bailian',
+      docs: 'https://help.aliyun.com/zh/model-studio/text-to-video-api-reference',
+      pricing: 'https://www.alibabacloud.com/help/en/model-studio/models',
+      purchase: 'https://bailian.console.aliyun.com',
+      console: 'https://bailian.console.aliyun.com',
+      apiKey: 'https://bailian.console.aliyun.com'
+    },
+    billing: { mode: 'paygo' },
+    meta: { region: 'china' }
+  },
+  'baidu-qianfan': {
+    links: {
+      home: 'https://cloud.baidu.com/product/qianfan.html',
+      docs: 'https://cloud.baidu.com/doc/qianfan-api/index.html',
+      pricing: 'https://cloud.baidu.com/doc/qianfan-price/index.html',
+      purchase: 'https://console.bce.baidu.com/qianfan/ais/console/charge',
+      console: 'https://console.bce.baidu.com/qianfan/ais/console/applicationConsole/application',
+      apiKey: 'https://console.bce.baidu.com/iam/#/iam/apikey/list'
+    },
+    billing: { mode: 'paygo' },
+    meta: { region: 'china' }
+  },
+  'tencent-tokenhub': {
+    links: {
+      home: 'https://cloud.tencent.com/product/tokenhub',
+      docs: 'https://cloud.tencent.com/document/product/1823/130081',
+      pricing: 'https://cloud.tencent.com/document/product/1823',
+      purchase: 'https://buy.cloud.tencent.com',
+      console: 'https://console.cloud.tencent.com',
+      apiKey: 'https://console.cloud.tencent.com/cam/capi'
+    },
+    billing: { mode: 'paygo' },
+    meta: { region: 'china' }
+  },
+  vidu: {
+    links: {
+      home: 'https://platform.vidu.cn',
+      docs: 'https://platform.vidu.cn',
+      pricing: 'https://platform.vidu.cn',
+      purchase: 'https://platform.vidu.cn',
+      console: 'https://platform.vidu.cn',
+      apiKey: 'https://platform.vidu.cn'
+    },
+    billing: { mode: 'subscription' },
     meta: { region: 'china' }
   },
   minimax: {
@@ -216,6 +285,15 @@ const TRACK_PROVIDER_METADATA = {
     siliconflow: {
       capabilities: { image: { textToImage: true, modelList: true } }
     },
+    'alibaba-wan': {
+      capabilities: { image: { textToImage: true } }
+    },
+    'baidu-qianfan': {
+      capabilities: { image: { textToImage: true } }
+    },
+    'tencent-tokenhub': {
+      capabilities: { image: { textToImage: true, async: true } }
+    },
     stability: {
       capabilities: { image: { textToImage: true, imageEdit: true } }
     },
@@ -240,6 +318,18 @@ const TRACK_PROVIDER_METADATA = {
       links: { docs: 'https://docs.byteplus.com/en/docs/ModelArk/1520757' },
       capabilities: { video: { textToVideo: true, imageToVideo: true, async: true, modelList: true } },
       constraints: { durations: ['5s', '10s'] }
+    },
+    'alibaba-wan': {
+      capabilities: { video: { textToVideo: true, imageToVideo: true, async: true } }
+    },
+    'baidu-qianfan': {
+      capabilities: { video: { textToVideo: true, async: true } }
+    },
+    'tencent-tokenhub': {
+      capabilities: { video: { textToVideo: true, imageToVideo: true, async: true } }
+    },
+    vidu: {
+      capabilities: { video: { textToVideo: true, imageToVideo: true, async: true } }
     },
     runway: {
       capabilities: { video: { textToVideo: true, imageToVideo: true, async: true } }
@@ -296,16 +386,49 @@ function isExecutableProvider(provider) {
 function providerInfo(provider = {}, track) {
   const base = FALLBACK_PROVIDER_METADATA[provider.id] || {}
   const trackMeta = TRACK_PROVIDER_METADATA[track]?.[provider.id] || {}
+  const capabilities = provider.capabilities?.[track] || provider.meta?.capabilities?.[track] || trackMeta.capabilities?.[track] || {}
+  const customizable = provider.customizable?.[track] || provider.meta?.customizable?.[track] || trackMeta.customizable?.[track] || {}
   return {
     links: { ...(base.links || {}), ...(trackMeta.links || {}), ...(provider.meta?.links || {}), ...(provider.links || {}) },
     billing: provider.billing || provider.meta?.billing || trackMeta.billing || base.billing || { mode: 'unknown' },
     region: provider.meta?.region || trackMeta.meta?.region || base.meta?.region || 'unknown',
-    capabilities: provider.capabilities?.[track] || provider.meta?.capabilities?.[track] || trackMeta.capabilities?.[track] || {},
+    capabilities,
     constraints: provider.constraints?.[track] || provider.meta?.constraints?.[track] || trackMeta.constraints || {},
-    customizable: provider.customizable?.[track] || provider.meta?.customizable?.[track] || trackMeta.customizable?.[track] || {},
+    customizable,
     description: provider.meta?.description || base.meta?.description || '',
-    relay: provider.relayCompatible || base.relayCompatible || provider.capabilities?.[track]?.relay
+    relay: provider.relayCompatible || base.relayCompatible || capabilities.relay || customizable.relayCompatible
   }
+}
+
+function providerIcon(track) {
+  if (track === 'image') return 'image'
+  if (track === 'video') return 'film'
+  return 'chat'
+}
+
+function hasTemplatePreset(provider, info) {
+  return Boolean(
+    provider?.platform === 'Custom' ||
+    provider?.id === 'vidu' ||
+    info.capabilities?.customTemplate ||
+    info.capabilities?.integrationStatus === 'relay' ||
+    info.customizable?.submitPath ||
+    info.customizable?.allowedTemplateVariables
+  )
+}
+
+function sortProvidersForWorkbench(providers, track) {
+  return [...providers].map((provider, index) => ({ provider, index, info: providerInfo(provider, track) }))
+    .sort((a, b) => {
+      const aOrder = DOMESTIC_PROVIDER_ORDER.indexOf(a.provider.id)
+      const bOrder = DOMESTIC_PROVIDER_ORDER.indexOf(b.provider.id)
+      const aKnown = aOrder === -1 ? 100 : aOrder
+      const bKnown = bOrder === -1 ? 100 : bOrder
+      const aRegion = a.info.region === 'china' ? 0 : a.info.region === 'both' ? 1 : 2
+      const bRegion = b.info.region === 'china' ? 0 : b.info.region === 'both' ? 1 : 2
+      return (aKnown - bKnown) || (aRegion - bRegion) || (a.index - b.index)
+    })
+    .map(item => item.provider)
 }
 
 function regionLabel(region, lang) {
@@ -372,6 +495,7 @@ function ProviderCard({ track, provider, selected, onSelect, lang }) {
   const caps = capabilityLabels(info.capabilities, track, lang)
   const constraints = compactConstraints(info.constraints, lang)
   const linkButtons = LINK_BUTTONS.filter(button => info.links?.[button.key])
+  const templatePreset = hasTemplatePreset(provider, info)
 
   return (
     <div style={{
@@ -380,9 +504,9 @@ function ProviderCard({ track, provider, selected, onSelect, lang }) {
       borderRadius: 'var(--radius-sm)', padding: 10, display: 'flex', flexDirection: 'column', gap: 8
     }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text-primary)', fontSize: 13, fontWeight: 600 }}>
-            {track === 'image' ? <Ic n="image" size={13} /> : <Ic n="film" size={13} />}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text-primary)', fontSize: 13, fontWeight: 600 }}>
+            <Ic n={providerIcon(track)} size={13} />
             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{provider.name}</span>
           </div>
           <div style={{ marginTop: 2, color: 'var(--text-muted)', fontSize: 10 }}>{provider.platform} · {regionLabel(info.region, lang)}</div>
@@ -406,11 +530,11 @@ function ProviderCard({ track, provider, selected, onSelect, lang }) {
       {info.description && <div style={{ color: 'var(--text-secondary)', fontSize: 11, lineHeight: 1.45 }}>{info.description}</div>}
 
       <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+        <span style={chipS(executable ? 'var(--success)' : 'var(--text-muted)')}>{executable ? t('directCallable', lang) : t('metadataOnly', lang)}</span>
         <span style={chipS('var(--accent)')}>{billingLabel(info.billing?.mode, lang)}</span>
-        <span style={chipS(info.relay || info.capabilities?.customTemplate ? 'var(--success)' : 'var(--text-muted)')}>
-          {info.relay || info.capabilities?.customTemplate ? t('relaySupported', lang) : t('relayOfficialOnly', lang)}
+        <span style={chipS(info.relay || templatePreset ? 'var(--success)' : 'var(--text-muted)')}>
+          {templatePreset ? t('templatePreset', lang) : info.relay ? t('relaySupported', lang) : t('relayOfficialOnly', lang)}
         </span>
-        {!executable && <span style={chipS('var(--text-muted)')}>{t('metadataOnly', lang)}</span>}
       </div>
 
       <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
@@ -437,6 +561,7 @@ function ProviderCard({ track, provider, selected, onSelect, lang }) {
 }
 
 function ProviderWorkbench({ track, providers, selectedProviderId, onSelect, lang }) {
+  const orderedProviders = sortProvidersForWorkbench(providers, track)
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -451,7 +576,7 @@ function ProviderWorkbench({ track, providers, selectedProviderId, onSelect, lan
         )}
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 8 }}>
-        {providers.map(p => (
+        {orderedProviders.map(p => (
           <ProviderCard
             key={p.id}
             track={track}

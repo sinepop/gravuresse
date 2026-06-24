@@ -309,7 +309,7 @@ const REGISTRY = [
   },
   {
     id: 'volcengine',
-    name: 'Volcengine ModelArk',
+    name: '即梦 / 火山方舟',
     platform: 'Volcengine',
     chat: { defaultModel: 'doubao-pro-32k', protocol: 'openai' },
     image: {
@@ -328,15 +328,18 @@ const REGISTRY = [
     defaults: { baseUrl: 'https://ark.cn-beijing.volces.com/api/v3' },
     links: {
       home: 'https://www.volcengine.com/product/ark',
-      docs: 'https://docs.byteplus.com/en/docs/ModelArk/1541523',
-      pricing: 'https://docs.byteplus.com/en/docs/ModelArk/1544106',
+      docs: 'https://www.volcengine.com/docs/82379/1520757?lang=zh',
+      pricing: 'https://www.volcengine.com/docs/82379/1544106?lang=zh',
       purchase: 'https://console.volcengine.com/ark',
       console: 'https://console.volcengine.com/ark',
-      apiKey: 'https://console.volcengine.com/ark'
+      apiKey: 'https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey',
+      codingPlan: 'https://www.volcengine.com/docs/82379/1928261?lang=zh',
+      openCode: 'https://www.volcengine.com/docs/82379/2188958?lang=zh',
+      jimeng: 'https://www.volcengine.com/product/jimeng'
     },
-    billing: { mode: 'credits', note: 'ModelArk / BytePlus billing varies by model; use the official console for token packages and prices.' },
+    billing: { mode: 'credits', note: 'ModelArk media models use official billing; Coding Plan/OpenCode subscriptions are linked separately.' },
     capabilities: {
-      chat: { text: true, openaiCompatible: true, integrationStatus: 'handler' },
+      chat: { text: true, openaiCompatible: true, codingPlan: true, integrationStatus: 'handler' },
       image: { textToImage: true, imageEdit: true, modelFamily: 'Seedream', integrationStatus: 'handler' },
       video: { textToVideo: true, imageToVideo: true, async: true, modelFamily: 'Seedance', integrationStatus: 'handler' }
     },
@@ -357,7 +360,35 @@ const REGISTRY = [
       image: { ...OPENAI_COMPATIBLE, presets: ['ark-compatible'] },
       video: { ...OPENAI_COMPATIBLE, presets: ['ark-compatible-task'], polling: true }
     },
-    meta: { region: 'china', description: 'Doubao chat, Seedream image, and Seedance video through ModelArk.' }
+    meta: { region: 'china', description: 'Doubao chat, Seedream image, Seedance video, and Coding Plan/OpenCode setup through Volcengine ModelArk.' }
+  },
+  {
+    id: 'volcengine-coding-plan',
+    name: 'Volcengine Coding Plan / OpenCode',
+    platform: 'Volcengine',
+    chat: {
+      defaultModel: '',
+      protocol: 'volcengine_coding_plan',
+      integrationStatus: 'metadata'
+    },
+    authType: { type: 'bearer' },
+    defaults: { baseUrl: 'https://ark.cn-beijing.volces.com/api/v3' },
+    links: {
+      home: 'https://www.volcengine.com/product/ark',
+      docs: 'https://www.volcengine.com/docs/82379/1928261?lang=zh',
+      pricing: 'https://www.volcengine.com/docs/82379/1928261?lang=zh',
+      purchase: 'https://console.volcengine.com/ark',
+      console: 'https://console.volcengine.com/ark',
+      apiKey: 'https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey',
+      codingPlan: 'https://www.volcengine.com/docs/82379/1928261?lang=zh',
+      openCode: 'https://www.volcengine.com/docs/82379/2188958?lang=zh'
+    },
+    billing: { mode: 'subscription', note: 'Reference entry for Volcengine Coding Plan subscriptions and OpenCode setup.' },
+    capabilities: {
+      chat: { text: true, codingPlan: true, openCode: true, integrationStatus: 'metadata' }
+    },
+    customizable: { chat: { auth: ['bearer'], baseUrl: true, model: true, timeout: true } },
+    meta: { region: 'china', description: 'Coding Plan/OpenCode setup links; this entry is informational and is not selectable as a chat handler.' }
   },
   {
     id: 'alibaba',
@@ -477,25 +508,25 @@ const REGISTRY = [
   },
   {
     id: 'alibaba-wan',
-    name: 'Alibaba Wan',
+    name: '阿里万相 / Wan',
     platform: 'Alibaba',
     image: {
-      defaultModel: 'wan2.5-t2i-preview',
+      defaultModel: 'wan2.6-t2i',
       protocol: 'wan_image_task',
       sizes: WIDE_IMAGE_RATIOS,
-      integrationStatus: 'metadata'
+      integrationStatus: 'handler'
     },
     video: {
-      defaultModel: 'wan2.6-t2v',
+      defaultModel: 'wan2.7-t2v',
       protocol: 'wan_video_task',
       polling: true,
-      integrationStatus: 'metadata'
+      integrationStatus: 'handler'
     },
     authType: { type: 'bearer' },
     defaults: { baseUrl: 'https://dashscope.aliyuncs.com/api/v1' },
     links: {
       home: 'https://www.alibabacloud.com/product/modelstudio',
-      docs: 'https://www.alibabacloud.com/help/en/model-studio/text-to-video-api-reference',
+      docs: 'https://help.aliyun.com/zh/model-studio/text-to-video-api-reference',
       pricing: 'https://www.alibabacloud.com/help/en/model-studio/models',
       purchase: 'https://bailian.console.aliyun.com/',
       console: 'https://bailian.console.aliyun.com/',
@@ -503,22 +534,22 @@ const REGISTRY = [
     },
     billing: { mode: 'paygo', note: 'Wan media APIs are async tasks; prompt, size, and duration constraints vary by model.' },
     capabilities: {
-      image: { textToImage: true, async: true, modelFamily: 'Wan', integrationStatus: 'metadata' },
-      video: { textToVideo: true, imageToVideo: true, async: true, modelFamily: 'Wan', integrationStatus: 'metadata' }
+      image: { textToImage: true, async: false, modelFamily: 'Wan', integrationStatus: 'handler' },
+      video: { textToVideo: true, imageToVideo: true, async: true, modelFamily: 'Wan', integrationStatus: 'handler' }
     },
     constraints: {
       image: imageConstraints({
-        prompt: { maxLength: 1500 },
+        prompt: { maxLength: 2100 },
         negativePrompt: { supported: true, strategy: 'native', maxLength: 500 },
         ratios: WIDE_IMAGE_RATIOS,
-        resolutions: ['1024', '1440', '2048'],
-        async: true
+        resolutions: ['1280', '1440'],
+        async: false
       }),
       video: videoConstraints({
-        prompt: { maxLength: 1500 },
+        prompt: { maxLength: 1800 },
         negativePrompt: { supported: true, strategy: 'native', maxLength: 500 },
         ratios: VIDEO_RATIOS,
-        resolutions: ['720p', '1080p'],
+        resolutions: ['720P', '1080P', '720p', '1080p'],
         duration: { supported: true, min: 2, max: 10, allowed: [2, 3, 4, 5, 6, 7, 8, 9, 10], coerce: 'nearest' }
       })
     },
@@ -526,7 +557,148 @@ const REGISTRY = [
       image: { auth: ['bearer'], baseUrl: true, model: true, timeout: true },
       video: { auth: ['bearer'], baseUrl: true, model: true, timeout: true, polling: true }
     },
-    meta: { region: 'china', description: 'Wan image and video generation metadata.' }
+    meta: { region: 'china', description: 'Alibaba Bailian Wan image and video generation with direct handlers.' }
+  },
+  {
+    id: 'baidu-qianfan',
+    name: '百度千帆',
+    platform: 'Baidu',
+    image: {
+      defaultModel: 'qwen-image',
+      protocol: 'baidu_qianfan_image',
+      sizes: WIDE_IMAGE_RATIOS,
+      integrationStatus: 'handler'
+    },
+    video: {
+      defaultModel: 'qianfan-video-latest',
+      protocol: 'baidu_qianfan_video_task',
+      polling: true,
+      integrationStatus: 'handler'
+    },
+    authType: { type: 'bearer' },
+    defaults: { baseUrl: 'https://qianfan.baidubce.com' },
+    links: {
+      home: 'https://cloud.baidu.com/product/qianfan.html',
+      docs: 'https://cloud.baidu.com/doc/qianfan-api/index.html',
+      pricing: 'https://cloud.baidu.com/doc/qianfan-price/index.html',
+      purchase: 'https://console.bce.baidu.com/qianfan/ais/console/charge',
+      console: 'https://console.bce.baidu.com/qianfan/ais/console/applicationConsole/application',
+      apiKey: 'https://console.bce.baidu.com/iam/#/iam/apikey/list'
+    },
+    billing: { mode: 'paygo', note: 'Qianfan media APIs use Baidu API Key billing; check the official console for current package and pay-as-you-go details.' },
+    capabilities: {
+      image: { textToImage: true, negativePrompt: 'native', modelFamily: 'Qianfan Image', integrationStatus: 'handler' },
+      video: { textToVideo: true, imageToVideo: false, async: true, negativePrompt: 'appendToPrompt', modelFamily: 'Qianfan Video', integrationStatus: 'handler' }
+    },
+    constraints: {
+      image: imageConstraints({
+        prompt: { maxLength: 800 },
+        negativePrompt: { supported: true, strategy: 'native', maxLength: 500 },
+        ratios: WIDE_IMAGE_RATIOS,
+        resolutions: ['1024', '1536', '2048']
+      }),
+      video: videoConstraints({
+        prompt: { maxLength: 1500 },
+        negativePrompt: { supported: true, strategy: 'appendToPrompt', maxLength: 500 },
+        ratios: ['16:9', '9:16', '1:1', '3:4', '4:3'],
+        resolutions: ['540p', '720p', '1080p'],
+        duration: { supported: true, min: 1, max: 16 },
+        sourceImage: { required: false }
+      })
+    },
+    customizable: {
+      image: { auth: ['bearer'], baseUrl: true, model: true, timeout: true },
+      video: { auth: ['bearer'], baseUrl: true, model: true, timeout: true, polling: true }
+    },
+    meta: { region: 'china', description: 'Baidu Qianfan image generation and text-to-video task APIs.' }
+  },
+  {
+    id: 'tencent-tokenhub',
+    name: '腾讯混元 / TokenHub',
+    platform: 'Tencent',
+    image: {
+      defaultModel: 'hunyuan-image',
+      protocol: 'tencent_hunyuan_image',
+      sizes: WIDE_IMAGE_RATIOS,
+      integrationStatus: 'metadata'
+    },
+    video: {
+      defaultModel: 'hy-video-1.5',
+      protocol: 'tencent_tokenhub_video_task',
+      polling: true,
+      integrationStatus: 'handler'
+    },
+    authType: { type: 'bearer' },
+    defaults: { baseUrl: 'https://tokenhub.tencentmaas.com/v1/api' },
+    links: {
+      home: 'https://cloud.tencent.com/product/tokenhub',
+      docs: 'https://cloud.tencent.com/document/product/1823/130081',
+      pricing: 'https://cloud.tencent.com/document/product/1823',
+      purchase: 'https://buy.cloud.tencent.com/',
+      console: 'https://console.cloud.tencent.com/',
+      apiKey: 'https://console.cloud.tencent.com/cam/capi'
+    },
+    billing: { mode: 'paygo', note: 'TokenHub uses Tencent Cloud billing. Hunyuan image is listed as official setup metadata; TokenHub video is directly callable here.' },
+    capabilities: {
+      image: { textToImage: true, async: true, modelFamily: 'Hunyuan Image', integrationStatus: 'metadata' },
+      video: { textToVideo: true, imageToVideo: true, async: true, negativePrompt: 'appendToPrompt', openaiCompatible: true, modelFamily: 'Hunyuan Video', integrationStatus: 'handler' }
+    },
+    constraints: {
+      image: imageConstraints({
+        prompt: { maxLength: 2000 },
+        negativePrompt: { supported: true, strategy: 'modelDependent', maxLength: 500 },
+        ratios: WIDE_IMAGE_RATIOS,
+        async: true
+      }),
+      video: videoConstraints({
+        prompt: { maxLength: 2000 },
+        negativePrompt: { supported: true, strategy: 'appendToPrompt', maxLength: 500 },
+        ratios: VIDEO_RATIOS,
+        resolutions: ['720p', '1080p'],
+        duration: { supported: true, min: 1, max: 10 },
+        sourceImage: { required: false }
+      })
+    },
+    customizable: {
+      image: { auth: ['bearer'], baseUrl: true, model: true, timeout: true },
+      video: { auth: ['bearer'], baseUrl: true, model: true, timeout: true, polling: true }
+    },
+    meta: { region: 'china', description: 'Tencent TokenHub OpenAI-compatible Hunyuan video submit/query API; Hunyuan image remains a setup link entry.' }
+  },
+  {
+    id: 'vidu',
+    name: 'Vidu',
+    platform: 'Vidu',
+    video: {
+      defaultModel: 'vidu-q1',
+      protocol: 'vidu_video_task',
+      polling: true,
+      integrationStatus: 'metadata'
+    },
+    authType: { type: 'bearer' },
+    defaults: { baseUrl: 'https://platform.vidu.cn' },
+    links: {
+      home: 'https://platform.vidu.cn/',
+      docs: 'https://platform.vidu.cn/',
+      pricing: 'https://platform.vidu.cn/',
+      purchase: 'https://platform.vidu.cn/',
+      console: 'https://platform.vidu.cn/',
+      apiKey: 'https://platform.vidu.cn/'
+    },
+    billing: { mode: 'subscription', note: 'Vidu is included as a subscription/API setup entry until its callable template is verified against stable official API fields.' },
+    capabilities: {
+      video: { textToVideo: true, imageToVideo: true, async: true, modelFamily: 'Vidu', integrationStatus: 'metadata' }
+    },
+    constraints: {
+      video: videoConstraints({
+        prompt: { maxLength: 2000 },
+        negativePrompt: { supported: true, strategy: 'modelDependent', maxLength: 1000 },
+        ratios: VIDEO_RATIOS,
+        duration: { supported: true, min: 1, max: 10 }
+      })
+    },
+    customizable: { video: { auth: ['bearer', 'header', 'session'], baseUrl: true, model: true, timeout: true, polling: true } },
+    meta: { region: 'china', description: 'Vidu subscription/API entry. Use Custom Video API if your Vidu-compatible relay provides submit/poll paths.' }
   },
   {
     id: 'stability',
@@ -922,7 +1094,7 @@ const REGISTRY = [
       protocol: 'custom_image_openai',
       format: 'custom',
       sizes: WIDE_IMAGE_RATIOS,
-      presets: ['openai-images-compatible', 'gemini-compatible', 'ark-compatible'],
+      presets: ['openai-images-compatible', 'gemini-compatible', 'ark-compatible', 'qianfan-compatible', 'hunyuan-compatible'],
       integrationStatus: 'handler'
     },
     authType: { type: 'bearer' },
@@ -952,7 +1124,7 @@ const REGISTRY = [
         model: true,
         pathPrefix: true,
         timeout: true,
-        presets: ['openai-images-compatible', 'gemini-compatible', 'ark-compatible'],
+        presets: ['openai-images-compatible', 'gemini-compatible', 'ark-compatible', 'qianfan-compatible', 'hunyuan-compatible'],
         relayCompatible: true
       }
     },
@@ -1057,7 +1229,7 @@ const REGISTRY = [
       protocol: 'custom_video_task',
       format: 'custom',
       polling: true,
-      presets: ['submit-poll-json'],
+      presets: ['submit-poll-json', 'wan-task', 'qianfan-video-task', 'tencent-tokenhub-video', 'vidu-compatible'],
       integrationStatus: 'handler'
     },
     authType: { type: 'bearer' },
@@ -1095,6 +1267,7 @@ const REGISTRY = [
         statusPath: true,
         videoUrlPath: true,
         allowedTemplateVariables: ['prompt', 'model', 'ratio', 'resolution', 'duration', 'sourceImageUrl', 'negativePrompt'],
+        presets: ['wan-task', 'qianfan-video-task', 'tencent-tokenhub-video', 'vidu-compatible'],
         relayCompatible: true
       }
     },

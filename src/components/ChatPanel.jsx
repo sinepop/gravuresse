@@ -144,7 +144,7 @@ export default function ChatPanel({ chat, config, lang, conversations, activeCon
   const canSend = Boolean(input.trim()) && !chat.loading
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+    <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
       {/* Conversation bar */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 6, padding: '12px 16px',
