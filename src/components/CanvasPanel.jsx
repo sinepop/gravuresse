@@ -478,8 +478,10 @@ function GeneratingOverlay({ asset }) {
   )
 }
 
-export default function CanvasPanel({ canvas, lang, onContextMenu }) {
-  const { assets, selectedAsset, selectedId, setSelectedId, viewMode, setViewMode, filter, setFilter } = canvas
+export default function CanvasPanel({ canvas, lang, onContextMenu, generationMode = 'image' }) {
+  const { selectedAsset, selectedId, setSelectedId, viewMode, setViewMode } = canvas
+  const assets = (canvas.assets || []).filter(asset => asset.type === generationMode)
+  const visibleSelectedAsset = assets.some(asset => asset.id === selectedId) ? selectedAsset : null
   const [activeTool, setActiveTool] = useState('select')
   const [drawColor, setDrawColor] = useState('#E8A849')
   const [drawWidth, setDrawWidth] = useState(2)
@@ -494,6 +496,12 @@ export default function CanvasPanel({ canvas, lang, onContextMenu }) {
 
   const drawingCanvasRef = useRef(null)
   const dragCleanupRef = useRef(null)
+
+  useEffect(() => {
+    if (selectedId && !assets.some(asset => asset.id === selectedId)) {
+      setSelectedId(null)
+    }
+  }, [assets, selectedId, setSelectedId])
 
   // Unmount cleanup for mouse drag listeners
   useEffect(() => {
@@ -593,10 +601,6 @@ export default function CanvasPanel({ canvas, lang, onContextMenu }) {
             <Ic n="layoutGrid" size={12} />
             {lang === 'en' ? 'Free' : '自由'}
           </button>
-          <div style={{ width: 1, height: 16, background: 'var(--border-subtle)', margin: '0 4px' }} />
-          {['all', 'image', 'video'].map(f => (
-            <button key={f} onClick={() => setFilter(f)} style={filterBtnStyle(filter === f)}>{f === 'all' ? (lang === 'en' ? 'All' : '全部') : f === 'image' ? (lang === 'en' ? 'Image' : '图片') : (lang === 'en' ? 'Video' : '视频')}</button>
-          ))}
           <div style={{ flex: 1 }} />
           <span style={{ fontSize: 10, color: 'var(--text-ghost)', fontFamily: 'var(--font-mono)' }}>{assets.length} {lang === 'en' ? 'assets' : '个资产'}</span>
         </div>
@@ -611,6 +615,11 @@ export default function CanvasPanel({ canvas, lang, onContextMenu }) {
                   {lang === 'en' ? 'Canvas is empty' : '画布为空'}
                 </div>
                 <div className="canvas-empty-description">
+                  {generationMode === 'video'
+                    ? (lang === 'en' ? 'Describe the video you want to create on the left' : '在左侧描述你想创作的视频')
+                    : (lang === 'en' ? 'Describe the image you want to create on the left' : '在左侧描述你想创作的图片')}
+                </div>
+                <div className="canvas-empty-description" style={{ display: 'none' }}>
                   {lang === 'en' ? 'Describe what you want to create in the chat' : '在对话中描述你想创作的内容'}
                 </div>
               </div>
@@ -682,9 +691,9 @@ export default function CanvasPanel({ canvas, lang, onContextMenu }) {
           {viewMode === 'free' && <EditBar activeTool={activeTool} setActiveTool={setActiveTool} drawColor={drawColor} setDrawColor={setDrawColor} drawWidth={drawWidth} setDrawWidth={setDrawWidth} onClearDrawings={handleClearDrawings} />}
         </div>
       </div>
-      {selectedAsset && (
-        <AssetDetail asset={selectedAsset} onClose={() => setSelectedId(null)}
-          onDelete={() => canvas.removeAsset(selectedAsset.id)} onRegenerate={null} lang={lang} />
+      {visibleSelectedAsset && (
+        <AssetDetail asset={visibleSelectedAsset} onClose={() => setSelectedId(null)}
+          onDelete={() => canvas.removeAsset(visibleSelectedAsset.id)} onRegenerate={null} lang={lang} />
       )}
     </div>
   )

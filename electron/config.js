@@ -12,6 +12,11 @@ const DEFAULT_CONFIG = {
     image: { id: 'dalle', apiKey: '', sessionToken: '', baseUrl: 'https://api.openai.com', model: 'gpt-image-2' },
     video: { id: 'jimeng_vid', apiKey: '', sessionToken: '', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3', model: 'doubao-seedance-2-0-pro-250528' }
   },
+  providerProfiles: {
+    chat: [],
+    image: [],
+    video: []
+  },
   general: {
     theme: 'dark', language: 'zh', fontSize: 'medium',
     autoSave: true, exportPath: '', apiTimeout: 60000, autoSaveImage: false
@@ -55,6 +60,8 @@ const PROVIDER_ID_ALIASES = {
   video: { jimeng_vid: 'volcengine' }
 }
 
+const TRACKS = ['chat', 'image', 'video']
+
 let writeQueue = Promise.resolve()
 
 function enqueueWrite(fn) {
@@ -69,9 +76,32 @@ function canonicalProviderId(track, id) {
 
 function sameProviderEndpoint(track, nextProvider = {}, currentProvider = {}) {
   return (
-    canonicalProviderId(track, nextProvider.id) === canonicalProviderId(track, currentProvider.id) &&
+    canonicalProviderId(track, nextProvider.id || nextProvider.providerId) === canonicalProviderId(track, currentProvider.id || currentProvider.providerId) &&
     (nextProvider.baseUrl || '') === (currentProvider.baseUrl || '')
   )
+}
+
+function sameProviderProfile(track, a = {}, b = {}) {
+  return (
+    sameProviderEndpoint(track, a, b) &&
+    (a.model || '') === (b.model || '')
+  )
+}
+
+function profileSecretPaths(cfg) {
+  const paths = []
+  for (const track of TRACKS) {
+    const profiles = cfg?.providerProfiles?.[track] || []
+    profiles.forEach((_, index) => {
+      paths.push(['providerProfiles', track, index, 'apiKey'])
+      paths.push(['providerProfiles', track, index, 'sessionToken'])
+    })
+  }
+  return paths
+}
+
+function allSecretPaths(cfg) {
+  return [...SECRET_PATHS, ...profileSecretPaths(cfg)]
 }
 
 function getNestedValue(obj, keys) {
@@ -89,7 +119,7 @@ function setNestedValue(obj, keys, value) {
 function encryptApiKeys(cfg) {
   if (!safeStorage.isEncryptionAvailable()) return cfg
   const result = JSON.parse(JSON.stringify(cfg)) // deep clone
-  for (const keyPath of SECRET_PATHS) {
+  for (const keyPath of allSecretPaths(result)) {
     const val = getNestedValue(result, [...keyPath])
     if (val && typeof val === 'string' && val.length > 0) {
       setNestedValue(result, [...keyPath], '__ENCRYPTED__' + safeStorage.encryptString(val).toString('base64'))
@@ -102,7 +132,7 @@ function encryptApiKeys(cfg) {
 function decryptApiKeys(cfg) {
   if (!safeStorage.isEncryptionAvailable()) return cfg
   const result = JSON.parse(JSON.stringify(cfg))
-  for (const keyPath of SECRET_PATHS) {
+  for (const keyPath of allSecretPaths(result)) {
     const val = getNestedValue(result, [...keyPath])
     if (val && typeof val === 'string' && val.startsWith('__ENCRYPTED__')) {
       const b64 = val.slice('__ENCRYPTED__'.length)
@@ -119,7 +149,7 @@ function decryptApiKeys(cfg) {
 
 function redactApiKeys(cfg) {
   const result = JSON.parse(JSON.stringify(cfg))
-  for (const keyPath of SECRET_PATHS) {
+  for (const keyPath of allSecretPaths(result)) {
     const val = getNestedValue(result, [...keyPath])
     if (val && typeof val === 'string') {
       setNestedValue(result, [...keyPath], REDACTED_API_KEY)
@@ -137,8 +167,28 @@ function mergeRedactedApiKeys(nextCfg, currentCfg) {
       const nextProvider = result.providers?.[track] || {}
       const currentProvider = currentCfg.providers?.[track] || {}
       const sameEndpoint = sameProviderEndpoint(track, nextProvider, currentProvider)
-      setNestedValue(result, [...keyPath], sameEndpoint ? (getNestedValue(currentCfg, [...keyPath]) || '') : '')
+      const profileMatch = (currentCfg.providerProfiles?.[track] || []).find(profile => sameProviderProfile(track, nextProvider, profile))
+      const profileSecret = profileMatch?.[keyPath[keyPath.length - 1]] || ''
+      setNestedValue(result, [...keyPath], sameEndpoint ? (getNestedValue(currentCfg, [...keyPath]) || '') : profileSecret)
     }
+  }
+  for (const track of TRACKS) {
+    const nextProfiles = result.providerProfiles?.[track] || []
+    const currentProfiles = currentCfg.providerProfiles?.[track] || []
+    nextProfiles.forEach((profile, index) => {
+      for (const field of ['apiKey', 'sessionToken']) {
+        if (profile?.[field] !== REDACTED_API_KEY) continue
+        const currentProfile = currentProfiles.find(item =>
+          (profile.profileId && item.profileId === profile.profileId) ||
+          (profile.id && item.id === profile.id) ||
+          sameProviderProfile(track, profile, item)
+        )
+        const currentProvider = currentCfg.providers?.[track] || {}
+        const providerSecret = sameProviderProfile(track, profile, currentProvider) ? currentProvider[field] || '' : ''
+        profile[field] = currentProfile?.[field] || providerSecret
+        setNestedValue(result, ['providerProfiles', track, index, field], profile[field])
+      }
+    })
   }
   return result
 }

@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import TitleBar from './components/TitleBar'
-import ModelBar from './components/ModelBar'
 import ChatPanel from './components/ChatPanel'
 import CanvasPanel from './components/CanvasPanel'
 import Settings from './components/Settings'
@@ -16,7 +15,6 @@ import './styles/global.css'
 
 const FONT_SIZES = { small: '12px', medium: '13px', large: '14px' }
 const MODULES = [
-  { id: 'chat', icon: 'chat', labels: { zh: '对话', en: 'Chat' } },
   { id: 'image', icon: 'image', labels: { zh: '生图', en: 'Image' } },
   { id: 'video', icon: 'film', labels: { zh: '视频', en: 'Video' } }
 ]
@@ -41,8 +39,9 @@ export default function App() {
   const canvas = useCanvas()
   const taskQueue = useTaskQueue(canvas)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [settingsPage, setSettingsPage] = useState('appearance')
   const [ctxMenu, setCtxMenu] = useState(null)
-  const [activeModule, setActiveModule] = useState('chat')
+  const [activeModule, setActiveModule] = useState('image')
 
   // Conversation management
   const [conversations, setConversations] = useState([])
@@ -335,11 +334,16 @@ export default function App() {
     }
   }, [canvas, chat])
 
+  const openSettings = useCallback((page = 'appearance') => {
+    setSettingsPage(page)
+    setSettingsOpen(true)
+  }, [])
+
   const lang = config?.general?.language || 'zh'
 
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
-      <TitleBar onOpenSettings={() => setSettingsOpen(true)} lang={lang} />
+      <TitleBar onOpenSettings={() => openSettings('appearance')} lang={lang} />
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}>
         <nav className="module-sidebar" aria-label={lang === 'en' ? 'Workspace modules' : '工作区模块'}>
           {MODULES.map(module => {
@@ -363,7 +367,7 @@ export default function App() {
         <main className="module-content">
           <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}>
             <div style={{ width: 360, minWidth: 320, overflow: 'hidden', display: 'flex', flexDirection: 'column', borderRight: '1px solid var(--border-subtle)' }}>
-                <ChatPanel chat={chat} config={config} lang={lang}
+                <ChatPanel chat={chat} config={config} providerLists={providerLists} onProviderChange={updateProvider} lang={lang} generationMode={activeModule}
                   conversations={conversations} activeConvId={activeConvId}
                   onSwitchConv={handleSwitchConv} onNewConv={handleNewConv} onDeleteConv={handleDeleteConv}
                   onRenameConv={handleRenameConv} canvas={canvas} />
@@ -372,14 +376,13 @@ export default function App() {
               )}
             </div>
             <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
-              <CanvasPanel canvas={canvas} lang={lang}
+              <CanvasPanel canvas={canvas} lang={lang} generationMode={activeModule}
                 onContextMenu={(e, asset) => setCtxMenu({ x: e.clientX, y: e.clientY, asset })} />
             </div>
           </div>
         </main>
       </div>
-      <ModelBar config={config} providerLists={providerLists} onProviderChange={updateProvider} onOpenSettings={() => setSettingsOpen(true)} lang={lang} />
-      {settingsOpen && <Settings config={config} providerLists={providerLists} onSave={save} onClose={() => setSettingsOpen(false)} />}
+      {settingsOpen && <Settings config={config} providerLists={providerLists} onSave={save} onClose={() => setSettingsOpen(false)} initialPage={settingsPage} />}
       {ctxMenu && <ContextMenu x={ctxMenu.x} y={ctxMenu.y} asset={ctxMenu.asset} onClose={() => setCtxMenu(null)} onAction={handleAssetAction} lang={config?.general?.language} />}
     </div>
   )

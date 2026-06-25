@@ -96,8 +96,8 @@ Driven by a research mindset and sheer persistence, I dug through tons of resour
 - **Reference Images/Videos** — Attach multiple reference images from the asset gallery to chat
 - **Image Zoom Preview** — Scroll-zoom, drag-pan, double-click reset for generated images
 - **Multi-Conversation** — Parallel conversations with isolated memory, switch/create/delete
-- **Asset Gallery** — Grid/free layout, right-click menu, click-to-zoom preview
-- **Settings Panel** — Sidebar navigation layout, auto-fetch models, grouped by General + API
+- **Workspace Canvas** — Grid/free layout, right-click menu, click-to-zoom preview, auto-filters by image/video workspace
+- **Settings + Inline Model Switching** — Configure providers in Settings, then switch saved chat/image/video models directly from the chat toolbar
 - **Theme & i18n** — Dark/light/system themes, Chinese/English, adjustable font size
 - **Lucide Icons** — Unified icon system across all components using Lucide React
 - **Copy & Paste** — Message text selectable and copyable, Shift+Enter for newlines
@@ -106,8 +106,8 @@ Driven by a research mindset and sheer persistence, I dug through tons of resour
 
 1. Download `gravuresse-Setup-1.7.0.exe` and install
 2. Open the app, click the gear icon in the title bar (or press `Ctrl+,`) to open Settings
-3. Select a Provider in API Configuration, enter your API Key — models are auto-fetched
-4. Type your request in chat, AI shows the prompt first, confirm to generate
+3. Configure your provider credentials and save the models you want to use in Settings
+4. Type your request in chat and switch saved models from the toolbar when needed
 
 ### Development
 

@@ -5,6 +5,7 @@ import { VID_PROVIDERS } from '../providers/videoProviders'
 import { PROVIDER_ID_ALIASES } from '../providers/aliases'
 
 const PROVIDER_MAP = { chat: CHAT_PROVIDERS, image: IMG_PROVIDERS, video: VID_PROVIDERS }
+const TRACKS = ['chat', 'image', 'video']
 
 const DEPRECATED_MODELS = ['pollinations']
 
@@ -14,6 +15,89 @@ function mergeProviderLists(primary, fallback) {
 
 function isExecutableProvider(provider) {
   return provider?.executable !== false && provider?.integrationStatus !== 'metadata'
+}
+
+function canonicalProviderId(track, id) {
+  return PROVIDER_ID_ALIASES[track]?.[id] || id || ''
+}
+
+function profileKey(track, provider = {}) {
+  return [
+    track,
+    canonicalProviderId(track, provider.providerId || provider.id),
+    provider.baseUrl || '',
+    provider.model || ''
+  ].join('|')
+}
+
+function hashString(value) {
+  let hash = 0
+  for (let i = 0; i < value.length; i += 1) {
+    hash = ((hash << 5) - hash + value.charCodeAt(i)) | 0
+  }
+  return Math.abs(hash).toString(36)
+}
+
+function findProviderDef(track, id, providerLists = PROVIDER_MAP) {
+  const canonicalId = canonicalProviderId(track, id)
+  return (providerLists?.[track] || PROVIDER_MAP[track] || []).find(provider =>
+    provider.id === id || provider.id === canonicalId || canonicalProviderId(track, provider.id) === canonicalId
+  )
+}
+
+function hasCredential(provider = {}) {
+  return provider.customAuth?.type === 'session' ? Boolean(provider.sessionToken) : Boolean(provider.apiKey)
+}
+
+function profileFromProvider(track, providerConfig = {}, providerLists = PROVIDER_MAP) {
+  if (!providerConfig?.id || !providerConfig.model || !hasCredential(providerConfig)) return null
+  const providerDef = findProviderDef(track, providerConfig.id, providerLists)
+  const key = profileKey(track, providerConfig)
+  return {
+    profileId: `profile_${hashString(key)}`,
+    providerId: providerConfig.id,
+    name: providerDef?.name || providerConfig.id,
+    apiKey: providerConfig.apiKey || '',
+    sessionToken: providerConfig.sessionToken || '',
+    baseUrl: providerConfig.baseUrl || providerDef?.defaultUrl || '',
+    model: providerConfig.model || providerDef?.defaultModel || '',
+    protocol: providerConfig.protocol || providerDef?.protocol,
+    format: providerConfig.format || providerDef?.format,
+    customAuth: providerConfig.customAuth || {},
+    template: providerConfig.template || providerConfig.customTemplate || undefined,
+    pathPrefix: providerConfig.pathPrefix || '',
+    timeout: providerConfig.timeout || '',
+    pollInterval: providerConfig.pollInterval || '',
+    defaultNegPrompt: providerConfig.defaultNegPrompt || '',
+    customSystemPrompt: providerConfig.customSystemPrompt || ''
+  }
+}
+
+function upsertProviderProfiles(cfg, providerLists = PROVIDER_MAP) {
+  const deletedKeys = new Set(cfg?._deletedProfileKeys || [])
+  const next = {
+    ...cfg,
+    providerProfiles: {
+      chat: [...(cfg.providerProfiles?.chat || [])],
+      image: [...(cfg.providerProfiles?.image || [])],
+      video: [...(cfg.providerProfiles?.video || [])]
+    }
+  }
+  delete next._deletedProfileKeys
+  for (const track of TRACKS) {
+    const profile = profileFromProvider(track, next.providers?.[track], providerLists)
+    if (!profile) continue
+    const key = profileKey(track, { providerId: profile.providerId, baseUrl: profile.baseUrl, model: profile.model })
+    if (deletedKeys.has(key)) continue
+    const profiles = next.providerProfiles[track]
+    const existingIndex = profiles.findIndex(item => profileKey(track, item) === key)
+    if (existingIndex >= 0) {
+      profiles[existingIndex] = { ...profiles[existingIndex], ...profile }
+    } else {
+      profiles.push(profile)
+    }
+  }
+  return next
 }
 
 export async function loadProviders(action) {
@@ -42,7 +126,15 @@ export async function loadProviders(action) {
 
 function migrateConfig(cfg, providerMap = PROVIDER_MAP) {
   if (!cfg?.providers) return cfg
-  const next = { ...cfg, providers: { ...cfg.providers } }
+  const next = {
+    ...cfg,
+    providers: { ...cfg.providers },
+    providerProfiles: {
+      chat: cfg.providerProfiles?.chat || [],
+      image: cfg.providerProfiles?.image || [],
+      video: cfg.providerProfiles?.video || []
+    }
+  }
   for (const [track, providers] of Object.entries(providerMap)) {
     const saved = next.providers[track]
     if (!saved?.id) continue
@@ -95,9 +187,10 @@ export default function useConfig() {
     // redacted value ('********') is still truthy/non-empty so downstream
     // "has an API key been configured?" guards keep working, and provider
     // calls resolve the real key from disk on the main side.
-    configRef.current = newCfg
-    setConfig(newCfg)
-    await window.electronAPI?.saveConfig(newCfg)
+    const prepared = upsertProviderProfiles(newCfg, providerLists)
+    configRef.current = prepared
+    setConfig(prepared)
+    await window.electronAPI?.saveConfig(prepared)
     try {
       const redacted = await window.electronAPI?.getConfig?.()
       if (redacted) {
@@ -107,7 +200,7 @@ export default function useConfig() {
     } catch {
       // Persisted fine; if reload fails we just keep the previous state.
     }
-  }, [])
+  }, [providerLists])
 
   const updateProvider = useCallback((track, patch) => {
     const current = configRef.current
