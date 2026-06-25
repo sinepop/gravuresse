@@ -2,6 +2,20 @@
 
 ## 中文
 
+#### v1.8.0 (2026-06-25)
+
+**Provider Profiles — 多配置切换**
+- 新增 Provider Profiles 系统：每个轨道（chat/image/video）可保存多组 API Key + 模型组合
+- 新增 `ModelSelector` 组件替代原 `ModelBar`：在聊天面板顶部快速切换已保存的模型配置
+- 配置加密覆盖 Profile 中的 API Key（`safeStorage` 加密）
+- 设置页大幅扩展：Profile 管理、模型测试、手动输入模型、比例/分辨率预览
+- 删除模型去重：重复保存同一 Provider+Model 组合自动合并
+
+**UI 调整**
+- 侧栏精简：移除"对话"模块入口（聊天面板始终可见），默认进入"生图"
+- 版本号标签移至标题栏
+- 聊天面板根据当前模块（生图/视频）显示对应输入提示
+
 #### v1.7.0 (2026-06-24)
 
 **国内媒体 Provider 扩展**
@@ -248,6 +262,20 @@
 ---
 
 ## English
+
+#### v1.8.0 (2026-06-25)
+
+**Provider Profiles — Multi-Configuration Switching**
+- New Provider Profiles system: each track (chat/image/video) can save multiple API Key + model combinations
+- New `ModelSelector` component replaces `ModelBar`: quick-switch saved model configs in the chat panel header
+- Profile API Keys encrypted via `safeStorage`
+- Settings page expanded: profile management, model testing, manual model entry, ratio/resolution preview
+- Dedup: saving the same Provider+Model combo auto-merges instead of duplicating
+
+**UI Adjustments**
+- Sidebar streamlined: removed "Chat" module (chat panel always visible), defaults to "Image"
+- Version badge relocated to title bar
+- Chat panel shows mode-specific placeholder (image/video)
 
 #### v1.7.0 (2026-06-24)
 

@@ -52,6 +52,11 @@ export default function TitleBar({ onOpenSettings, lang }) {
         }}>
           {t('studioAi', lang)}
         </span>
+        <span style={{
+          fontSize: 10, color: 'var(--text-ghost)', fontFamily: 'var(--font-mono)',
+          letterSpacing: '0.5px', padding: '2px 6px', borderRadius: 'var(--radius-sm)',
+          background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)'
+        }}>v1.8.0</span>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 2, WebkitAppRegion: 'no-drag' }}>
         <button onClick={onOpenSettings} title={t('settingsTitle', lang)} aria-label={t('settingsTitle', lang)} style={{
