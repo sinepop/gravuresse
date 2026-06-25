@@ -9,12 +9,16 @@ const STATUS_MAP = {
 }
 
 export default function TaskQueue({ tasks, onRetry, onRemove, lang }) {
-  if (tasks.length === 0) return null
   return (
     <div style={{ borderTop: '1px solid var(--border-subtle)', background: 'var(--bg-elevated)', maxHeight: 160, overflow: 'auto' }}>
       <div style={{ padding: '6px 12px', fontSize: 10, color: 'var(--text-muted)', borderBottom: '1px solid var(--border-subtle)' }}>
         {t('taskQueue', lang)} ({tasks.length})
       </div>
+      {tasks.length === 0 && (
+        <div style={{ padding: '10px 12px', fontSize: 11, color: 'var(--text-ghost)' }}>
+          {t('taskQueueEmpty', lang)}
+        </div>
+      )}
       {tasks.map(task => {
         const st = STATUS_MAP[task.status] || STATUS_MAP.pending
         return (

@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react'
 import MessageBubble from './MessageBubble'
+import ModelSelector from './ModelSelector'
 import { t } from '../i18n'
 import Ic from './icons'
 
@@ -31,7 +32,7 @@ const selectChipS = () => ({
   appearance: 'auto', transition: 'all 0.15s',
 })
 
-export default function ChatPanel({ chat, config, lang, conversations, activeConvId, onSwitchConv, onNewConv, onDeleteConv, onRenameConv, canvas }) {
+export default function ChatPanel({ chat, config, providerLists, onProviderChange, lang, generationMode = 'image', conversations, activeConvId, onSwitchConv, onNewConv, onDeleteConv, onRenameConv, canvas }) {
   const [input, setInput] = useState('')
   const [showConvList, setShowConvList] = useState(false)
   const [showRefPicker, setShowRefPicker] = useState(false)
@@ -46,6 +47,7 @@ export default function ChatPanel({ chat, config, lang, conversations, activeCon
   const textareaRef = useRef(null)
 
   const enableReference = config?.general?.enableReference === true
+  const modeHint = t(generationMode === 'video' ? 'videoModeHint' : 'imageModeHint', lang)
 
   // Sync settings when config changes
   useEffect(() => {
@@ -86,10 +88,10 @@ export default function ChatPanel({ chat, config, lang, conversations, activeCon
   const handleSend = useCallback(() => {
     if (!input.trim() || chat.loading) return
     const refs = references.length > 0 ? references : undefined
-    chat.send(input, refs, { ratio: genRatio, style: genStyle, resolution: genResolution })
+    chat.send(input, refs, { ratio: genRatio, style: genStyle, resolution: genResolution, generationMode })
     setInput('')
     setReferences([])
-  }, [input, chat, references, genRatio, genStyle, genResolution])
+  }, [input, chat, references, genRatio, genStyle, genResolution, generationMode])
 
   const addReference = useCallback((asset) => {
     if (references.find(r => r.id === asset.id)) return
@@ -266,7 +268,7 @@ export default function ChatPanel({ chat, config, lang, conversations, activeCon
               fontFamily: 'var(--font-display)', fontSize: 20, fontStyle: 'italic',
               marginBottom: 8, color: 'var(--text-secondary)', letterSpacing: '0.5px'
             }}>{t('studioAi', lang)}</div>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{lang === 'en' ? 'Tell me what you want to create' : '告诉我你想创作什么'}</div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{modeHint}</div>
           </div>
         )}
         {chat.messages.map(msg => (
@@ -385,6 +387,14 @@ export default function ChatPanel({ chat, config, lang, conversations, activeCon
             {lang === 'en' ? 'Gen Settings' : '生成设置'}
           </button>
 
+          <ModelSelector
+            config={config}
+            providerLists={providerLists}
+            activeModule={generationMode}
+            onProviderChange={onProviderChange}
+            lang={lang}
+          />
+
           <div style={{ flex: 1 }} />
 
           {/* Quick ratio/style chips when settings open */}
@@ -437,7 +447,7 @@ export default function ChatPanel({ chat, config, lang, conversations, activeCon
           padding: '10px 12px',
         }}>
           <textarea ref={textareaRef} value={input} onChange={e => setInput(e.target.value)} onKeyDown={handleKeyDown}
-            placeholder={t('inputPlaceholder', lang)} rows={1}
+            placeholder={modeHint} rows={1}
             style={{
               flex: 1, background: 'transparent', border: 'none', outline: 'none',
               color: 'var(--text-primary)', fontSize: 13, resize: 'none', maxHeight: 120, lineHeight: 1.6

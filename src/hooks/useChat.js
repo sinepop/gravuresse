@@ -65,6 +65,13 @@ function hasProviderCredential(provider = {}) {
   return provider.customAuth?.type === 'session' ? Boolean(provider.sessionToken) : Boolean(provider.apiKey)
 }
 
+function taskAllowedInMode(task, generationMode) {
+  if (!generationMode || generationMode === 'chat') return true
+  if (generationMode === 'image') return task?.type === 'image'
+  if (generationMode === 'video') return task?.type === 'video'
+  return true
+}
+
 export default function useChat(config, canvas, onVideoTaskCreated, activeConversationId, isActiveConversation, conversationBridge, providerLists) {
   const [messages, setMessages] = useState([])
   const [loading, setLoading] = useState(false)
@@ -188,6 +195,16 @@ ${references.map((r, i) => `  [参考${i + 1}] ${r.type}: "${r.label}" | URL: ${
       const defaultNegPrompt = config?.providers?.image?.defaultNegPrompt?.trim() || ''
       const defaultDuration = parseDurationSeconds(config?.general?.defaultDuration, 5)
       const customSystemPrompt = provider?.customSystemPrompt?.trim() || ''
+      const generationMode = genSettings?.generationMode || 'image'
+      const modeRule = generationMode === 'video'
+        ? `\n## 当前功能区：视频
+- 只允许 intent=chat|generate_video|image_to_video。
+- 如果用户要求生成图片、画图、出图或修图，不要创建 image task；请用 reply 提醒用户切换到生图区。
+- tasks 中只能出现 type="video"。`
+        : `\n## 当前功能区：生图
+- 只允许 intent=chat|generate_image|modify_image。
+- 如果用户要求生成视频、动画或图生视频，不要创建 video task；请用 reply 提醒用户切换到视频区。
+- tasks 中只能出现 type="image"。`
       const styleHint = defaultStyle ? `\n用户当前选择的风格预设：${defaultStyle}。生成图片时，prompt 必须融入这个风格的视觉特征。` : ''
 
       const baseSystem = `你是 Gravuresse，专业 AI 创意设计工作流 Agent。你主要是一个对话助手，只在用户明确要求时才触发图片/视频生成。
@@ -195,6 +212,7 @@ ${references.map((r, i) => `  [参考${i + 1}] ${r.type}: "${r.label}" | URL: ${
 ## 当前画布
 ${canvas ? canvas.allAssets?.slice(0, 10).map(a => `  [${a.id}] "${a.label}" | ${a.type} | ${a.prompt?.slice(0, 80)}`).join('\n') || '（空）' : '（空）'}
 ${modifyHint}${refHint}${styleHint}
+${modeRule}
 
 ## 响应格式（只输出纯JSON，不要markdown代码块）
 {"understanding":"一句话理解用户意图","intent":"chat|generate_image|modify_image|generate_video|image_to_video","tasks":[{"id":"t1","type":"image|video","label":"中文短标签","prompt":"高质量英文prompt，80词以上，含主体/场景/镜头/构图/光线/色彩/材质/情绪/细节","negative_prompt":${JSON.stringify(defaultNegPrompt || 'low quality, blurry, deformed, watermark, text')},"source_image_id":null,"duration":${defaultDuration},"ratio":"${defaultRatio}"}],"reply":"中文友好回复"}
@@ -231,8 +249,9 @@ ${modifyHint}${refHint}${styleHint}
         if (jsonMatch) parsed = JSON.parse(jsonMatch[0])
       } catch {}
 
-      if (parsed?.tasks?.length > 0) {
-        const tasksData = parsed.tasks.map(task => ({
+      const allowedTasks = parsed?.tasks?.filter(task => taskAllowedInMode(task, generationMode)) || []
+      if (allowedTasks.length > 0) {
+        const tasksData = allowedTasks.map(task => ({
           status: 'pending',
           type: task.type,
           label: task.label,

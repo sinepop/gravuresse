@@ -21,7 +21,7 @@ npm run package    # build + electron-builder --win → release/
 ## 版本发布流程
 
 1. 更新 `package.json` version
-2. 更新 `src/components/ModelBar.jsx` 中版本号显示
+2. 如果界面中仍有显式版本号展示，更新对应组件（当前不再使用 `src/components/ModelBar.jsx`）
 3. 更新 `README.md` 下载链接版本号 + `CHANGES.md` 添加更新日志
 4. `npm run package` 打包
 5. `git commit` + `git push`
