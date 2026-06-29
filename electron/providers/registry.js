@@ -333,13 +333,15 @@ const REGISTRY = [
       purchase: 'https://console.volcengine.com/ark',
       console: 'https://console.volcengine.com/ark',
       apiKey: 'https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey',
-      codingPlan: 'https://www.volcengine.com/docs/82379/1928261?lang=zh',
-      openCode: 'https://www.volcengine.com/docs/82379/2188958?lang=zh',
       jimeng: 'https://www.volcengine.com/product/jimeng'
     },
-    billing: { mode: 'credits', note: 'ModelArk media models use official billing; Coding Plan/OpenCode subscriptions are linked separately.' },
+    billing: {
+      mode: 'credits',
+      note: 'ModelArk media models use official API billing.',
+      noteZh: '火山方舟 API 按官方接口计费。'
+    },
     capabilities: {
-      chat: { text: true, openaiCompatible: true, codingPlan: true, integrationStatus: 'handler' },
+      chat: { text: true, openaiCompatible: true, integrationStatus: 'handler' },
       image: { textToImage: true, imageEdit: true, modelFamily: 'Seedream', integrationStatus: 'handler' },
       video: { textToVideo: true, imageToVideo: true, async: true, modelFamily: 'Seedance', integrationStatus: 'handler' }
     },
@@ -360,11 +362,17 @@ const REGISTRY = [
       image: { ...OPENAI_COMPATIBLE, presets: ['ark-compatible'] },
       video: { ...OPENAI_COMPATIBLE, presets: ['ark-compatible-task'], polling: true }
     },
-    meta: { region: 'china', description: 'Doubao chat, Seedream image, Seedance video, and Coding Plan/OpenCode setup through Volcengine ModelArk.' }
+    meta: {
+      region: 'china',
+      nameZh: '火山方舟',
+      nameEn: 'Volcengine ModelArk',
+      description: 'Doubao chat, Seedream image, and Seedance video through Volcengine ModelArk.',
+      descriptionZh: '火山方舟 API，支持豆包对话、Seedream 生图和 Seedance 视频。'
+    }
   },
   {
     id: 'volcengine-coding-plan',
-    name: 'Volcengine Coding Plan / OpenCode',
+    name: 'Volcengine Coding Plan',
     platform: 'Volcengine',
     chat: {
       defaultModel: '',
@@ -380,15 +388,110 @@ const REGISTRY = [
       purchase: 'https://console.volcengine.com/ark',
       console: 'https://console.volcengine.com/ark',
       apiKey: 'https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey',
-      codingPlan: 'https://www.volcengine.com/docs/82379/1928261?lang=zh',
-      openCode: 'https://www.volcengine.com/docs/82379/2188958?lang=zh'
+      codingPlan: 'https://www.volcengine.com/docs/82379/1928261?lang=zh'
     },
-    billing: { mode: 'subscription', note: 'Reference entry for Volcengine Coding Plan subscriptions and OpenCode setup.' },
+    billing: {
+      mode: 'subscription',
+      note: 'Reference entry for Volcengine Coding Plan subscriptions.',
+      noteZh: '火山方舟编程套餐订阅资料入口。'
+    },
     capabilities: {
-      chat: { text: true, codingPlan: true, openCode: true, integrationStatus: 'metadata' }
+      chat: { text: true, codingPlan: true, integrationStatus: 'metadata' }
     },
     customizable: { chat: { auth: ['bearer'], baseUrl: true, model: true, timeout: true } },
-    meta: { region: 'china', description: 'Coding Plan/OpenCode setup links; this entry is informational and is not selectable as a chat handler.' }
+    meta: {
+      region: 'china',
+      nameZh: '火山方舟编程套餐',
+      nameEn: 'Volcengine Coding Plan',
+      description: 'Volcengine Coding Plan setup links; this entry is informational and is not selectable as a chat handler.',
+      descriptionZh: '火山方舟编程套餐订阅资料入口，不作为本应用直连对话接口。'
+    }
+  },
+  {
+    id: 'opencode-go',
+    name: 'OpenCode Go',
+    platform: 'OpenCode',
+    chat: {
+      defaultModel: '',
+      protocol: 'opencode_go',
+      integrationStatus: 'metadata'
+    },
+    authType: { type: 'bearer' },
+    defaults: { baseUrl: '' },
+    links: {
+      home: 'https://opencode.ai/',
+      docs: 'https://opencode.ai/docs/go/',
+      pricing: 'https://opencode.ai/docs/go/',
+      purchase: 'https://opencode.ai/docs/go/',
+      console: 'https://opencode.ai/',
+      apiKey: 'https://opencode.ai/docs/go/'
+    },
+    billing: {
+      mode: 'subscription',
+      note: 'OpenCode Go is a subscription entry. This build lists setup links only until a stable compatible chat handler is added.',
+      noteZh: 'OpenCode Go 订阅资料入口；当前版本仅提供链接，不作为直连对话接口。'
+    },
+    capabilities: {
+      chat: { text: true, webSubscription: true, integrationStatus: 'metadata' }
+    },
+    customizable: { chat: { auth: ['bearer'], baseUrl: true, model: true, timeout: true } },
+    meta: {
+      region: 'global',
+      nameZh: 'OpenCode Go',
+      nameEn: 'OpenCode Go',
+      description: 'OpenCode Go subscription setup links. Not selectable as a direct chat handler in this build.',
+      descriptionZh: 'OpenCode Go 订阅资料入口，不作为本应用直连对话接口。'
+    }
+  },
+  {
+    id: 'chatgpt-plans',
+    name: 'ChatGPT Plus / Pro',
+    platform: 'OpenAI',
+    chat: {
+      defaultModel: '',
+      protocol: 'chatgpt_web_plan',
+      integrationStatus: 'metadata'
+    },
+    authType: { type: 'none' },
+    defaults: { baseUrl: '' },
+    links: {
+      home: 'https://chatgpt.com/',
+      docs: 'https://help.openai.com/',
+      pricing: 'https://chatgpt.com/pricing/',
+      purchase: 'https://chatgpt.com/pricing/',
+      console: 'https://chatgpt.com/'
+    },
+    billing: { mode: 'subscription', note: 'ChatGPT Plus/Pro are web subscriptions, not OpenAI API keys. Gravuresse does not log in to web accounts or reuse browser cookies.' },
+    capabilities: {
+      chat: { text: true, webSubscription: true, integrationStatus: 'metadata' }
+    },
+    customizable: { chat: {} },
+    meta: { region: 'global', description: 'ChatGPT web subscription reference. Use OpenAI API for direct in-app calls.' }
+  },
+  {
+    id: 'claude-plans',
+    name: 'Claude Pro / Max',
+    platform: 'Anthropic',
+    chat: {
+      defaultModel: '',
+      protocol: 'claude_web_plan',
+      integrationStatus: 'metadata'
+    },
+    authType: { type: 'none' },
+    defaults: { baseUrl: '' },
+    links: {
+      home: 'https://claude.ai/',
+      docs: 'https://support.claude.com/',
+      pricing: 'https://www.anthropic.com/pricing',
+      purchase: 'https://claude.ai/upgrade',
+      console: 'https://claude.ai/'
+    },
+    billing: { mode: 'subscription', note: 'Claude Pro/Max are web subscriptions. Use Anthropic API keys for direct provider calls.' },
+    capabilities: {
+      chat: { text: true, webSubscription: true, integrationStatus: 'metadata' }
+    },
+    customizable: { chat: {} },
+    meta: { region: 'global', description: 'Claude web subscription reference. Not selectable as a direct API provider.' }
   },
   {
     id: 'alibaba',
@@ -987,13 +1090,13 @@ const REGISTRY = [
       defaultModel: 'fal-ai/flux-pro',
       protocol: 'fal_image_task',
       sizes: WIDE_IMAGE_RATIOS,
-      integrationStatus: 'relay'
+      integrationStatus: 'metadata'
     },
     video: {
       defaultModel: 'fal-ai/wan/v2.5/t2v',
       protocol: 'fal_video_task',
       polling: true,
-      integrationStatus: 'relay'
+      integrationStatus: 'metadata'
     },
     authType: { type: 'bearer' },
     defaults: { baseUrl: 'https://fal.run' },
@@ -1007,8 +1110,8 @@ const REGISTRY = [
     },
     billing: { mode: 'paygo', note: 'Aggregator/relay platform; image and video units depend on the selected model.' },
     capabilities: {
-      image: { textToImage: true, imageToImage: true, relay: true, modelCatalog: true, integrationStatus: 'relay' },
-      video: { textToVideo: true, imageToVideo: true, async: true, relay: true, modelCatalog: true, integrationStatus: 'relay' }
+      image: { textToImage: true, imageToImage: true, relay: true, modelCatalog: true, integrationStatus: 'metadata' },
+      video: { textToVideo: true, imageToVideo: true, async: true, relay: true, modelCatalog: true, integrationStatus: 'metadata' }
     },
     constraints: {
       image: imageConstraints({
@@ -1040,13 +1143,13 @@ const REGISTRY = [
       defaultModel: 'black-forest-labs/flux-schnell',
       protocol: 'replicate_prediction',
       sizes: WIDE_IMAGE_RATIOS,
-      integrationStatus: 'relay'
+      integrationStatus: 'metadata'
     },
     video: {
       defaultModel: 'wan-video/wan-2.2-t2v-fast',
       protocol: 'replicate_prediction',
       polling: true,
-      integrationStatus: 'relay'
+      integrationStatus: 'metadata'
     },
     authType: { type: 'bearer' },
     defaults: { baseUrl: 'https://api.replicate.com' },
@@ -1060,8 +1163,8 @@ const REGISTRY = [
     },
     billing: { mode: 'paygo', note: 'Aggregator/relay platform; official models can have stable APIs and predictable pricing.' },
     capabilities: {
-      image: { textToImage: true, imageToImage: true, relay: true, modelCatalog: true, integrationStatus: 'relay' },
-      video: { textToVideo: true, imageToVideo: true, async: true, relay: true, modelCatalog: true, integrationStatus: 'relay' }
+      image: { textToImage: true, imageToImage: true, relay: true, modelCatalog: true, integrationStatus: 'metadata' },
+      video: { textToVideo: true, imageToVideo: true, async: true, relay: true, modelCatalog: true, integrationStatus: 'metadata' }
     },
     constraints: {
       image: imageConstraints({

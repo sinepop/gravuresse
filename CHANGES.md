@@ -2,6 +2,28 @@
 
 ## 中文
 
+#### v1.9.0 (2026-06-29)
+
+**工作区与模型入口重构**
+- 默认进入生图工作区，独立对话入口移除，但保留共享对话面板与多对话历史
+- 模型选择入口移入对话框工具条，只显示设置中保存过的对话模型与当前媒体模型
+- 画布按当前工作区自动过滤图片/视频资产，移除重复的全部/图片/视频筛选
+- OpenNana 提示词库入口移到画布网格/自由切换旁
+
+**API 设置与 Provider 梳理**
+- 设置页 API 配置改为对话/图像/视频三栏目，视频栏目跟随实验视频开关显示
+- Provider 列表精简为主流可用项，并按按量付费与订阅/套餐分区
+- 火山方舟 Coding Plan 与 OpenCode Go 完全拆分为独立资料入口
+- ChatGPT Plus/Pro、Claude Pro/Max 等网页订阅仅作为资料入口，不误写入调用配置
+- 修复旧 provider id 迁移导致 API Key 被清空的问题
+
+**稳定性与体验修复**
+- 新用户默认浅色主题，并修复深色主题下 select/option 与弱文本可读性
+- 修复首次启动或无 active conversation 时第一条消息无法发送的问题
+- 强化多对话历史与图片资产留存，避免恢复会话第一条消息使用错误上下文
+- 视频生成默认隐藏为实验功能，降低高成本误用风险
+- 清理过时的统一 API 页面代码与重复 Provider 选择入口
+
 #### v1.8.0 (2026-06-25)
 
 **Provider Profiles — 多配置切换**
@@ -262,6 +284,28 @@
 ---
 
 ## English
+
+#### v1.9.0 (2026-06-29)
+
+**Workspace and Model Entry Refactor**
+- Defaults to the Image workspace; the standalone Chat module is removed while the shared chat panel and conversation history remain
+- Model selection moved into the chat toolbar and only shows saved chat/current media model candidates
+- Canvas now follows the active workspace and filters image/video assets automatically
+- OpenNana prompt gallery entry moved next to the Grid/Free canvas controls
+
+**API Settings and Provider Cleanup**
+- API settings are split into Chat/Image/Video columns; Video settings follow the experimental video toggle
+- Provider lists are trimmed to mainstream entries and separated into usage billing vs subscription/plan sections
+- Volcengine Coding Plan and OpenCode Go are fully separated as independent reference entries
+- ChatGPT Plus/Pro and Claude Pro/Max are listed as web subscription references only, not callable API providers
+- Fixed legacy provider id migration so existing API keys are preserved
+
+**Stability and UX Fixes**
+- New users default to the light theme; dark theme select/option and weak text readability improved
+- Fixed first-message failures when no active conversation exists
+- Strengthened multi-conversation history and image asset retention, including restored-conversation first-send context
+- Video generation is hidden by default as an experimental feature to reduce high-cost mistakes
+- Removed obsolete unified API page code and duplicate Provider selection controls
 
 #### v1.8.0 (2026-06-25)
 

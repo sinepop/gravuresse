@@ -11,7 +11,7 @@ const MENU_ITEMS = [
   { id: 'delete', key: 'delete', icon: 'trash', danger: true }
 ]
 
-export default function ContextMenu({ x, y, asset, onClose, onAction, lang }) {
+export default function ContextMenu({ x, y, asset, onClose, onAction, lang, videoEnabled = false }) {
   const ref = useRef(null)
   const [position, setPosition] = useState({ left: x, top: y })
 
@@ -39,7 +39,10 @@ export default function ContextMenu({ x, y, asset, onClose, onAction, lang }) {
     setPosition({ left, top })
   }, [x, y, asset])
 
-  const items = MENU_ITEMS.filter(item => !item.type || item.type === asset?.type)
+  const items = MENU_ITEMS.filter(item => {
+    if (item.id === 'toVideo' && !videoEnabled) return false
+    return !item.type || item.type === asset?.type
+  })
   return (
     <div ref={ref} style={{ position: 'fixed', left: position.left, top: position.top, zIndex: 2000, background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)', padding: 4, minWidth: 160, boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }}>
       {items.map(item => (
