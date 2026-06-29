@@ -2,22 +2,24 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import AssetCard from './AssetCard'
 import AssetDetail from './AssetDetail'
 import Ic from './icons'
+import { t } from '../i18n'
 
 const TOOL_GROUPS = [
   { tools: [
-    { id: 'select', label: '选择', key: 'V' },
-    { id: 'move', label: '抓手', key: 'H' },
+    { id: 'select', labelKey: 'canvasToolSelect', key: 'V' },
+    { id: 'move', labelKey: 'canvasToolMove', key: 'H' },
   ]},
   { tools: [
-    { id: 'pencil', label: '铅笔', key: 'P' },
-    { id: 'rect', label: '矩形', key: 'R' },
-    { id: 'circle', label: '圆形', key: 'O' },
-    { id: 'line', label: '直线', key: 'L' },
-    { id: 'text', label: '文字', key: 'T' },
+    { id: 'pencil', labelKey: 'canvasToolPencil', key: 'P' },
+    { id: 'rect', labelKey: 'canvasToolRect', key: 'R' },
+    { id: 'circle', labelKey: 'canvasToolCircle', key: 'O' },
+    { id: 'line', labelKey: 'canvasToolLine', key: 'L' },
+    { id: 'text', labelKey: 'canvasToolText', key: 'T' },
   ]},
 ]
 
 const COLORS = ['#E8A849', '#E8706A', '#5ABF8A', '#6B9FF0', '#B07AFF', '#E8E8EC', '#1A1A1E']
+const OPENNANA_PROMPT_GALLERY_URL = 'https://opennana.com/awesome-prompt-gallery'
 
 const filterBtnStyle = (active) => ({
   background: active ? 'var(--accent-soft)' : 'transparent',
@@ -28,10 +30,15 @@ const filterBtnStyle = (active) => ({
   transition: 'all 0.15s'
 })
 
+function openExternal(url) {
+  if (!url) return
+  window.electronAPI?.openExternal?.(url).catch?.(() => {})
+}
+
 const MIN_SCALE = 0.1
 const MAX_SCALE = 5
 
-function InfiniteCanvas({ children, assets, activeTool, scale, setScale, offset, setOffset }) {
+function InfiniteCanvas({ children, assets, activeTool, scale, setScale, offset, setOffset, lang }) {
   const [isPanning, setIsPanning] = useState(false)
   const containerRef = useRef(null)
   const scaleRef = useRef(1)
@@ -184,21 +191,21 @@ function InfiniteCanvas({ children, assets, activeTool, scale, setScale, offset,
         display: 'flex', alignItems: 'center', gap: 1,
         borderRadius: '99px', padding: '6px 12px', userSelect: 'none'
       }}>
-        <button className="canvas-zoom-button" onClick={zoomOut} style={zoomCtrlBtn} title="缩小">
+        <button className="canvas-zoom-button" onClick={zoomOut} style={zoomCtrlBtn} title={t('zoomOut', lang)}>
           <Ic n="minus" size={14} sw={2} />
         </button>
         <span style={{
           fontSize: 10, color: 'var(--text-secondary)', minWidth: 40, textAlign: 'center',
           fontFamily: 'var(--font-mono)', cursor: 'pointer', padding: '2px 4px', borderRadius: 3
-        }} onClick={resetZoom} title="重置为 100%">
+        }} onClick={resetZoom} title={t('resetZoom', lang)}>
           {Math.round(scale * 100)}%
         </span>
-        <button className="canvas-zoom-button" onClick={zoomIn} style={zoomCtrlBtn} title="放大">
+        <button className="canvas-zoom-button" onClick={zoomIn} style={zoomCtrlBtn} title={t('zoomIn', lang)}>
           <Ic n="plus" size={14} sw={2} />
         </button>
         <div style={{ width: 1, height: 16, background: 'var(--border-subtle)', margin: '0 2px' }} />
-        <button className="canvas-zoom-button" onClick={fitToView} style={{ ...zoomCtrlBtn, width: 'auto', padding: '2px 6px', fontSize: 10 }} title="适应视图">
-          适应
+        <button className="canvas-zoom-button" onClick={fitToView} style={{ ...zoomCtrlBtn, width: 'auto', padding: '2px 6px', fontSize: 10 }} title={t('fitToView', lang)}>
+          {t('fit', lang)}
         </button>
       </div>
 
@@ -210,7 +217,7 @@ function InfiniteCanvas({ children, assets, activeTool, scale, setScale, offset,
           opacity: 0.8
         }}>
           <Ic n="move4" size={12} sw={1.5} />
-          Wheel zoom / H or Space pan
+          {t('canvasShortcutHint', lang)}
         </div>
       )}
     </div>
@@ -224,7 +231,7 @@ const zoomCtrlBtn = {
   transition: 'background 0.2s ease, color 0.2s ease'
 }
 
-function DrawingOverlay({ tool, color, width: strokeWidth, scale, canvasRef }) {
+function DrawingOverlay({ tool, color, width: strokeWidth, scale, canvasRef, lang }) {
   const drawing = useRef(false)
   const start = useRef({ x: 0, y: 0 })
   const snapshot = useRef(null)
@@ -284,7 +291,7 @@ function DrawingOverlay({ tool, color, width: strokeWidth, scale, canvasRef }) {
     }
     if (tool === 'text') {
       drawing.current = false
-      const text = prompt('输入文字：')
+      const text = prompt(t('canvasTextPrompt', lang))
       if (text) {
         ctx.font = `${strokeWidth * 4 + 12}px sans-serif`
         ctx.fillStyle = color
@@ -344,7 +351,7 @@ function ToolIcon({ id, size = 16 }) {
   return <Ic n={id === 'line' ? 'minus' : id} size={size} sw={1.6} />
 }
 
-function EditBar({ activeTool, setActiveTool, drawColor, setDrawColor, drawWidth, setDrawWidth, onClearDrawings }) {
+function EditBar({ activeTool, setActiveTool, drawColor, setDrawColor, drawWidth, setDrawWidth, onClearDrawings, lang }) {
   const [hoveredTool, setHoveredTool] = useState(null)
   const isDrawingTool = !['select', 'move'].includes(activeTool)
   const toolByKey = useRef(new Map(TOOL_GROUPS.flatMap(group => group.tools.map(tool => [tool.key.toLowerCase(), tool.id]))))
@@ -375,13 +382,14 @@ function EditBar({ activeTool, setActiveTool, drawColor, setDrawColor, drawWidth
           {group.tools.map(tool => {
             const isActive = activeTool === tool.id
             const isHovered = hoveredTool === tool.id
+            const label = t(tool.labelKey, lang)
             return (
               <div key={tool.id} style={{ position: 'relative' }}>
                 <button
                   onClick={() => setActiveTool(tool.id)}
                   onMouseEnter={() => setHoveredTool(tool.id)}
                   onMouseLeave={() => setHoveredTool(null)}
-                  title={`${tool.label} (${tool.key})`}
+                  title={`${label} (${tool.key})`}
                   style={{
                     width: 30, height: 30, display: 'flex', alignItems: 'center', justifyContent: 'center',
                     background: isActive ? 'var(--accent-soft)' : isHovered ? 'var(--bg-hover)' : 'transparent',
@@ -401,7 +409,7 @@ function EditBar({ activeTool, setActiveTool, drawColor, setDrawColor, drawWidth
                     boxShadow: 'var(--shadow-md)', pointerEvents: 'none',
                     display: 'flex', alignItems: 'center', gap: 6, zIndex: 30
                   }}>
-                    {tool.label}
+                    {label}
                     <span style={{
                       fontSize: 9, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)',
                       background: 'var(--bg-surface)', padding: '1px 4px', borderRadius: 3
@@ -441,7 +449,7 @@ function EditBar({ activeTool, setActiveTool, drawColor, setDrawColor, drawWidth
             </button>
           ))}
           <div style={{ width: 1, height: 20, background: 'var(--border-subtle)', margin: '0 3px' }} />
-          <button onClick={onClearDrawings} title="清空涂鸦" style={{
+          <button onClick={onClearDrawings} title={t('clearDrawings', lang)} style={{
             width: 30, height: 30, display: 'flex', alignItems: 'center', justifyContent: 'center',
             background: 'transparent', border: 'none', borderRadius: 'var(--radius-sm)',
             color: 'var(--text-secondary)', cursor: 'pointer', transition: 'all 0.12s'
@@ -595,14 +603,18 @@ export default function CanvasPanel({ canvas, lang, onContextMenu, generationMod
           background: 'transparent', zIndex: 10
         }}>
           <button onClick={() => setViewMode('grid')} style={filterBtnStyle(viewMode === 'grid')}>
-            <Ic n="grid" size={12} /> {lang === 'en' ? 'Grid' : '网格'}
+            <Ic n="grid" size={12} /> {t('gridView', lang)}
           </button>
           <button onClick={() => setViewMode('free')} style={filterBtnStyle(viewMode === 'free')}>
             <Ic n="layoutGrid" size={12} />
-            {lang === 'en' ? 'Free' : '自由'}
+            {t('freeView', lang)}
+          </button>
+          <button title={t('openNanaGallery', lang)} onClick={() => openExternal(OPENNANA_PROMPT_GALLERY_URL)} style={{ ...filterBtnStyle(false), display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+            <Ic n="sparkle" size={12} />
+            {t('openNanaGallery', lang)}
           </button>
           <div style={{ flex: 1 }} />
-          <span style={{ fontSize: 10, color: 'var(--text-ghost)', fontFamily: 'var(--font-mono)' }}>{assets.length} {lang === 'en' ? 'assets' : '个资产'}</span>
+          <span style={{ fontSize: 10, color: 'var(--text-ghost)', fontFamily: 'var(--font-mono)' }}>{assets.length} {t('assetUnit', lang)}</span>
         </div>
         <div className={assets.length === 0 ? 'canvas-surface' : undefined} style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column' }}>
           {assets.length === 0 ? (
@@ -612,15 +624,15 @@ export default function CanvasPanel({ canvas, lang, onContextMenu, generationMod
               </div>
               <div>
                 <div className="canvas-empty-title">
-                  {lang === 'en' ? 'Canvas is empty' : '画布为空'}
+                  {t('canvasEmpty', lang)}
                 </div>
                 <div className="canvas-empty-description">
                   {generationMode === 'video'
-                    ? (lang === 'en' ? 'Describe the video you want to create on the left' : '在左侧描述你想创作的视频')
-                    : (lang === 'en' ? 'Describe the image you want to create on the left' : '在左侧描述你想创作的图片')}
+                    ? t('describeVideoLeft', lang)
+                    : t('describeImageLeft', lang)}
                 </div>
                 <div className="canvas-empty-description" style={{ display: 'none' }}>
-                  {lang === 'en' ? 'Describe what you want to create in the chat' : '在对话中描述你想创作的内容'}
+                  {t('describeCreateInChat', lang)}
                 </div>
               </div>
             </div>
@@ -651,6 +663,7 @@ export default function CanvasPanel({ canvas, lang, onContextMenu, generationMod
                 setScale={setScale}
                 offset={offset}
                 setOffset={setOffset}
+                lang={lang}
               >
                 <div style={{ position: 'relative', minWidth: 2000, minHeight: 1500 }}>
                   {assets.map((a, i) => {
@@ -683,12 +696,12 @@ export default function CanvasPanel({ canvas, lang, onContextMenu, generationMod
                       </div>
                     )
                   })}
-                  <DrawingOverlay tool={activeTool} color={drawColor} width={drawWidth} scale={scale} canvasRef={drawingCanvasRef} />
+                  <DrawingOverlay tool={activeTool} color={drawColor} width={drawWidth} scale={scale} canvasRef={drawingCanvasRef} lang={lang} />
                 </div>
               </InfiniteCanvas>
             </>
           )}
-          {viewMode === 'free' && <EditBar activeTool={activeTool} setActiveTool={setActiveTool} drawColor={drawColor} setDrawColor={setDrawColor} drawWidth={drawWidth} setDrawWidth={setDrawWidth} onClearDrawings={handleClearDrawings} />}
+          {viewMode === 'free' && <EditBar activeTool={activeTool} setActiveTool={setActiveTool} drawColor={drawColor} setDrawColor={setDrawColor} drawWidth={drawWidth} setDrawWidth={setDrawWidth} onClearDrawings={handleClearDrawings} lang={lang} />}
         </div>
       </div>
       {visibleSelectedAsset && (

@@ -144,11 +144,22 @@ export default function useChat(config, canvas, onVideoTaskCreated, activeConver
   }, [canvas, canWriteToCurrentConversation, conversationBridge])
 
   const send = useCallback(async (text, references, genSettings) => {
-    if (!text.trim() || loadingRef.current) return
-    const originConversationId = activeConversationIdRef.current
-    if (!originConversationId) return
+    if (!text.trim() || loadingRef.current) return false
+    const originConversationId = genSettings?.conversationId || activeConversationIdRef.current
+    if (!originConversationId) return false
+    const snapshot = genSettings?.conversationSnapshot
+    const sourceMessages = Array.isArray(snapshot?.messages) ? snapshot.messages : messagesRef.current
+    const sourceAssets = Array.isArray(snapshot?.assets) ? snapshot.assets : canvas?.allAssets || []
     const userMsg = { role: 'user', content: text, id: nextId() }
-    setMessages(prev => [...prev, userMsg])
+    const writesCurrent = canWriteToCurrentConversation(originConversationId)
+    if (snapshot && !writesCurrent) {
+      setMessages([...sourceMessages, userMsg])
+    } else {
+      setMessages(prev => [...prev, userMsg])
+    }
+    if (!writesCurrent) {
+      appendMessage(originConversationId, userMsg)
+    }
     setLoading(true)
     loadingRef.current = true
 
@@ -158,14 +169,14 @@ export default function useChat(config, canvas, onVideoTaskCreated, activeConver
       appendMessage(originConversationId, { role: 'assistant', content: t('configApiFirst', lang), id: nextId() })
       setLoading(false)
       loadingRef.current = false
-      return
+      return true
     }
 
     try {
-      const history = [...messagesRef.current, userMsg].map(m => ({ role: m.role, content: m.content }))
+      const history = [...sourceMessages, userMsg].map(m => ({ role: m.role, content: m.content }))
 
       const storedImageContext = lastImageContext.current
-      const latestImageAsset = canvas?.allAssets?.find(asset => asset.type === 'image' && asset.url)
+      const latestImageAsset = sourceAssets.find(asset => asset.type === 'image' && asset.url)
       const modifyContext = storedImageContext?.conversationId === originConversationId
         ? storedImageContext
         : latestImageAsset
@@ -283,7 +294,8 @@ ${modeRule}
       loadingRef.current = false
       if (mountedRef.current) setLoading(false)
     }
-  }, [config, canvas, appendMessage, thinking])
+    return true
+  }, [config, canvas, appendMessage, canWriteToCurrentConversation, thinking])
 
   const doGenerate = useCallback(async (msgId, task, lang, placeholderId, taskIndex, originConversationId) => {
     const startTime = Date.now()
@@ -334,6 +346,7 @@ ${modeRule}
         try { await window.electronAPI.saveAssetToDisk?.({ url, label: task.label, type: 'image' }) } catch {}
       }
     } else if (task.type === 'video') {
+      if (config?.general?.enableVideo !== true) throw new Error(t('videoDisabled', lang))
       const vidProvider = config?.providers?.video
       if (!vidProvider?.id || !hasProviderCredential(vidProvider)) throw new Error(t('configVideoApi', lang))
       const providerDef = findProviderDef('video', providerLists, vidProvider.id) || VID_PROVIDERS.find(p => p.id === vidProvider.id)
@@ -385,6 +398,20 @@ ${modeRule}
     if (!originConversationId) return
     const lang = config?.general?.language || 'zh'
     const idx = taskIndex ?? 0
+    if (task.type === 'video') {
+      if (config?.general?.enableVideo !== true) {
+        patchTask(originConversationId, msgId, idx, { status: 'error', error: t('videoDisabled', lang) })
+        return
+      }
+      const duration = `${parseDurationSeconds(task.duration, parseDurationSeconds(config?.general?.defaultDuration, 5))}s`
+      const model = config?.providers?.video?.model || t('noConfig', lang)
+      const ratio = task.ratio || '1:1'
+      const message = t('videoCostConfirm', lang)
+        .replace('{model}', model)
+        .replace('{duration}', duration)
+        .replace('{ratio}', ratio)
+      if (!window.confirm(message)) return
+    }
     const startTime = Date.now()
     setMessages(prev => prev.map(m => {
       if (m.id !== msgId) return m

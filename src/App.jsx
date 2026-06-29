@@ -46,6 +46,7 @@ export default function App() {
   // Conversation management
   const [conversations, setConversations] = useState([])
   const [activeConvId, setActiveConvId] = useState(null)
+  const [conversationBusy, setConversationBusy] = useState(false)
   const skipSave = useRef(false)
   const switchLoading = useRef(false)
   const prevConvIdRef = useRef(null)
@@ -54,6 +55,8 @@ export default function App() {
   const conversationsRef = useRef([])
   const deletedConvIds = useRef(new Set())
   const saveEpoch = useRef(0)
+  const ensuringConversationRef = useRef(null)
+  const didLoadConversationsRef = useRef(false)
 
   useEffect(() => {
     activeConvIdRef.current = activeConvId
@@ -131,26 +134,6 @@ export default function App() {
     replaceCanvasAssets(assets)
   }, [setChatMessages, replaceCanvasAssets])
 
-  // Load conversations on startup
-  useEffect(() => {
-    let cancelled = false
-    loadConversationsOnce().then(data => {
-      if (cancelled) return
-      deletedConvIds.current = new Set(data?.deletedIds || [])
-      if (data?.conversations?.length > 0) {
-        setConversations(data.conversations)
-        conversationsRef.current = data.conversations
-        const activeId = data.activeId || data.conversations[0].id
-        setActiveConvId(activeId)
-        const conv = data.conversations.find(c => c.id === activeId)
-        if (conv) applyConversation(conv, activeId)
-      }
-    }).catch(() => {})
-    return () => {
-      cancelled = true
-    }
-  }, [applyConversation])
-
   // Reload messages + canvas when active conversation changes
   useEffect(() => {
     if (!activeConvId) return
@@ -220,6 +203,111 @@ export default function App() {
     await window.electronAPI?.saveConversation(activeConvId, { messages, assets, title })
   }, [activeConvId, chat.messages, canvas.allAssets])
 
+  const createConversation = useCallback(async ({ flushCurrent = true, applyToView = true } = {}) => {
+    const id = `conv_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
+    const conv = { id, title: '', messages: [], assets: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
+    saveEpoch.current++
+    if (flushCurrent) await flushActiveConversation()
+    await window.electronAPI?.saveConversation(id, { messages: [], assets: [], title: '' })
+    await window.electronAPI?.setActiveConversation(id)
+    const next = [conv, ...conversationsRef.current.filter(c => c.id !== id)]
+    conversationsRef.current = next
+    setConversations(next)
+    setActiveConvId(id)
+    if (applyToView) {
+      applyConversation(conv, id)
+    } else {
+      loadingSnapshot.current = null
+      skipSave.current = false
+      switchLoading.current = false
+      prevConvIdRef.current = id
+      replaceCanvasAssets(conv.assets)
+    }
+    return { id, conversation: conv }
+  }, [applyConversation, flushActiveConversation, replaceCanvasAssets])
+
+  const ensureActiveConversation = useCallback(async ({ forSend = false } = {}) => {
+    const currentId = activeConvIdRef.current
+    if (currentId && conversationsRef.current.some(c => c.id === currentId) && !deletedConvIds.current.has(currentId)) {
+      return {
+        id: currentId,
+        conversation: {
+          id: currentId,
+          messages: chat.messages,
+          assets: canvas.allAssets,
+          title: getConversationTitle(chat.messages)
+        }
+      }
+    }
+    if (ensuringConversationRef.current) return ensuringConversationRef.current
+    ensuringConversationRef.current = (async () => {
+      const existing = conversationsRef.current.find(c => !deletedConvIds.current.has(c.id))
+      if (existing) {
+        await window.electronAPI?.setActiveConversation(existing.id)
+        setActiveConvId(existing.id)
+        if (!forSend) {
+          applyConversation(existing, existing.id)
+        } else {
+          prevConvIdRef.current = existing.id
+          replaceCanvasAssets(existing.assets || [])
+        }
+        return { id: existing.id, conversation: existing }
+      }
+      const data = await loadConversationsOnce().catch(() => null)
+      const loaded = (data?.conversations || []).filter(c => !(data?.deletedIds || []).includes(c.id))
+      if (loaded.length > 0) {
+        deletedConvIds.current = new Set(data?.deletedIds || [])
+        conversationsRef.current = loaded
+        setConversations(loaded)
+        const activeId = data.activeId && loaded.some(c => c.id === data.activeId) ? data.activeId : loaded[0].id
+        await window.electronAPI?.setActiveConversation(activeId)
+        setActiveConvId(activeId)
+        const conv = loaded.find(c => c.id === activeId)
+        if (conv && !forSend) {
+          applyConversation(conv, activeId)
+        } else if (forSend) {
+          prevConvIdRef.current = activeId
+          replaceCanvasAssets(conv?.assets || [])
+        }
+        return { id: activeId, conversation: conv }
+      }
+      return createConversation({ flushCurrent: false, applyToView: !forSend })
+    })().finally(() => {
+      ensuringConversationRef.current = null
+    })
+    return ensuringConversationRef.current
+  }, [applyConversation, createConversation, chat.messages, canvas.allAssets])
+
+  // Load conversations on startup. A fresh install still gets an active empty
+  // conversation so the first send never disappears into a missing active id.
+  useEffect(() => {
+    if (didLoadConversationsRef.current) return
+    let cancelled = false
+    loadConversationsOnce().then(async data => {
+      if (cancelled) return
+      didLoadConversationsRef.current = true
+      deletedConvIds.current = new Set(data?.deletedIds || [])
+      if (data?.conversations?.length > 0) {
+        setConversations(data.conversations)
+        conversationsRef.current = data.conversations
+        const activeId = data.activeId || data.conversations[0].id
+        setActiveConvId(activeId)
+        const conv = data.conversations.find(c => c.id === activeId)
+        if (conv) applyConversation(conv, activeId)
+        return
+      }
+      await ensureActiveConversation()
+    }).catch(() => {
+      if (!cancelled) {
+        didLoadConversationsRef.current = true
+        ensureActiveConversation()
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [applyConversation, ensureActiveConversation])
+
   const doSwitchConv = useCallback(async (id) => {
     if (id === activeConvId) return
     try {
@@ -233,19 +321,12 @@ export default function App() {
   }, [activeConvId, flushActiveConversation])
 
   const doNewConv = useCallback(async () => {
-    const id = `conv_${Date.now()}`
-    const conv = { id, title: '', messages: [], assets: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
     try {
-      saveEpoch.current++
-      await flushActiveConversation()
-      await window.electronAPI?.saveConversation(id, { messages: [], assets: [], title: '' })
-      await window.electronAPI?.setActiveConversation(id)
-      setConversations(prev => [conv, ...prev])
-      setActiveConvId(id)
+      await createConversation({ flushCurrent: true })
     } catch (e) {
       console.error('Failed to create conversation:', e)
     }
-  }, [flushActiveConversation])
+  }, [createConversation])
 
   const handleNewConv = useCallback(() => doNewConv(), [doNewConv])
   const handleSwitchConv = useCallback((id) => doSwitchConv(id), [doSwitchConv])
@@ -253,6 +334,7 @@ export default function App() {
   const handleDeleteConv = useCallback(async (id) => {
     const deletingActive = id === activeConvId
     const remaining = conversations.filter(c => c.id !== id)
+    setConversationBusy(true)
     try {
       saveEpoch.current++
       if (deletingActive) await flushActiveConversation()
@@ -278,6 +360,8 @@ export default function App() {
     } catch (e) {
       deletedConvIds.current.delete(id)
       console.error('Failed to delete conversation:', e)
+    } finally {
+      setConversationBusy(false)
     }
   }, [activeConvId, conversations, flushActiveConversation])
 
@@ -296,7 +380,7 @@ export default function App() {
   useEffect(() => {
     if (!config?.general) return
     const { theme, fontSize } = config.general
-    document.documentElement.dataset.theme = theme || 'dark'
+    document.documentElement.dataset.theme = theme || 'light'
     document.documentElement.style.setProperty('--font-size-base', FONT_SIZES[fontSize] || FONT_SIZES.medium)
   }, [config?.general?.theme, config?.general?.fontSize])
 
@@ -327,12 +411,15 @@ export default function App() {
     }
     if (action === 'delete') canvas.removeAsset(asset.id)
     if (action === 'regenerate') {
-      chat.send(`重新生成：${asset.prompt}`)
+      const ensured = await ensureActiveConversation({ forSend: true })
+      chat.send(`重新生成：${asset.prompt}`, undefined, { conversationId: ensured?.id, conversationSnapshot: ensured?.conversation, generationMode: activeModule })
     }
     if (action === 'toVideo') {
-      chat.send(`把资产 ${asset.id} 做成视频：${asset.prompt}`, [asset])
+      if (config?.general?.enableVideo !== true) return
+      const ensured = await ensureActiveConversation({ forSend: true })
+      chat.send(`把资产 ${asset.id} 做成视频：${asset.prompt}`, [asset], { conversationId: ensured?.id, conversationSnapshot: ensured?.conversation, generationMode: 'video' })
     }
-  }, [canvas, chat])
+  }, [canvas, chat, config, ensureActiveConversation, activeModule])
 
   const openSettings = useCallback((page = 'appearance') => {
     setSettingsPage(page)
@@ -340,13 +427,22 @@ export default function App() {
   }, [])
 
   const lang = config?.general?.language || 'zh'
+  const videoEnabled = config?.general?.enableVideo === true
+  const visibleModules = useMemo(
+    () => MODULES.filter(module => module.id !== 'video' || videoEnabled),
+    [videoEnabled]
+  )
+
+  useEffect(() => {
+    if (!videoEnabled && activeModule === 'video') setActiveModule('image')
+  }, [videoEnabled, activeModule])
 
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
       <TitleBar onOpenSettings={() => openSettings('appearance')} lang={lang} />
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}>
         <nav className="module-sidebar" aria-label={lang === 'en' ? 'Workspace modules' : '工作区模块'}>
-          {MODULES.map(module => {
+          {visibleModules.map(module => {
             const active = activeModule === module.id
             const label = module.labels[lang] || module.labels.zh
             return (
@@ -370,8 +466,8 @@ export default function App() {
                 <ChatPanel chat={chat} config={config} providerLists={providerLists} onProviderChange={updateProvider} lang={lang} generationMode={activeModule}
                   conversations={conversations} activeConvId={activeConvId}
                   onSwitchConv={handleSwitchConv} onNewConv={handleNewConv} onDeleteConv={handleDeleteConv}
-                  onRenameConv={handleRenameConv} canvas={canvas} />
-              {activeModule === 'video' && (
+                  onRenameConv={handleRenameConv} onEnsureConversation={ensureActiveConversation} conversationBusy={conversationBusy} canvas={canvas} />
+              {activeModule === 'video' && videoEnabled && (
                 <TaskQueue tasks={taskQueue.tasks} onRetry={taskQueue.retry} onRemove={taskQueue.remove} lang={lang} />
               )}
             </div>
@@ -383,7 +479,7 @@ export default function App() {
         </main>
       </div>
       {settingsOpen && <Settings config={config} providerLists={providerLists} onSave={save} onClose={() => setSettingsOpen(false)} initialPage={settingsPage} />}
-      {ctxMenu && <ContextMenu x={ctxMenu.x} y={ctxMenu.y} asset={ctxMenu.asset} onClose={() => setCtxMenu(null)} onAction={handleAssetAction} lang={config?.general?.language} />}
+      {ctxMenu && <ContextMenu x={ctxMenu.x} y={ctxMenu.y} asset={ctxMenu.asset} onClose={() => setCtxMenu(null)} onAction={handleAssetAction} lang={config?.general?.language} videoEnabled={videoEnabled} />}
     </div>
   )
 }

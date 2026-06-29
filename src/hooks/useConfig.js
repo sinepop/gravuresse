@@ -128,6 +128,10 @@ function migrateConfig(cfg, providerMap = PROVIDER_MAP) {
   if (!cfg?.providers) return cfg
   const next = {
     ...cfg,
+    general: {
+      ...cfg.general,
+      enableVideo: cfg.general?.enableVideo === true
+    },
     providers: { ...cfg.providers },
     providerProfiles: {
       chat: cfg.providerProfiles?.chat || [],
@@ -138,13 +142,16 @@ function migrateConfig(cfg, providerMap = PROVIDER_MAP) {
   for (const [track, providers] of Object.entries(providerMap)) {
     const saved = next.providers[track]
     if (!saved?.id) continue
-    const matchedProvider = providers.find(p => p.id === saved.id)
+    const savedCanonicalId = canonicalProviderId(track, saved.id)
+    const matchedProvider = providers.find(p => canonicalProviderId(track, p.id) === savedCanonicalId)
     if (!matchedProvider || !isExecutableProvider(matchedProvider)) {
       const fallback = providers.find(isExecutableProvider) || providers[0]
       if (!fallback) continue
       next.providers[track] = { id: fallback.id, apiKey: '', baseUrl: fallback.defaultUrl, model: fallback.defaultModel }
     } else if (DEPRECATED_MODELS.includes(saved.model)) {
-      next.providers[track] = { ...saved, model: matchedProvider.defaultModel }
+      next.providers[track] = { ...saved, id: matchedProvider.id, model: matchedProvider.defaultModel }
+    } else if (saved.id !== matchedProvider.id) {
+      next.providers[track] = { ...saved, id: matchedProvider.id }
     }
   }
   return next

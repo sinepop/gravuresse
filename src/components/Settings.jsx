@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+﻿import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { CHAT_PROVIDERS } from '../providers/chatProviders'
 import { IMG_PROVIDERS } from '../providers/imageProviders'
 import { VID_PROVIDERS } from '../providers/videoProviders'
@@ -8,7 +8,9 @@ import Ic from './icons'
 
 const NAV_SECTIONS = [
   { id: 'api', labelKey: 'apiConfig', icon: 'link', children: [
-    { id: 'api', labelKey: 'apiConfig' },
+    { id: 'api-chat', labelKey: 'chat' },
+    { id: 'api-image', labelKey: 'image' },
+    { id: 'api-video', labelKey: 'video', requiresVideo: true },
   ]},
   { id: 'general', labelKey: 'general', icon: 'gear', children: [
     { id: 'appearance', labelKey: 'appearance' },
@@ -21,8 +23,6 @@ const ASPECT_RATIOS = ['1:1', '4:3', '3:4', '16:9', '9:16', '3:2']
 const STYLE_PRESETS = ['扁平插画', '3D 渲染', '写实摄影', '水彩画', '动漫风', '像素艺术', '油画', '极简主义', '赛博朋克', '剪纸']
 const DURATIONS = ['5s', '8s', '10s']
 const REDACTED_API_KEY = '********'
-const OPENNANA_PROMPT_GALLERY_URL = 'https://opennana.com/awesome-prompt-gallery'
-
 const LINK_BUTTONS = [
   { key: 'home', labelKey: 'officialSite', icon: 'globe' },
   { key: 'docs', labelKey: 'docs', icon: 'book' },
@@ -48,6 +48,55 @@ const DOMESTIC_PROVIDER_ORDER = [
   'custom-image-ark',
   'custom-video'
 ]
+
+const MAINSTREAM_PROVIDER_IDS = {
+  chat: [
+    'openai',
+    'anthropic',
+    'google',
+    'deepseek',
+    'alibaba',
+    'moonshot',
+    'volcengine',
+    'openrouter',
+    'groq',
+    'together',
+    'xai',
+    'perplexity',
+    'siliconflow',
+    'opencode-go',
+    'volcengine-coding-plan',
+    'chatgpt-plans',
+    'claude-plans'
+  ],
+  image: [
+    'openai',
+    'google',
+    'volcengine',
+    'alibaba-wan',
+    'baidu-qianfan',
+    'stability',
+    'ideogram',
+    'fal',
+    'replicate',
+    'siliconflow'
+  ],
+  video: [
+    'volcengine',
+    'alibaba-wan',
+    'runway',
+    'kling',
+    'luma',
+    'minimax',
+    'pixverse',
+    'fal',
+    'replicate',
+    'baidu-qianfan',
+    'tencent-tokenhub'
+  ]
+}
+
+const AGGREGATOR_PROVIDER_IDS = ['openrouter', 'together', 'fal', 'replicate']
 
 const FALLBACK_PROVIDER_METADATA = {
   openai: {
@@ -81,12 +130,10 @@ const FALLBACK_PROVIDER_METADATA = {
       pricing: 'https://www.volcengine.com/docs/82379/1544106?lang=zh',
       console: 'https://console.volcengine.com/ark',
       apiKey: 'https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey',
-      codingPlan: 'https://www.volcengine.com/docs/82379/1928261?lang=zh',
-      openCode: 'https://www.volcengine.com/docs/82379/2188958?lang=zh',
       jimeng: 'https://www.volcengine.com/product/jimeng'
     },
-    billing: { mode: 'paygo' },
-    meta: { region: 'china' },
+    billing: { mode: 'paygo', noteZh: '火山方舟 API 按官方接口计费。' },
+    meta: { region: 'china', nameZh: '火山方舟', nameEn: 'Volcengine ModelArk', descriptionZh: '火山方舟 API，支持豆包对话、Seedream 生图和 Seedance 视频。', description: 'Volcengine ModelArk API for Doubao, Seedream, and Seedance.' },
     relayCompatible: true
   },
   siliconflow: {
@@ -378,7 +425,7 @@ function resolveProviderId(track, id, providers) {
 }
 
 function isExecutableProvider(provider) {
-  return provider?.executable !== false && provider?.integrationStatus !== 'metadata'
+  return Boolean(provider) && provider.executable !== false && provider.integrationStatus !== 'metadata'
 }
 
 function providerInfo(provider = {}, track) {
@@ -386,16 +433,52 @@ function providerInfo(provider = {}, track) {
   const trackMeta = TRACK_PROVIDER_METADATA[track]?.[provider.id] || {}
   const capabilities = provider.capabilities?.[track] || provider.meta?.capabilities?.[track] || trackMeta.capabilities?.[track] || {}
   const customizable = provider.customizable?.[track] || provider.meta?.customizable?.[track] || trackMeta.customizable?.[track] || {}
+  const billing = provider.billing || provider.meta?.billing || trackMeta.billing || base.billing || { mode: 'unknown' }
   return {
     links: { ...(base.links || {}), ...(trackMeta.links || {}), ...(provider.meta?.links || {}), ...(provider.links || {}) },
-    billing: provider.billing || provider.meta?.billing || trackMeta.billing || base.billing || { mode: 'unknown' },
+    billing,
     region: provider.meta?.region || trackMeta.meta?.region || base.meta?.region || 'unknown',
     capabilities,
     constraints: provider.constraints?.[track] || provider.meta?.constraints?.[track] || trackMeta.constraints || {},
     customizable,
     description: provider.meta?.description || base.meta?.description || '',
+    descriptionZh: provider.meta?.descriptionZh || base.meta?.descriptionZh || '',
+    descriptionEn: provider.meta?.descriptionEn || provider.meta?.description || base.meta?.descriptionEn || base.meta?.description || '',
+    nameZh: provider.meta?.nameZh || base.meta?.nameZh || '',
+    nameEn: provider.meta?.nameEn || base.meta?.nameEn || '',
     relay: provider.relayCompatible || base.relayCompatible || capabilities.relay || customizable.relayCompatible
   }
+}
+
+function hasCjk(text = '') {
+  return /[\u4e00-\u9fff]/.test(text)
+}
+
+function providerDisplayName(provider = {}, lang, track = 'chat') {
+  if (provider.id === 'volcengine') {
+    if (track === 'image') return lang === 'en' ? 'Seedream / Jimeng' : 'Seedream / 即梦'
+    if (track === 'video') return lang === 'en' ? 'Seedance / Jimeng' : 'Seedance / 即梦'
+    return lang === 'en' ? 'Doubao / Volcengine ModelArk' : '豆包 / 火山方舟'
+  }
+  const info = providerInfo(provider, track)
+  if (lang === 'en') {
+    if (info.nameEn || provider.nameEn) return info.nameEn || provider.nameEn
+    const part = String(provider.name || '').split('/').map(item => item.trim()).find(item => item && !hasCjk(item))
+    return part || provider.name || ''
+  }
+  if (info.nameZh || provider.nameZh) return info.nameZh || provider.nameZh
+  const part = String(provider.name || '').split('/').map(item => item.trim()).find(item => item && hasCjk(item))
+  return part || provider.name || ''
+}
+
+function localizedDescription(info, lang) {
+  if (lang === 'en') return info.descriptionEn || info.description || ''
+  return info.descriptionZh || ''
+}
+
+function localizedBillingNote(info, lang) {
+  if (lang === 'en') return info.billing?.noteEn || info.billing?.note || t('billingOfficialNote', lang)
+  return info.billing?.noteZh || t('billingOfficialNote', lang)
 }
 
 function providerIcon(track) {
@@ -416,15 +499,48 @@ function hasTemplatePreset(provider, info) {
 }
 
 function sortProvidersForWorkbench(providers, track) {
+  return sortProvidersForTrack(providers, track)
+}
+
+function filterMainstreamProviders(providers, track, currentId) {
+  const allowed = new Set(MAINSTREAM_PROVIDER_IDS[track] || [])
+  const currentKey = canonicalProviderKey(track, currentId)
+  return providers.filter(provider => {
+    const key = canonicalProviderKey(track, provider.id)
+    return allowed.has(key) || key === currentKey
+  })
+}
+
+function providerCategoryRank(provider, track) {
+  const key = canonicalProviderKey(track, provider.id)
+  const info = providerInfo(provider, track)
+  if (info.region === 'china' || info.region === 'both') return 0
+  if (AGGREGATOR_PROVIDER_IDS.includes(key) || info.relay) return 2
+  return 1
+}
+
+function billingGroup(provider, track) {
+  const mode = providerInfo(provider, track).billing?.mode
+  return mode === 'subscription' ? 'subscription' : 'usage'
+}
+
+function sortProvidersForTrack(providers, track, current = {}) {
+  const order = MAINSTREAM_PROVIDER_IDS[track] || []
   return [...providers].map((provider, index) => ({ provider, index, info: providerInfo(provider, track) }))
     .sort((a, b) => {
-      const aOrder = DOMESTIC_PROVIDER_ORDER.indexOf(a.provider.id)
-      const bOrder = DOMESTIC_PROVIDER_ORDER.indexOf(b.provider.id)
-      const aKnown = aOrder === -1 ? 100 : aOrder
-      const bKnown = bOrder === -1 ? 100 : bOrder
-      const aRegion = a.info.region === 'china' ? 0 : a.info.region === 'both' ? 1 : 2
-      const bRegion = b.info.region === 'china' ? 0 : b.info.region === 'both' ? 1 : 2
-      return (aKnown - bKnown) || (aRegion - bRegion) || (a.index - b.index)
+      const aConfigured = currentMatchesProvider(track, current, a.provider) && hasCredential(current)
+      const bConfigured = currentMatchesProvider(track, current, b.provider) && hasCredential(current)
+      const aExecutable = isExecutableProvider(a.provider)
+      const bExecutable = isExecutableProvider(b.provider)
+      const aKey = canonicalProviderKey(track, a.provider.id)
+      const bKey = canonicalProviderKey(track, b.provider.id)
+      const aOrder = order.indexOf(aKey)
+      const bOrder = order.indexOf(bKey)
+      return Number(bConfigured) - Number(aConfigured) ||
+        Number(bExecutable) - Number(aExecutable) ||
+        providerCategoryRank(a.provider, track) - providerCategoryRank(b.provider, track) ||
+        (aOrder === -1 ? 100 : aOrder) - (bOrder === -1 ? 100 : bOrder) ||
+        a.index - b.index
     })
     .map(item => item.provider)
 }
@@ -474,6 +590,14 @@ function chipS(color = 'var(--text-muted)') {
     borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)',
     background: 'var(--bg-surface)', color, fontSize: 10, lineHeight: 1.3
   }
+}
+
+function billingChipS(mode, track) {
+  const highRisk = track === 'video' || mode === 'subscription'
+  if (mode === 'paygo') return { ...chipS('var(--success)'), borderColor: 'var(--success-soft)', background: 'var(--success-soft)' }
+  if (mode === 'credits') return { ...chipS(highRisk ? 'var(--danger)' : 'var(--accent)'), borderColor: highRisk ? 'var(--danger-border)' : 'var(--border-accent)', background: highRisk ? 'var(--danger-soft)' : 'var(--accent-soft)' }
+  if (mode === 'subscription') return { ...chipS('var(--danger)'), borderColor: 'var(--danger-border)', background: 'var(--danger-soft)' }
+  return { ...chipS('var(--text-muted)'), borderColor: 'var(--danger-border)', background: 'var(--danger-soft)' }
 }
 
 function openExternal(url) {
@@ -535,444 +659,18 @@ function profileToProviderPatch(profile = {}) {
   }
 }
 
-function buildUnifiedProviders(providersByTrack = {}, config = {}) {
-  const groups = new Map()
-  for (const track of TRACKS) {
-    for (const provider of providersByTrack[track] || []) {
-      const key = canonicalProviderKey(track, provider.id)
-      if (!key) continue
-      const existing = groups.get(key) || {
-        id: key,
-        name: provider.name,
-        platform: provider.platform,
-        tracks: {},
-        configured: false,
-        executable: false,
-        regionRank: 3,
-        orderRank: 100,
-        firstIndex: groups.size
-      }
-      existing.tracks[track] = provider
-      existing.name = existing.name || provider.name
-      existing.platform = existing.platform || provider.platform
-      const info = providerInfo(provider, track)
-      const domesticOrder = DOMESTIC_PROVIDER_ORDER.indexOf(key)
-      existing.orderRank = Math.min(existing.orderRank, domesticOrder === -1 ? 100 : domesticOrder)
-      existing.regionRank = Math.min(existing.regionRank, info.region === 'china' ? 0 : info.region === 'both' ? 1 : 2)
-      existing.executable = existing.executable || isExecutableProvider(provider)
-      if (currentMatchesProvider(track, config.providers?.[track], provider) && hasCredential(config.providers?.[track])) {
-        existing.configured = true
-      }
-      groups.set(key, existing)
-    }
-  }
-  return [...groups.values()].sort((a, b) =>
-    Number(b.configured) - Number(a.configured) ||
-    Number(b.executable) - Number(a.executable) ||
-    a.orderRank - b.orderRank ||
-    a.regionRank - b.regionRank ||
-    a.firstIndex - b.firstIndex
-  )
-}
-
-function trackPatchForProvider(track, provider, current = {}, patch = {}) {
-  const sameProvider = currentMatchesProvider(track, current, provider)
-  return {
-    ...(sameProvider ? current : {}),
-    id: provider.id,
-    baseUrl: patch.baseUrl ?? (sameProvider ? current.baseUrl : provider.defaultUrl || ''),
-    apiKey: patch.apiKey ?? (sameProvider ? current.apiKey || '' : ''),
-    sessionToken: patch.sessionToken ?? (sameProvider ? current.sessionToken || '' : ''),
-    customAuth: patch.customAuth ?? (sameProvider ? current.customAuth || {} : {}),
-    model: patch.model ?? (sameProvider ? current.model || provider.defaultModel || '' : provider.defaultModel || ''),
-    protocol: provider.protocol,
-    format: provider.format
-  }
-}
-
-function firstConfiguredTrack(entry, config) {
-  return TRACKS.find(track => entry.tracks[track] && currentMatchesProvider(track, config.providers?.[track], entry.tracks[track]) && hasCredential(config.providers?.[track]))
-}
-
-function firstSupportedTrack(entry) {
-  return TRACKS.find(track => entry.tracks[track] && isExecutableProvider(entry.tracks[track])) || TRACKS.find(track => entry.tracks[track])
-}
-
-function capabilitySummary(provider, track, lang) {
-  const info = providerInfo(provider, track)
-  const caps = capabilityLabels(info.capabilities, track, lang)
-  const constraints = info.constraints || {}
-  const items = [...caps]
-  if (constraints.ratios?.length) items.push(`${t('supportedRatios', lang)} ${constraints.ratios.join('/')}`)
-  if (constraints.resolutions?.length) items.push(`${t('supportedResolutions', lang)} ${constraints.resolutions.join('/')}`)
-  const duration = constraints.duration
-  if (duration?.allowed?.length) items.push(`${t('durationLimit', lang)} ${duration.allowed.join('/')}s`)
-  else if (duration?.min || duration?.max) items.push(`${t('durationLimit', lang)} ${duration.min || 1}-${duration.max || '?'}s`)
-  if (constraints.negativePrompt) {
-    items.push(constraints.negativePrompt.supported ? t('negativePromptSupported', lang) : t('negativePromptUnsupported', lang))
-  }
-  return items
-}
-
-function UnifiedProviderList({ entries, selectedId, onSelect, lang }) {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-      {entries.map(entry => {
-        const selected = entry.id === selectedId
-        return (
-          <button
-            key={entry.id}
-            onClick={() => onSelect(entry.id)}
-            style={{
-              textAlign: 'left',
-              border: `1px solid ${selected ? 'var(--border-accent)' : 'var(--border-subtle)'}`,
-              background: selected ? 'var(--accent-soft)' : 'var(--bg-elevated)',
-              borderRadius: 'var(--radius-sm)',
-              padding: 10,
-              color: 'var(--text-primary)',
-              cursor: 'pointer',
-              fontFamily: 'var(--font-body)'
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
-              <Ic n={entry.configured ? 'check' : 'server'} size={13} color={entry.configured ? 'var(--success)' : 'var(--text-muted)'} />
-              <span style={{ fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{entry.name}</span>
-            </div>
-            <div style={{ marginTop: 5, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-              {TRACKS.filter(track => entry.tracks[track]).map(track => (
-                <span key={track} style={chipS(currentMatchesProvider(track, {}, entry.tracks[track]) ? 'var(--accent)' : 'var(--text-muted)')}>{t(track, lang)}</span>
-              ))}
-              <span style={chipS(entry.configured ? 'var(--success)' : 'var(--text-muted)')}>{entry.configured ? t('configured', lang) : t('notConfigured', lang)}</span>
-            </div>
-          </button>
-        )
-      })}
-    </div>
-  )
-}
-
-function TrackModelSection({ track, provider, current, active, profiles, onChange, onProfileSelect, onProfileDelete, lang }) {
-  const [models, setModels] = useState([])
-  const [loadingModels, setLoadingModels] = useState(false)
-  const configured = active && hasCredential(current)
-  const executable = isExecutableProvider(provider)
-
-  const fetchModels = useCallback(async () => {
-    if (!configured || !current.baseUrl) { setModels([]); return }
-    setLoadingModels(true)
-    try {
-      const list = await window.electronAPI.fetchModels({
-        ...current,
-        id: provider.id,
-        track,
-        format: provider.format,
-        protocol: provider.protocol,
-        model: current.model || provider.defaultModel
-      })
-      setModels(list || [])
-    } catch {
-      setModels([])
-    } finally {
-      setLoadingModels(false)
-    }
-  }, [active, configured, current, provider, track])
-
-  useEffect(() => {
-    const timer = setTimeout(fetchModels, 400)
-    return () => clearTimeout(timer)
-  }, [fetchModels])
-
-  const setModel = (model) => onChange(track, { model })
-  const capabilities = capabilitySummary(provider, track, lang)
-
-  return (
-    <div style={{ border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-sm)', padding: 12, background: 'var(--bg-surface)', display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <Ic n={providerIcon(track)} size={14} color="var(--accent)" />
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{t(`${track}Model`, lang)}</div>
-          <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>{provider.defaultModel || t('manualModel', lang)}</div>
-        </div>
-        <span style={chipS(executable && active ? 'var(--success)' : 'var(--text-muted)')}>{!executable ? t('metadataOnly', lang) : active ? t('selected', lang) : t('notSelected', lang)}</span>
-      </div>
-      <label style={labelS()}>
-        {t('model', lang)}
-        {models.length > 0 ? (
-          <select disabled={!executable} value={active ? current.model || '' : provider.defaultModel || ''} onChange={e => setModel(e.target.value)} style={{ ...selectS(), opacity: executable ? 1 : 0.55 }}>
-            {models.map(m => <option key={m.id} value={m.id}>{m.id}</option>)}
-          </select>
-        ) : (
-          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-            <input disabled={!executable} type="text" value={active ? current.model || '' : provider.defaultModel || ''} placeholder={provider.defaultModel || t('manualModel', lang)} onChange={e => setModel(e.target.value)} style={{ ...inputS(), flex: 1, opacity: executable ? 1 : 0.55 }} />
-            {loadingModels && <span style={{ fontSize: 11, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>...</span>}
-          </div>
-        )}
-      </label>
-      <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-        {capabilities.map(item => <span key={item} style={chipS()}>{item}</span>)}
-      </div>
-      {profiles.length > 0 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>{t('savedProfiles', lang)}</div>
-          {profiles.map(profile => {
-            const selected = active && profileMatchesProvider(track, profile, provider) && current.model === profile.model && current.baseUrl === profile.baseUrl
-            return (
-              <div key={profile.profileId || profileKey(track, profile)} style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                padding: '7px 8px',
-                border: `1px solid ${selected ? 'var(--border-accent)' : 'var(--border-subtle)'}`,
-                borderRadius: 'var(--radius-sm)',
-                background: selected ? 'var(--accent-soft)' : 'var(--bg-elevated)'
-              }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 11, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{profile.name || profile.providerId}</div>
-                  <div style={{ fontSize: 10, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{profile.model}</div>
-                </div>
-                <button onClick={() => onProfileSelect(track, profile)} style={{ ...btnS(false), padding: '5px 8px', fontSize: 11 }}>{t('setCurrent', lang)}</button>
-                <button onClick={() => onProfileDelete(track, profile)} style={{ ...btnS(false), padding: '5px 8px', fontSize: 11, color: 'var(--danger)' }}>{t('delete', lang)}</button>
-              </div>
-            )
-          })}
-        </div>
-      )}
-      {executable && (track === 'chat' || track === 'image' || track === 'video') && (
-        <details>
-          <summary style={{ fontSize: 12, color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'var(--font-body)', userSelect: 'none' }}>{t('advanced', lang)}</summary>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 10, borderLeft: '2px solid var(--border-subtle)', marginLeft: 4, paddingLeft: 12 }}>
-            {track === 'chat' && (
-              <label style={labelS()}>
-                {t('customSystemPrompt', lang)}
-                <textarea value={active ? current.customSystemPrompt || '' : ''} placeholder={t('customSystemPromptPh', lang)} onChange={e => onChange(track, { customSystemPrompt: e.target.value })} style={{ ...inputS(), minHeight: 60, resize: 'vertical' }} />
-              </label>
-            )}
-            {track === 'image' && (
-              <label style={labelS()}>
-                {t('defaultNegPrompt', lang)}
-                <input type="text" value={active ? current.defaultNegPrompt || '' : ''} placeholder={t('defaultNegPromptPh', lang)} onChange={e => onChange(track, { defaultNegPrompt: e.target.value })} style={inputS()} />
-              </label>
-            )}
-            <CustomApiFields track={track} provider={provider} current={active ? current : {}} onChange={onChange} lang={lang} />
-          </div>
-        </details>
-      )}
-    </div>
-  )
-}
-
-function UnifiedApiPage({ config, providers, onChange, lang }) {
-  const entries = useMemo(() => buildUnifiedProviders(providers, config), [providers, config])
-  const [selectedId, setSelectedId] = useState(() => entries.find(entry => entry.configured)?.id || entries[0]?.id || '')
-  const [testing, setTesting] = useState(false)
-  const [testResult, setTestResult] = useState(null)
-
-  useEffect(() => {
-    if (!entries.some(entry => entry.id === selectedId)) {
-      setSelectedId(entries.find(entry => entry.configured)?.id || entries[0]?.id || '')
-    }
-  }, [entries, selectedId])
-
-  const entry = entries.find(item => item.id === selectedId) || entries[0]
-  if (!entry) return null
-
-  const supportedTracks = TRACKS.filter(track => entry.tracks[track])
-  const selectedTrack = firstConfiguredTrack(entry, config) || firstSupportedTrack(entry)
-  const selectedProvider = entry.tracks[selectedTrack]
-  const selectedCurrent = config.providers?.[selectedTrack] || {}
-  const sameCurrent = currentMatchesProvider(selectedTrack, selectedCurrent, selectedProvider) ? selectedCurrent : {}
-  const apiKeyRedacted = sameCurrent.apiKey === REDACTED_API_KEY
-  const sessionTokenRedacted = sameCurrent.sessionToken === REDACTED_API_KEY
-  const apiKeyValue = apiKeyRedacted ? '' : sameCurrent.apiKey || ''
-  const sessionTokenValue = sessionTokenRedacted ? '' : sameCurrent.sessionToken || ''
-  const baseUrlValue = sameCurrent.baseUrl || selectedProvider?.defaultUrl || ''
-  const usesSessionAuth = sameCurrent.customAuth?.type === 'session'
-  const linkInfo = providerInfo(selectedProvider, selectedTrack)
-  const linkButtons = LINK_BUTTONS.filter(button => linkInfo.links?.[button.key])
-
-  const patchSupportedTracks = (patch) => {
-    const shouldSeedAllTracks = 'apiKey' in patch || 'sessionToken' in patch || 'customAuth' in patch || !firstConfiguredTrack(entry, config)
-    for (const track of supportedTracks) {
-      const provider = entry.tracks[track]
-      if (!isExecutableProvider(provider)) continue
-      const current = config.providers?.[track] || {}
-      if (!shouldSeedAllTracks && !currentMatchesProvider(track, current, provider)) continue
-      onChange(track, trackPatchForProvider(track, provider, current, patch))
-    }
-  }
-
-  const patchTrack = (track, patch) => {
-    const provider = entry.tracks[track]
-    if (!provider || !isExecutableProvider(provider)) return
-    const current = config.providers?.[track] || {}
-    const seed = {
-      apiKey: sameCurrent.apiKey || current.apiKey || '',
-      sessionToken: sameCurrent.sessionToken || current.sessionToken || '',
-      customAuth: sameCurrent.customAuth || current.customAuth || {},
-      baseUrl: sameCurrent.baseUrl || current.baseUrl || provider.defaultUrl || ''
-    }
-    onChange(track, trackPatchForProvider(track, provider, current, { ...seed, ...patch }))
-  }
-
-  const selectProfile = (track, profile) => {
-    onChange(track, profileToProviderPatch(profile))
-  }
-
-  const deleteProfile = (track, profile) => {
-    const profiles = config.providerProfiles?.[track] || []
-    const key = profileKey(track, profile)
-    onChange('providerProfiles', {
-      [track]: profiles.filter(item => (item.profileId || profileKey(track, item)) !== (profile.profileId || key))
-    })
-    onChange('_deletedProfileKeys', [...(config._deletedProfileKeys || []), key])
-  }
-
-  const handleRestoreUrl = () => patchSupportedTracks({ baseUrl: selectedProvider?.defaultUrl || '' })
-  const handleClear = () => {
-    if (!window.confirm(t('clearConfirm', lang))) return
-    for (const track of supportedTracks) {
-      const provider = entry.tracks[track]
-      const current = config.providers?.[track] || {}
-      if (currentMatchesProvider(track, current, provider)) {
-        onChange(track, { apiKey: '', sessionToken: '', customAuth: {}, baseUrl: '', model: '' })
-      }
-    }
-    setTestResult(null)
-  }
-
-  const handleTest = async () => {
-    setTesting(true)
-    setTestResult(null)
-    try {
-      const activeTracks = supportedTracks.filter(track => {
-        const provider = entry.tracks[track]
-        const current = config.providers?.[track] || {}
-        return isExecutableProvider(provider) && currentMatchesProvider(track, current, provider) && hasCredential(current)
-      })
-      const tracksToTest = activeTracks.length ? activeTracks : [selectedTrack].filter(Boolean)
-      let totalModels = 0
-      for (const track of tracksToTest) {
-        const provider = entry.tracks[track]
-        const current = config.providers?.[track] || {}
-        const params = {
-          ...trackPatchForProvider(track, provider, current, {
-            apiKey: sameCurrent.apiKey || current.apiKey || '',
-            sessionToken: sameCurrent.sessionToken || current.sessionToken || '',
-            customAuth: sameCurrent.customAuth || current.customAuth || {},
-            baseUrl: sameCurrent.baseUrl || current.baseUrl || provider.defaultUrl || ''
-          }),
-          providerId: provider.id,
-          track
-        }
-        const test = await window.electronAPI.providerAPI?.test?.(params)
-        if (test && test.ok === false) {
-          setTestResult({ ok: false, msg: test.message || t('testFail', lang) })
-          return
-        }
-        const list = await window.electronAPI.fetchModels(params)
-        totalModels += list?.length || 0
-      }
-      setTestResult({ ok: true, count: totalModels })
-    } catch (e) {
-      setTestResult({ ok: false, msg: e.message })
-    } finally {
-      setTesting(false)
-    }
-  }
-
-  return (
-    <div style={{ display: 'grid', gridTemplateColumns: '210px minmax(0, 1fr)', gap: 16, alignItems: 'start' }}>
-      <UnifiedProviderList entries={entries} selectedId={entry.id} onSelect={id => { setSelectedId(id); setTestResult(null) }} lang={lang} />
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 14, minWidth: 0 }}>
-        <div style={{ border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-sm)', padding: 12, background: 'var(--bg-elevated)', display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>{entry.name}</div>
-              <div style={{ marginTop: 3, color: 'var(--text-muted)', fontSize: 11 }}>{entry.platform} · {regionLabel(linkInfo.region, lang)} · {billingLabel(linkInfo.billing?.mode, lang)}</div>
-            </div>
-            <span style={chipS(entry.configured ? 'var(--success)' : 'var(--text-muted)')}>{entry.configured ? t('configured', lang) : t('notConfigured', lang)}</span>
-          </div>
-
-          {linkButtons.length > 0 && (
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {linkButtons.map(button => (
-                <button key={button.key} onClick={() => openExternal(linkInfo.links[button.key])} style={{ ...btnS(false), padding: '5px 8px', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                  <Ic n={button.icon} size={11} />{t(button.labelKey, lang)}
-                </button>
-              ))}
-            </div>
-          )}
-
-          <label style={labelS()}>
-            {t('apiKey', lang)}
-            <input type="password" value={apiKeyValue} placeholder={apiKeyRedacted ? t('configured', lang) : 'sk-...'} onChange={e => patchSupportedTracks({ apiKey: e.target.value })} style={inputS()} />
-          </label>
-          {usesSessionAuth && (
-            <label style={labelS()}>
-              {t('sessionToken', lang)}
-              <input type="password" value={sessionTokenValue} placeholder={sessionTokenRedacted ? t('configured', lang) : 'sess-...'} onChange={e => patchSupportedTracks({ sessionToken: e.target.value })} style={inputS()} />
-            </label>
-          )}
-          <label style={labelS()}>
-            {t('baseUrl', lang)}
-            <div style={{ display: 'flex', gap: 6 }}>
-              <input type="text" value={baseUrlValue} placeholder={selectedProvider?.defaultUrl || ''} onChange={e => patchSupportedTracks({ baseUrl: e.target.value })} style={{ ...inputS(), flex: 1 }} />
-              <button onClick={handleRestoreUrl} title={t('restoreDefault', lang)} style={{ padding: '7px 10px', background: 'var(--bg-surface)', border: '1px solid var(--border-default)', borderRadius: 'var(--radius-sm)', color: 'var(--text-muted)', fontSize: 11, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'var(--font-body)' }}>
-                <Ic n="refresh" size={12} />
-              </button>
-            </div>
-          </label>
-
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <button onClick={handleTest} disabled={testing || (!sameCurrent.apiKey && !sameCurrent.sessionToken)} style={{ ...btnS(false), opacity: (!sameCurrent.apiKey && !sameCurrent.sessionToken) ? 0.45 : 1 }}>
-              {testing ? t('testing', lang) : t('connectTest', lang)}
-            </button>
-            <button onClick={handleClear} style={{ ...btnS(false), color: 'var(--danger)' }}>
-              {t('clearConfig', lang)}
-            </button>
-          </div>
-          {testResult && <div style={{ fontSize: 12, color: testResult.ok ? 'var(--success)' : 'var(--danger)', fontFamily: 'var(--font-body)' }}>{testResult.ok ? `${t('testSuccess', lang)} ${testResult.count} ${t('models', lang)}` : testResult.msg}</div>}
-        </div>
-
-        {supportedTracks.map(track => {
-          const provider = entry.tracks[track]
-          const current = config.providers?.[track] || {}
-          const active = currentMatchesProvider(track, current, provider)
-          return (
-            <TrackModelSection
-              key={track}
-              track={track}
-              provider={provider}
-              current={active ? current : {}}
-              active={active}
-              profiles={(config.providerProfiles?.[track] || []).filter(profile => hasCredential(profile))}
-              onChange={patchTrack}
-              onProfileSelect={selectProfile}
-              onProfileDelete={deleteProfile}
-              lang={lang}
-            />
-          )
-        })}
-
-        {entry.tracks.video && (
-          <label style={labelS()}>
-            {t('defaultDuration', lang)}
-            <select value={config?.general?.defaultDuration || '5s'} onChange={e => onChange('general', { defaultDuration: e.target.value })} style={selectS()}>
-              {DURATIONS.map(d => <option key={d} value={d}>{d}</option>)}
-            </select>
-          </label>
-        )}
-      </div>
-    </div>
-  )
-}
-
 function ProviderCard({ track, provider, selected, onSelect, lang }) {
   const info = providerInfo(provider, track)
   const executable = isExecutableProvider(provider)
   const caps = capabilityLabels(info.capabilities, track, lang)
   const constraints = compactConstraints(info.constraints, lang)
-  const linkButtons = LINK_BUTTONS.filter(button => info.links?.[button.key])
+  const description = localizedDescription(info, lang)
+  const linkButtons = LINK_BUTTONS.filter(button => {
+    if (!info.links?.[button.key]) return false
+    if (provider.id === 'volcengine' && (button.key === 'codingPlan' || button.key === 'openCode')) return false
+    if (provider.id === 'volcengine-coding-plan' && button.key === 'openCode') return false
+    return true
+  })
   const templatePreset = hasTemplatePreset(provider, info)
 
   return (
@@ -985,7 +683,7 @@ function ProviderCard({ track, provider, selected, onSelect, lang }) {
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text-primary)', fontSize: 13, fontWeight: 600 }}>
             <Ic n={providerIcon(track)} size={13} />
-            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{provider.name}</span>
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{providerDisplayName(provider, lang, track)}</span>
           </div>
           <div style={{ marginTop: 2, color: 'var(--text-muted)', fontSize: 10 }}>{provider.platform} · {regionLabel(info.region, lang)}</div>
         </div>
@@ -1005,15 +703,21 @@ function ProviderCard({ track, provider, selected, onSelect, lang }) {
         </button>
       </div>
 
-      {info.description && <div style={{ color: 'var(--text-secondary)', fontSize: 11, lineHeight: 1.45 }}>{info.description}</div>}
+      {description && <div style={{ color: 'var(--text-secondary)', fontSize: 11, lineHeight: 1.45 }}>{description}</div>}
 
       <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
         <span style={chipS(executable ? 'var(--success)' : 'var(--text-muted)')}>{executable ? t('directCallable', lang) : t('metadataOnly', lang)}</span>
-        <span style={chipS('var(--accent)')}>{billingLabel(info.billing?.mode, lang)}</span>
+        <span style={billingChipS(info.billing?.mode, track)}>{billingLabel(info.billing?.mode, lang)}</span>
         <span style={chipS(info.relay || templatePreset ? 'var(--success)' : 'var(--text-muted)')}>
           {templatePreset ? t('templatePreset', lang) : info.relay ? t('relaySupported', lang) : t('relayOfficialOnly', lang)}
         </span>
       </div>
+
+      {(track === 'video' || info.billing?.mode === 'subscription') && (
+        <div style={{ color: 'var(--danger)', background: 'var(--danger-soft)', border: '1px solid var(--danger-border)', borderRadius: 'var(--radius-sm)', padding: '6px 8px', fontSize: 10, lineHeight: 1.45 }}>
+          {localizedBillingNote(info, lang)}
+        </div>
+      )}
 
       <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
         {caps.slice(0, 5).map(item => <span key={item} style={chipS()}>{item}</span>)}
@@ -1039,7 +743,7 @@ function ProviderCard({ track, provider, selected, onSelect, lang }) {
 }
 
 function ProviderWorkbench({ track, providers, selectedProviderId, onSelect, lang }) {
-  const orderedProviders = sortProvidersForWorkbench(providers, track)
+  const orderedProviders = providers
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -1047,11 +751,6 @@ function ProviderWorkbench({ track, providers, selectedProviderId, onSelect, lan
           <div style={{ color: 'var(--text-primary)', fontSize: 13, fontWeight: 600 }}>{t('apiWorkbench', lang)}</div>
           <div style={{ color: 'var(--text-muted)', fontSize: 11, marginTop: 2 }}>{t('apiWorkbenchDesc', lang)}</div>
         </div>
-        {(track === 'image' || track === 'video') && (
-          <button onClick={() => openExternal(OPENNANA_PROMPT_GALLERY_URL)} style={{ ...btnS(false), padding: '7px 10px', display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
-            <Ic n="sparkle" size={12} />{t('openNanaGallery', lang)}
-          </button>
-        )}
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 8 }}>
         {orderedProviders.map(p => (
@@ -1146,12 +845,56 @@ function CustomApiFields({ track, provider, current, onChange, lang }) {
 }
 
 /* ── ProviderTab ── */
+function TrackStatusPanel({ track, provider, current, lang }) {
+  const info = providerInfo(provider, track)
+  const configured = hasCredential(current)
+  const model = current.model || provider?.defaultModel || t('noConfig', lang)
+  return (
+    <div style={{
+      display: 'grid',
+      gridTemplateColumns: 'minmax(0, 1.2fr) minmax(0, 1fr)',
+      gap: 10,
+      border: '1px solid var(--border-subtle)',
+      borderRadius: 'var(--radius-sm)',
+      background: 'var(--bg-elevated)',
+      padding: 12
+    }}>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7, color: 'var(--text-primary)', fontSize: 14, fontWeight: 700 }}>
+          <Ic n={providerIcon(track)} size={14} />
+          <span>{t(`${track}Model`, lang)}</span>
+        </div>
+        <div style={{ marginTop: 5, color: 'var(--text-secondary)', fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {provider ? providerDisplayName(provider, lang, track) : t('noConfig', lang)}
+        </div>
+      </div>
+      <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start' }}>
+        <span style={chipS(configured ? 'var(--success)' : 'var(--text-muted)')}>{configured ? t('configured', lang) : t('notConfigured', lang)}</span>
+        <span style={billingChipS(info.billing?.mode, track)}>{billingLabel(info.billing?.mode, lang)}</span>
+        <div style={{ maxWidth: '100%', color: 'var(--text-muted)', fontSize: 10, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{model}</div>
+      </div>
+    </div>
+  )
+}
+
 function ProviderTab({ track, providers, config, onChange, lang }) {
   const current = config?.providers?.[track] || {}
-  const selectableProviders = providers.filter(isExecutableProvider)
-  const selectable = selectableProviders.length ? selectableProviders : providers
+  const allVisibleProviders = sortProvidersForTrack(filterMainstreamProviders(providers, track, current.id), track, current)
+  const currentProvider = allVisibleProviders.find(p => currentMatchesProvider(track, current, p))
+  const currentBillingGroup = currentProvider ? billingGroup(currentProvider, track) : 'usage'
+  const [billingView, setBillingView] = useState(currentBillingGroup)
+  useEffect(() => {
+    setBillingView(currentBillingGroup)
+  }, [current.id, currentBillingGroup])
+  const billingCounts = {
+    usage: allVisibleProviders.filter(p => billingGroup(p, track) === 'usage').length,
+    subscription: allVisibleProviders.filter(p => billingGroup(p, track) === 'subscription').length
+  }
+  const visibleProviders = allVisibleProviders.filter(p => billingGroup(p, track) === billingView)
+  const selectableProviders = visibleProviders.filter(isExecutableProvider)
+  const selectable = selectableProviders.length ? selectableProviders : visibleProviders
   const selectedProviderId = resolveProviderId(track, current.id, selectable)
-  const provider = providers.find(p => p.id === selectedProviderId) || selectable[0]
+  const provider = visibleProviders.find(p => p.id === selectedProviderId) || selectable[0] || allVisibleProviders[0]
   const apiKeyRedacted = current.apiKey === REDACTED_API_KEY
   const apiKeyValue = apiKeyRedacted ? '' : current.apiKey || ''
   const usesSessionAuth = current.customAuth?.type === 'session'
@@ -1238,21 +981,35 @@ function ProviderTab({ track, providers, config, onChange, lang }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <ProviderWorkbench track={track} providers={providers} selectedProviderId={selectedProviderId} onSelect={selectProvider} lang={lang} />
-      <label style={labelS()}>
-        {t('provider', lang)}
-        <select value={selectedProviderId} onChange={e => { const p = selectable.find(pp => pp.id === e.target.value); if (p) selectProvider(p) }} style={selectS()}>
-          {selectable.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-        </select>
-      </label>
+      <TrackStatusPanel track={track} provider={provider} current={current} lang={lang} />
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        {['usage', 'subscription'].map(mode => {
+          const active = billingView === mode
+          return (
+            <button key={mode} onClick={() => setBillingView(mode)} style={{ ...btnS(false), padding: '7px 10px', background: active ? 'var(--accent-soft)' : 'var(--bg-surface)', color: active ? 'var(--accent)' : 'var(--text-secondary)', borderColor: active ? 'var(--border-accent)' : 'var(--border-default)' }}>
+              {t(mode === 'usage' ? 'usageBilling' : 'subscriptionBilling', lang)} · {billingCounts[mode]}
+            </button>
+          )
+        })}
+      </div>
+      <div style={{ color: billingView === 'subscription' ? 'var(--danger)' : 'var(--text-muted)', background: billingView === 'subscription' ? 'var(--danger-soft)' : 'transparent', border: billingView === 'subscription' ? '1px solid var(--danger-border)' : 'none', borderRadius: 'var(--radius-sm)', padding: billingView === 'subscription' ? '7px 9px' : 0, fontSize: 11, lineHeight: 1.5 }}>
+        {t(billingView === 'subscription' ? 'subscriptionBillingDesc' : 'usageBillingDesc', lang)}
+      </div>
+      <ProviderWorkbench track={track} providers={visibleProviders} selectedProviderId={current.id || ''} onSelect={selectProvider} lang={lang} />
+      {!isExecutableProvider(provider) ? (
+        <div style={{ color: 'var(--text-muted)', background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-sm)', padding: 10, fontSize: 12, lineHeight: 1.5 }}>
+          {t('metadataOnlyProviderDesc', lang)}
+        </div>
+      ) : (
+        <>
       <label style={labelS()}>
         {t('apiKey', lang)}
-        <input type="password" value={apiKeyValue} placeholder={apiKeyRedacted ? (lang === 'en' ? 'Configured' : '已配置') : 'sk-...'} onChange={e => onChange(track, { apiKey: e.target.value })} style={inputS()} />
+        <input type="password" value={apiKeyValue} placeholder={apiKeyRedacted ? t('configuredPlaceholder', lang) : 'sk-...'} onChange={e => onChange(track, { apiKey: e.target.value })} style={inputS()} />
       </label>
       {usesSessionAuth && (
         <label style={labelS()}>
           {t('sessionToken', lang)}
-          <input type="password" value={sessionTokenValue} placeholder={sessionTokenRedacted ? (lang === 'en' ? 'Configured' : '已配置') : 'sess-...'} onChange={e => onChange(track, { sessionToken: e.target.value })} style={inputS()} />
+          <input type="password" value={sessionTokenValue} placeholder={sessionTokenRedacted ? t('configuredPlaceholder', lang) : 'sess-...'} onChange={e => onChange(track, { sessionToken: e.target.value })} style={inputS()} />
         </label>
       )}
       <label style={labelS()}>
@@ -1306,6 +1063,8 @@ function ProviderTab({ track, providers, config, onChange, lang }) {
           <CustomApiFields track={track} provider={provider} current={current} onChange={onChange} lang={lang} />
         </div>
       </details>
+        </>
+      )}
     </div>
   )
 }
@@ -1317,7 +1076,7 @@ function AppearancePage({ config, onChange, lang }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <label style={labelS()}>
         {t('theme', lang)}
-        <select value={g.theme || 'dark'} onChange={e => onChange('general', { theme: e.target.value })} style={selectS()}>
+        <select value={g.theme || 'light'} onChange={e => onChange('general', { theme: e.target.value })} style={selectS()}>
           <option value="dark">{t('dark', lang)}</option>
           <option value="light">{t('light', lang)}</option>
           <option value="system">{t('system', lang)}</option>
@@ -1370,6 +1129,13 @@ function OtherPage({ config, onChange, lang }) {
           <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>{t('enableReferenceDesc', lang)}</div>
         </div>
       </label>
+      <label style={{ ...labelS(), flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <input type="checkbox" checked={g.enableVideo === true} onChange={e => onChange('general', { enableVideo: e.target.checked })} />
+        <div>
+          <div>{t('enableVideo', lang)}</div>
+          <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>{t('enableVideoDesc', lang)}</div>
+        </div>
+      </label>
       <label style={labelS()}>
         {t('apiTimeout', lang)}
         <select value={g.apiTimeout || 60000} onChange={e => onChange('general', { apiTimeout: Number(e.target.value) })} style={selectS()}>
@@ -1408,12 +1174,26 @@ function VideoPage({ config, providers, onChange, lang }) {
 }
 
 /* ── Main Settings ── */
+function normalizeSettingsPage(page, videoEnabled) {
+  if (page === 'api' || page === 'chat') return 'api-chat'
+  if (page === 'image') return 'api-image'
+  if (page === 'video') return videoEnabled ? 'api-video' : 'api-image'
+  if (page === 'api-video' && !videoEnabled) return 'api-image'
+  return page || 'appearance'
+}
+
 export default function Settings({ config, providerLists, onSave, onClose, initialPage = 'appearance' }) {
-  const [page, setPage] = useState(initialPage)
+  const [page, setPage] = useState(() => normalizeSettingsPage(initialPage, config?.general?.enableVideo === true))
   const [local, setLocal] = useState(config)
   const [expanded, setExpanded] = useState({ general: true, api: true })
   useEffect(() => { if (config) setLocal(config) }, [config])
-  useEffect(() => { if (initialPage) setPage(initialPage) }, [initialPage])
+  useEffect(() => {
+    if (initialPage) setPage(normalizeSettingsPage(initialPage, local?.general?.enableVideo === true))
+  }, [initialPage])
+  useEffect(() => {
+    const nextPage = normalizeSettingsPage(page, local?.general?.enableVideo === true)
+    if (nextPage !== page) setPage(nextPage)
+  }, [page, local?.general?.enableVideo])
 
   // Escape key to close
   useEffect(() => {
@@ -1440,6 +1220,7 @@ export default function Settings({ config, providerLists, onSave, onClose, initi
   const handleSave = () => { if (local) { onSave(local); onClose() } }
 
   if (!local) return null
+  const videoApiEnabled = local?.general?.enableVideo === true
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--overlay-dark)', backdropFilter: 'blur(4px)' }} onClick={onClose}>
@@ -1467,7 +1248,7 @@ export default function Settings({ config, providerLists, onSave, onClose, initi
                   {t(section.labelKey, lang)}
                   <span style={{ marginLeft: 'auto', fontSize: 10, transition: 'transform 0.15s', transform: expanded[section.id] ? 'rotate(0)' : 'rotate(-90deg)' }}>▼</span>
                 </button>
-                {expanded[section.id] && section.children.map(child => (
+                {expanded[section.id] && section.children.filter(child => !child.requiresVideo || videoApiEnabled).map(child => (
                   <button key={child.id} onClick={() => setPage(child.id)} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '7px 16px 7px 36px', background: page === child.id ? 'var(--accent-soft)' : 'transparent', border: 'none', borderRight: page === child.id ? '2px solid var(--accent)' : '2px solid transparent', color: page === child.id ? 'var(--accent)' : 'var(--text-secondary)', fontSize: 'var(--font-size-base)', cursor: 'pointer', fontFamily: 'var(--font-body)', fontWeight: page === child.id ? 500 : 400 }}
                     onMouseEnter={e => { if (page !== child.id) e.currentTarget.style.background = 'var(--bg-hover)' }}
                     onMouseLeave={e => { if (page !== child.id) e.currentTarget.style.background = 'transparent' }}
@@ -1481,10 +1262,9 @@ export default function Settings({ config, providerLists, onSave, onClose, initi
             {page === 'appearance' && <AppearancePage config={local} onChange={handleChange} lang={lang} />}
             {page === 'lang' && <LangPage config={local} onChange={handleChange} lang={lang} />}
             {page === 'other' && <OtherPage config={local} onChange={handleChange} lang={lang} />}
-            {page === 'api' && <UnifiedApiPage config={local} providers={providers} onChange={handleChange} lang={lang} />}
-            {page === 'chat' && <ProviderTab track="chat" providers={providers.chat} config={local} onChange={(t2, patch) => handleChange('chat', patch)} lang={lang} />}
-            {page === 'image' && <ImagePage config={local} providers={providers.image} onChange={handleChange} lang={lang} />}
-            {page === 'video' && <VideoPage config={local} providers={providers.video} onChange={handleChange} lang={lang} />}
+            {page === 'api-chat' && <ProviderTab track="chat" providers={providers.chat} config={local} onChange={handleChange} lang={lang} />}
+            {page === 'api-image' && <ImagePage config={local} providers={providers.image} onChange={handleChange} lang={lang} />}
+            {page === 'api-video' && videoApiEnabled && <VideoPage config={local} providers={providers.video} onChange={handleChange} lang={lang} />}
           </div>
         </div>
         {/* Footer */}

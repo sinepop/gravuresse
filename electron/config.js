@@ -8,9 +8,9 @@ const REDACTED_API_KEY = '********'
 
 const DEFAULT_CONFIG = {
   providers: {
-    chat: { id: 'claude', apiKey: '', sessionToken: '', baseUrl: 'https://api.anthropic.com', model: 'claude-sonnet-4-6' },
-    image: { id: 'dalle', apiKey: '', sessionToken: '', baseUrl: 'https://api.openai.com', model: 'gpt-image-2' },
-    video: { id: 'jimeng_vid', apiKey: '', sessionToken: '', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3', model: 'doubao-seedance-2-0-pro-250528' }
+    chat: { id: 'anthropic', apiKey: '', sessionToken: '', baseUrl: 'https://api.anthropic.com', model: 'claude-sonnet-4-6' },
+    image: { id: 'openai', apiKey: '', sessionToken: '', baseUrl: 'https://api.openai.com', model: 'gpt-image-2' },
+    video: { id: 'volcengine', apiKey: '', sessionToken: '', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3', model: 'doubao-seedance-2-0-pro-250528' }
   },
   providerProfiles: {
     chat: [],
@@ -18,8 +18,8 @@ const DEFAULT_CONFIG = {
     video: []
   },
   general: {
-    theme: 'dark', language: 'zh', fontSize: 'medium',
-    autoSave: true, exportPath: '', apiTimeout: 60000, autoSaveImage: false
+    theme: 'light', language: 'zh', fontSize: 'medium',
+    autoSave: true, exportPath: '', apiTimeout: 60000, autoSaveImage: false, enableVideo: false
   },
   canvasLayout: 'grid'
 }

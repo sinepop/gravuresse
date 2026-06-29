@@ -5,7 +5,26 @@ import { t } from '../i18n'
 import Ic from './icons'
 
 const ASPECT_RATIOS = ['1:1', '4:3', '3:4', '16:9', '9:16', '3:2']
-const STYLE_PRESETS = ['扁平插画', '3D 渲染', '写实摄影', '水彩画', '动漫风', '像素艺术', '油画', '极简主义', '赛博朋克', '剪纸']
+const STYLE_PRESETS = [
+  { value: 'flat illustration', label: { zh: '扁平插画', en: 'Flat illustration' } },
+  { value: '3D render', label: { zh: '3D 渲染', en: '3D render' } },
+  { value: 'realistic photography', label: { zh: '写实摄影', en: 'Realistic photography' } },
+  { value: 'watercolor painting', label: { zh: '水彩画', en: 'Watercolor' } },
+  { value: 'anime style', label: { zh: '动漫风', en: 'Anime' } },
+  { value: 'pixel art', label: { zh: '像素艺术', en: 'Pixel art' } },
+  { value: 'oil painting', label: { zh: '油画', en: 'Oil painting' } },
+  { value: 'minimalism', label: { zh: '极简主义', en: 'Minimalism' } },
+  { value: 'cyberpunk', label: { zh: '赛博朋克', en: 'Cyberpunk' } },
+  { value: 'paper cutout', label: { zh: '剪纸', en: 'Paper cutout' } },
+]
+
+function styleLabel(value, lang) {
+  return STYLE_PRESETS.find(item => item.value === value || item.label.zh === value)?.label?.[lang] || value
+}
+
+function normalizeStyleValue(value) {
+  return STYLE_PRESETS.find(item => item.value === value || item.label.zh === value)?.value || value || ''
+}
 const RESOLUTIONS = [
   { value: '1024', label: { zh: '标准', en: 'Standard' } },
   { value: '1536', label: { zh: '高清', en: 'High' } },
@@ -25,14 +44,14 @@ const chipBtnS = (active) => ({
 })
 
 const selectChipS = () => ({
-  background: 'var(--bg-input)', border: '1px solid var(--border-subtle)',
+  background: 'var(--select-bg)', border: '1px solid var(--border-subtle)',
   borderRadius: 'var(--radius-sm)', padding: '3px 6px',
-  color: 'var(--text-secondary)', fontSize: 10, cursor: 'pointer',
+  color: 'var(--select-text)', fontSize: 10, cursor: 'pointer',
   fontFamily: 'var(--font-body)', outline: 'none',
   appearance: 'auto', transition: 'all 0.15s',
 })
 
-export default function ChatPanel({ chat, config, providerLists, onProviderChange, lang, generationMode = 'image', conversations, activeConvId, onSwitchConv, onNewConv, onDeleteConv, onRenameConv, canvas }) {
+export default function ChatPanel({ chat, config, providerLists, onProviderChange, lang, generationMode = 'image', conversations, activeConvId, onSwitchConv, onNewConv, onDeleteConv, onRenameConv, onEnsureConversation, conversationBusy = false, canvas }) {
   const [input, setInput] = useState('')
   const [showConvList, setShowConvList] = useState(false)
   const [showRefPicker, setShowRefPicker] = useState(false)
@@ -40,20 +59,22 @@ export default function ChatPanel({ chat, config, providerLists, onProviderChang
   const [editingConvId, setEditingConvId] = useState(null)
   const [editTitle, setEditTitle] = useState('')
   const [genRatio, setGenRatio] = useState(config?.general?.defaultRatio || '1:1')
-  const [genStyle, setGenStyle] = useState(config?.general?.defaultStyle || '')
+  const [genStyle, setGenStyle] = useState(normalizeStyleValue(config?.general?.defaultStyle))
   const [genResolution, setGenResolution] = useState(config?.general?.defaultResolution || '1024')
   const [showGenSettings, setShowGenSettings] = useState(false)
   const endRef = useRef(null)
   const textareaRef = useRef(null)
+  const sendingRef = useRef(false)
 
   const enableReference = config?.general?.enableReference === true
+  const hasReferenceAssets = Boolean(canvas?.allAssets?.some(asset => asset.url))
   const modeHint = t(generationMode === 'video' ? 'videoModeHint' : 'imageModeHint', lang)
 
   // Sync settings when config changes
   useEffect(() => {
     if (config?.general) {
       setGenRatio(config.general.defaultRatio || '1:1')
-      setGenStyle(config.general.defaultStyle || '')
+      setGenStyle(normalizeStyleValue(config.general.defaultStyle))
       setGenResolution(config.general.defaultResolution || '1024')
     }
   }, [config?.general?.defaultRatio, config?.general?.defaultStyle, config?.general?.defaultResolution])
@@ -85,13 +106,29 @@ export default function ChatPanel({ chat, config, providerLists, onProviderChang
     }
   }, [input])
 
-  const handleSend = useCallback(() => {
-    if (!input.trim() || chat.loading) return
+  const handleSend = useCallback(async () => {
+    if (!input.trim() || chat.loading || conversationBusy || sendingRef.current) return
+    sendingRef.current = true
+    const text = input
     const refs = references.length > 0 ? references : undefined
-    chat.send(input, refs, { ratio: genRatio, style: genStyle, resolution: genResolution, generationMode })
-    setInput('')
-    setReferences([])
-  }, [input, chat, references, genRatio, genStyle, genResolution, generationMode])
+    try {
+      const ensured = await onEnsureConversation?.({ forSend: true })
+      const accepted = await chat.send(text, refs, {
+        ratio: genRatio,
+        style: genStyle,
+        resolution: genResolution,
+        generationMode,
+        conversationId: ensured?.id,
+        conversationSnapshot: ensured?.conversation
+      })
+      if (accepted !== false) {
+        setInput('')
+        setReferences([])
+      }
+    } finally {
+      sendingRef.current = false
+    }
+  }, [input, chat, references, genRatio, genStyle, genResolution, generationMode, onEnsureConversation, conversationBusy])
 
   const addReference = useCallback((asset) => {
     if (references.find(r => r.id === asset.id)) return
@@ -131,7 +168,7 @@ export default function ChatPanel({ chat, config, providerLists, onProviderChang
     const d = new Date(iso)
     const now = new Date()
     const diff = now - d
-    if (diff < 60000) return lang === 'en' ? 'now' : '刚刚'
+    if (diff < 60000) return t('now', lang)
     if (diff < 3600000) return `${Math.floor(diff / 60000)}m`
     if (diff < 86400000) return `${Math.floor(diff / 3600000)}h`
     return d.toLocaleDateString()
@@ -143,7 +180,7 @@ export default function ChatPanel({ chat, config, providerLists, onProviderChang
     return m > 0 ? `${m}:${sec.toString().padStart(2, '0')}` : `${sec}s`
   }
 
-  const canSend = Boolean(input.trim()) && !chat.loading
+  const canSend = Boolean(input.trim()) && !chat.loading && !conversationBusy
 
   return (
     <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
@@ -193,7 +230,7 @@ export default function ChatPanel({ chat, config, providerLists, onProviderChang
         }}>
           {conversations.length === 0 ? (
             <div style={{ padding: 16, textAlign: 'center', fontSize: 11, color: 'var(--text-muted)' }}>
-              {lang === 'en' ? 'No conversations' : '暂无对话'}
+              {t('noConversations', lang)}
             </div>
           ) : conversations.map(conv => (
             <div key={conv.id} onClick={() => { onSwitchConv(conv.id); setShowConvList(false) }}
@@ -229,14 +266,14 @@ export default function ChatPanel({ chat, config, providerLists, onProviderChang
                 ) : (
                   <div
                     onDoubleClick={(e) => { e.stopPropagation(); startRename(conv) }}
-                    title={lang === 'en' ? 'Double-click to rename' : '双击重命名'}
+                    title={t('doubleClickRename', lang)}
                     style={{
                       fontSize: 12, color: 'var(--text-primary)',
                       overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                       fontWeight: conv.id === activeConvId ? 500 : 400, cursor: 'text'
                     }}
                   >
-                    {conv.title || (lang === 'en' ? 'Untitled' : '未命名对话')}
+                    {conv.title || t('untitledConversation', lang)}
                   </div>
                 )}
                 <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 1 }}>{formatDate(conv.updatedAt)}</div>
@@ -356,24 +393,25 @@ export default function ChatPanel({ chat, config, providerLists, onProviderChang
           onMouseLeave={e => { if (!chat.thinking) { e.currentTarget.style.borderColor = 'var(--border-subtle)'; e.currentTarget.style.color = 'var(--text-muted)' } }}
           >
             <Ic n="think" size={12} />
-            {lang === 'en' ? 'Think' : '深度思考'}
+            {t('thinkToggle', lang)}
           </button>
 
           {enableReference && (
-            <button onClick={() => setShowRefPicker(!showRefPicker)} style={{
+            <button disabled={!hasReferenceAssets} title={!hasReferenceAssets ? t('noReferenceAssets', lang) : undefined} onClick={() => hasReferenceAssets && setShowRefPicker(!showRefPicker)} style={{
               background: showRefPicker || references.length > 0 ? 'var(--accent-soft)' : 'transparent',
               border: `1px solid ${showRefPicker || references.length > 0 ? 'var(--border-accent)' : 'var(--border-subtle)'}`,
               borderRadius: 'var(--radius-sm)', padding: '5px 10px',
               color: showRefPicker || references.length > 0 ? 'var(--accent)' : 'var(--text-muted)',
-              fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5,
+              fontSize: 11, cursor: hasReferenceAssets ? 'pointer' : 'default', display: 'flex', alignItems: 'center', gap: 5,
               fontWeight: references.length > 0 ? 600 : 400, transition: 'all 0.2s ease',
-              boxShadow: showRefPicker || references.length > 0 ? '0 0 0 2px var(--accent-glow)' : 'none'
+              boxShadow: showRefPicker || references.length > 0 ? '0 0 0 2px var(--accent-glow)' : 'none',
+              opacity: hasReferenceAssets ? 1 : 0.45
             }}
-            onMouseEnter={e => { if (!showRefPicker && references.length === 0) { e.currentTarget.style.borderColor = 'var(--border-accent)'; e.currentTarget.style.color = 'var(--text-secondary)' } }}
-            onMouseLeave={e => { if (!showRefPicker && references.length === 0) { e.currentTarget.style.borderColor = 'var(--border-subtle)'; e.currentTarget.style.color = 'var(--text-muted)' } }}
+            onMouseEnter={e => { if (hasReferenceAssets && !showRefPicker && references.length === 0) { e.currentTarget.style.borderColor = 'var(--border-accent)'; e.currentTarget.style.color = 'var(--text-secondary)' } }}
+            onMouseLeave={e => { if (hasReferenceAssets && !showRefPicker && references.length === 0) { e.currentTarget.style.borderColor = 'var(--border-subtle)'; e.currentTarget.style.color = 'var(--text-muted)' } }}
             >
               <Ic n="image" size={11} sw={2} />
-              {lang === 'en' ? 'Reference' : '参考图'}
+              {t('referenceImage', lang)}
               {references.length > 0 && <span style={{
                 background: 'var(--accent)', color: 'var(--text-white)', borderRadius: '50%',
                 width: 16, height: 16, fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600
@@ -384,7 +422,7 @@ export default function ChatPanel({ chat, config, providerLists, onProviderChang
           {/* Generation settings toggle */}
           <button onClick={() => setShowGenSettings(!showGenSettings)} style={chipBtnS(showGenSettings)}>
             <Ic n="gear" size={10} sw={2} />
-            {lang === 'en' ? 'Gen Settings' : '生成设置'}
+            {t('genSettings', lang)}
           </button>
 
           <ModelSelector
@@ -405,7 +443,7 @@ export default function ChatPanel({ chat, config, providerLists, onProviderChang
               {genStyle && <>
                 <span style={{ margin: '0 2px' }}>·</span>
                 <span>{t('style', lang)}:</span>
-                <span style={{ color: 'var(--accent)', fontWeight: 500 }}>{genStyle || '-'}</span>
+                <span style={{ color: 'var(--accent)', fontWeight: 500 }}>{styleLabel(genStyle, lang) || '-'}</span>
               </>}
             </div>
           )}
@@ -429,7 +467,7 @@ export default function ChatPanel({ chat, config, providerLists, onProviderChang
               <span style={{ fontSize: 10, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{t('style', lang)}</span>
               <select value={genStyle} onChange={e => setGenStyle(e.target.value)} style={selectChipS()}>
                 <option value="">{t('noStyle', lang)}</option>
-                {STYLE_PRESETS.map(s => <option key={s} value={s}>{s}</option>)}
+                {STYLE_PRESETS.map(s => <option key={s.value} value={s.value}>{s.label[lang] || s.value}</option>)}
               </select>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>

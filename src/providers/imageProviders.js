@@ -1,10 +1,14 @@
-// Fallback provider list for image generation — sourced from registry.js.
-// Used when IPC to the main process fails. Keep in sync with registry.js.
+// Fallback provider list for image generation. Runtime provider data normally
+// comes from electron/providers/registry.js.
 export const IMG_PROVIDERS = [
-  { id: 'dalle', name: 'OpenAI Image', defaultUrl: 'https://api.openai.com', defaultModel: 'gpt-image-2', protocol: 'openai_image' },
-  { id: 'gemini_img', name: 'Gemini Image', defaultUrl: 'https://generativelanguage.googleapis.com', defaultModel: 'gemini-2.5-flash-image', protocol: 'gemini_image' },
-  { id: 'jimeng_img', name: '即梦 / Seedream', defaultUrl: 'https://ark.cn-beijing.volces.com/api/v3', defaultModel: 'doubao-seedream-4-0-250828', protocol: 'ark_image' },
-  { id: 'alibaba-wan', name: '阿里万相 / Wan', defaultUrl: 'https://dashscope.aliyuncs.com/api/v1', defaultModel: 'wan2.6-t2i', protocol: 'wan_image_task' },
-  { id: 'baidu-qianfan', name: '百度千帆', defaultUrl: 'https://qianfan.baidubce.com', defaultModel: 'qwen-image', protocol: 'baidu_qianfan_image' },
-  { id: 'siliconflow', name: 'SiliconFlow Image', defaultUrl: 'https://api.siliconflow.cn', defaultModel: 'black-forest-labs/FLUX.1-dev', protocol: 'openai_image' }
+  { id: 'openai', name: 'OpenAI Image', platform: 'OpenAI', defaultUrl: 'https://api.openai.com', defaultModel: 'gpt-image-2', protocol: 'openai_image', billing: { mode: 'paygo' }, meta: { region: 'global' }, capabilities: { image: { textToImage: true, imageEdit: true, modelList: true } } },
+  { id: 'google', name: 'Gemini Image', platform: 'Google', defaultUrl: 'https://generativelanguage.googleapis.com', defaultModel: 'gemini-2.5-flash-image', protocol: 'gemini_image', billing: { mode: 'paygo' }, meta: { region: 'global' }, capabilities: { image: { textToImage: true, imageEdit: true } } },
+  { id: 'volcengine', name: 'Seedream / 即梦', platform: 'Volcengine', defaultUrl: 'https://ark.cn-beijing.volces.com/api/v3', defaultModel: 'doubao-seedream-4-0-250828', protocol: 'ark_image', billing: { mode: 'credits' }, meta: { region: 'china' }, capabilities: { image: { textToImage: true, imageEdit: true, modelList: true } } },
+  { id: 'alibaba-wan', name: 'Wan / 阿里万相', platform: 'Alibaba Cloud', defaultUrl: 'https://dashscope.aliyuncs.com/api/v1', defaultModel: 'wan2.6-t2i', protocol: 'wan_image_task', billing: { mode: 'paygo' }, meta: { region: 'china' }, capabilities: { image: { textToImage: true } } },
+  { id: 'baidu-qianfan', name: 'Baidu Qianfan / 百度千帆', platform: 'Baidu', defaultUrl: 'https://qianfan.baidubce.com', defaultModel: 'qwen-image', protocol: 'baidu_qianfan_image', billing: { mode: 'paygo' }, meta: { region: 'china' }, capabilities: { image: { textToImage: true, negativePrompt: 'native' } } },
+  { id: 'stability', name: 'Stability AI', platform: 'Stability AI', defaultUrl: 'https://api.stability.ai', defaultModel: 'stable-image-core', protocol: 'stability_image', integrationStatus: 'metadata', billing: { mode: 'credits' }, meta: { region: 'global' }, capabilities: { image: { textToImage: true, imageEdit: true } } },
+  { id: 'ideogram', name: 'Ideogram', platform: 'Ideogram', defaultUrl: 'https://api.ideogram.ai', defaultModel: 'ideogram-v4', protocol: 'ideogram_image', integrationStatus: 'metadata', billing: { mode: 'paygo' }, meta: { region: 'global' }, capabilities: { image: { textToImage: true, imageEdit: true, styleReference: true } } },
+  { id: 'fal', name: 'fal', platform: 'fal', defaultUrl: 'https://fal.run', defaultModel: 'fal-ai/flux-pro', protocol: 'fal_image_task', integrationStatus: 'metadata', executable: false, billing: { mode: 'paygo' }, meta: { region: 'global' }, capabilities: { image: { textToImage: true, imageToImage: true, relay: true, modelCatalog: true, integrationStatus: 'metadata' } } },
+  { id: 'replicate', name: 'Replicate', platform: 'Replicate', defaultUrl: 'https://api.replicate.com', defaultModel: 'black-forest-labs/flux-schnell', protocol: 'replicate_prediction', integrationStatus: 'metadata', executable: false, billing: { mode: 'paygo' }, meta: { region: 'global' }, capabilities: { image: { textToImage: true, imageToImage: true, relay: true, integrationStatus: 'metadata' } } },
+  { id: 'siliconflow', name: 'SiliconFlow Image', platform: 'SiliconFlow', defaultUrl: 'https://api.siliconflow.cn', defaultModel: 'black-forest-labs/FLUX.1-dev', protocol: 'openai_image', billing: { mode: 'paygo' }, meta: { region: 'china' }, capabilities: { image: { textToImage: true, modelList: true } } }
 ]
