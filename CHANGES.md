@@ -2,7 +2,7 @@
 
 ## 中文
 
-#### v1.10.0 (2026-07-01)
+#### v2.0.0 (2026-07-01)
 
 **创作谱系与数据韧性**
 - 新增资产生成谱系：记录 provider、模型、prompt、参数、父资产、参考资产与任务来源
@@ -339,7 +339,7 @@
 
 ## English
 
-#### v1.10.0 (2026-07-01)
+#### v2.0.0 (2026-07-01)
 
 **Creative Lineage & Data Resilience**
 - Assets now keep generation lineage: provider, model, prompt, parameters, parent asset, references, and task source
