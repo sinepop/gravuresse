@@ -51,11 +51,13 @@ const selectChipS = () => ({
   appearance: 'auto', transition: 'all 0.15s',
 })
 
-export default function ChatPanel({ chat, config, providerLists, onProviderChange, lang, generationMode = 'image', conversations, activeConvId, onSwitchConv, onNewConv, onDeleteConv, onRenameConv, onEnsureConversation, conversationBusy = false, canvas }) {
+export default function ChatPanel({ chat, config, providerLists, onProviderChange, lang, generationMode = 'image', conversations, activeConvId, onSwitchConv, onNewConv, onDeleteConv, onRenameConv, onExportConv, onExportProject, onImportConv, onEnsureConversation, conversationBusy = false, canvas, referenceIntent, onReferenceIntentConsumed, composerIntent, onComposerIntentConsumed }) {
   const [input, setInput] = useState('')
   const [showConvList, setShowConvList] = useState(false)
   const [showRefPicker, setShowRefPicker] = useState(false)
+  const [showMaterialRefsOnly, setShowMaterialRefsOnly] = useState(false)
   const [references, setReferences] = useState([])
+  const [composerGenerationMeta, setComposerGenerationMeta] = useState(null)
   const [editingConvId, setEditingConvId] = useState(null)
   const [editTitle, setEditTitle] = useState('')
   const [genRatio, setGenRatio] = useState(config?.general?.defaultRatio || '1:1')
@@ -67,7 +69,12 @@ export default function ChatPanel({ chat, config, providerLists, onProviderChang
   const sendingRef = useRef(false)
 
   const enableReference = config?.general?.enableReference === true
-  const hasReferenceAssets = Boolean(canvas?.allAssets?.some(asset => asset.url))
+  const referenceAssets = (canvas?.allAssets || []).filter(asset => asset.url)
+  const materialReferenceAssets = referenceAssets.filter(asset => asset.isMaterial === true)
+  const visibleReferenceAssets = (showMaterialRefsOnly ? materialReferenceAssets : referenceAssets)
+    .slice()
+    .sort((a, b) => Number(b.isMaterial === true) - Number(a.isMaterial === true))
+  const hasReferenceAssets = referenceAssets.length > 0
   const modeHint = t(generationMode === 'video' ? 'videoModeHint' : 'imageModeHint', lang)
 
   // Sync settings when config changes
@@ -118,23 +125,46 @@ export default function ChatPanel({ chat, config, providerLists, onProviderChang
         style: genStyle,
         resolution: genResolution,
         generationMode,
+        ...composerGenerationMeta,
         conversationId: ensured?.id,
         conversationSnapshot: ensured?.conversation
       })
       if (accepted !== false) {
         setInput('')
         setReferences([])
+        setComposerGenerationMeta(null)
       }
     } finally {
       sendingRef.current = false
     }
-  }, [input, chat, references, genRatio, genStyle, genResolution, generationMode, onEnsureConversation, conversationBusy])
+  }, [input, chat, references, genRatio, genStyle, genResolution, generationMode, composerGenerationMeta, onEnsureConversation, conversationBusy])
 
   const addReference = useCallback((asset) => {
     if (references.find(r => r.id === asset.id)) return
     setReferences(prev => [...prev, { id: asset.id, url: asset.url, type: asset.type, label: asset.label }])
     setShowRefPicker(false)
   }, [references])
+
+  useEffect(() => {
+    const asset = referenceIntent?.asset
+    if (!asset?.id || !asset.url) return
+    addReference(asset)
+    setShowRefPicker(false)
+    textareaRef.current?.focus()
+    onReferenceIntentConsumed?.(referenceIntent.nonce)
+  }, [referenceIntent?.nonce, addReference, onReferenceIntentConsumed])
+
+  useEffect(() => {
+    const text = composerIntent?.text
+    if (!text) return
+    setInput(text)
+    setComposerGenerationMeta({
+      parentAssetId: composerIntent.parentAssetId || null,
+      createdFrom: composerIntent.createdFrom || 'promptEdit'
+    })
+    requestAnimationFrame(() => textareaRef.current?.focus())
+    onComposerIntentConsumed?.(composerIntent.nonce)
+  }, [composerIntent?.nonce, onComposerIntentConsumed])
 
   const removeReference = useCallback((id) => {
     setReferences(prev => prev.filter(r => r.id !== id))
@@ -214,6 +244,28 @@ export default function ChatPanel({ chat, config, providerLists, onProviderChang
         >
           + {t('newConversation', lang)}
         </button>
+        <button onClick={onExportConv} disabled={conversationBusy} title={t('exportConversation', lang)} aria-label={t('exportConversation', lang)} style={{
+          background: 'transparent', border: '1px solid var(--border-subtle)',
+          borderRadius: 'var(--radius-sm)', width: 30, height: 28, color: 'var(--text-secondary)',
+          fontSize: 11, cursor: conversationBusy ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          opacity: conversationBusy ? 0.55 : 1, transition: 'all 0.2s ease'
+        }}
+        onMouseEnter={e => { if (!conversationBusy) { e.currentTarget.style.borderColor = 'var(--border-accent)'; e.currentTarget.style.color = 'var(--accent)' } }}
+        onMouseLeave={e => { if (!conversationBusy) { e.currentTarget.style.borderColor = 'var(--border-subtle)'; e.currentTarget.style.color = 'var(--text-secondary)' } }}
+        >
+          <Ic n="download" size={12} sw={2} />
+        </button>
+        <button onClick={onImportConv} disabled={conversationBusy} title={t('importConversation', lang)} aria-label={t('importConversation', lang)} style={{
+          background: 'transparent', border: '1px solid var(--border-subtle)',
+          borderRadius: 'var(--radius-sm)', width: 30, height: 28, color: 'var(--text-secondary)',
+          fontSize: 11, cursor: conversationBusy ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          opacity: conversationBusy ? 0.55 : 1, transition: 'all 0.2s ease'
+        }}
+        onMouseEnter={e => { if (!conversationBusy) { e.currentTarget.style.borderColor = 'var(--border-accent)'; e.currentTarget.style.color = 'var(--accent)' } }}
+        onMouseLeave={e => { if (!conversationBusy) { e.currentTarget.style.borderColor = 'var(--border-subtle)'; e.currentTarget.style.color = 'var(--text-secondary)' } }}
+        >
+          <Ic n="upload" size={12} sw={2} />
+        </button>
         <div style={{ flex: 1 }} />
         {conversations.length > 0 && (
           <span style={{ fontSize: 10, color: 'var(--text-ghost)', fontFamily: 'var(--font-mono)' }}>
@@ -287,6 +339,26 @@ export default function ChatPanel({ chat, config, providerLists, onProviderChang
               </button>
             </div>
           ))}
+          <div style={{ display: 'flex', gap: 6, padding: '6px 4px 2px', borderTop: '1px solid var(--border-subtle)', marginTop: 4 }}>
+            <button onClick={(e) => { e.stopPropagation(); onExportProject?.() }} disabled={conversationBusy || conversations.length === 0} style={{
+              flex: 1, background: 'transparent', border: '1px solid var(--border-subtle)',
+              borderRadius: 'var(--radius-sm)', color: 'var(--text-secondary)', fontSize: 11,
+              padding: '6px 8px', cursor: conversations.length === 0 ? 'default' : 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+              opacity: conversationBusy || conversations.length === 0 ? 0.45 : 1
+            }}>
+              <Ic n="download" size={11} /> {t('exportProject', lang)}
+            </button>
+            <button onClick={(e) => { e.stopPropagation(); onImportConv?.() }} disabled={conversationBusy} style={{
+              flex: 1, background: 'transparent', border: '1px solid var(--border-subtle)',
+              borderRadius: 'var(--radius-sm)', color: 'var(--text-secondary)', fontSize: 11,
+              padding: '6px 8px', cursor: conversationBusy ? 'default' : 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+              opacity: conversationBusy ? 0.45 : 1
+            }}>
+              <Ic n="upload" size={11} /> {t('importProject', lang)}
+            </button>
+          </div>
         </div>
       )}
 
@@ -357,13 +429,37 @@ export default function ChatPanel({ chat, config, providerLists, onProviderChang
           padding: '10px 14px', maxHeight: 160, overflow: 'auto', position: 'absolute', bottom: 120, left: 12, right: 12, zIndex: 40,
           display: 'flex', gap: 6, flexWrap: 'wrap', animation: 'scaleIn 0.12s ease'
         }}>
-          {canvas.allAssets.filter(a => a.url).map(asset => (
+          <div style={{ flex: '0 0 100%', display: 'flex', alignItems: 'center', gap: 4, marginBottom: 2 }}>
+            <button onClick={() => setShowMaterialRefsOnly(false)} style={chipBtnS(!showMaterialRefsOnly)}>
+              {t('allAssets', lang)}
+            </button>
+            <button onClick={() => setShowMaterialRefsOnly(true)} disabled={materialReferenceAssets.length === 0} style={{ ...chipBtnS(showMaterialRefsOnly), opacity: materialReferenceAssets.length === 0 ? 0.45 : 1, cursor: materialReferenceAssets.length === 0 ? 'default' : 'pointer' }}>
+              <Ic n="star" size={10} sw={2} />
+              {t('materialsOnly', lang)}
+            </button>
+          </div>
+          {visibleReferenceAssets.length === 0 && (
+            <div style={{ flex: '0 0 100%', padding: '10px 0', color: 'var(--text-muted)', fontSize: 11, textAlign: 'center' }}>
+              {t('noMaterialAssets', lang)}
+            </div>
+          )}
+          {visibleReferenceAssets.map(asset => (
             <div key={asset.id} onClick={() => addReference(asset)} style={{
               width: 52, height: 52, borderRadius: 'var(--radius-sm)', overflow: 'hidden',
               border: references.find(r => r.id === asset.id) ? '2px solid var(--accent)' : '1px solid var(--border-default)',
               cursor: 'pointer', flexShrink: 0, position: 'relative'
             }}>
               <img src={asset.url} alt={asset.label} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              {asset.isMaterial && (
+                <div style={{
+                  position: 'absolute', top: 3, left: 3, width: 16, height: 16,
+                  borderRadius: '50%', background: 'var(--overlay-dark)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  border: '1px solid var(--border-white-subtle)'
+                }}>
+                  <Ic n="star" size={9} color="var(--accent)" sw={2.2} />
+                </div>
+              )}
               <div style={{
                 position: 'absolute', bottom: 0, left: 0, right: 0, padding: '1px 3px',
                 background: 'var(--overlay-dark)', fontSize: 8, color: 'var(--text-white)', textAlign: 'center',

@@ -2,6 +2,61 @@
 
 ## 中文
 
+#### v1.10.0 (2026-07-01)
+
+**创作谱系与数据韧性**
+- 新增资产生成谱系：记录 provider、模型、prompt、参数、父资产、参考资产与任务来源
+- 切换/导入旧对话时会统一补全资产结构，缺少 generation 字段的旧资产也能进入同一条迭代链路
+- 导入旧资产时会自动修复空 ID、空类型和空标签，避免谱系和选择状态因为无效资产身份断裂
+- 导入会自动修复重复资产 ID，并兼容字符串形式的来源资产字段，避免谱系映射丢失或选择冲突
+- 资产 ID、来源 ID 与任务 ID 会统一归一化为字符串，未知资产类型会回退为图片，同时保留 `generation.mode` 的真实生成方式，避免旧项目或外部导入污染创作谱系
+- 导入会过滤非对象资产，并忽略非对象 generation 字段，避免坏项目文件污染创作档案
+- 资产更新会深合并 generation 字段，避免局部回写分辨率、状态或坐标时丢失原 prompt、模型与父资产关系
+- 导入会规范化消息与任务结构，过滤非对象消息、修复重复消息 ID，并把已中断的运行中任务标记为错误，避免旧项目导入后永久转圈
+- 对话标题推断会跳过坏消息和空 user 内容，优先使用第一条有效用户提示，避免导入后出现空标题
+- 本地历史加载也会复用同一套会话规范化，旧 store 中的坏消息、坏资产、数字 activeId/deletedIds 不再绕过导入防御
+- 主进程会话 store 也会统一 conversation ID、activeId 与 deletedIds 为字符串，避免旧数据在删除/恢复/选中状态上失配
+- 对话消息、任务状态与资产增删改的账本逻辑抽为纯函数，并纳入核心测试覆盖
+- 对话账本工具会容错非数组 messages/assets，避免旧坏数据触发同步崩溃
+- 新增 `npm run test:core`，覆盖资产结构归一化、旧项目导入兼容与错误提示格式
+
+**对话导入/导出**
+- 新增当前对话导入/导出 JSON，保留消息、资产与创作谱系，导入时创建新的本地对话而不复用外部 ID
+- 导出对话时会尽量把远程图片/视频内联为 data URL，降低临时链接过期导致作品丢失的风险
+- 新增项目级导出/导入，可一次迁移全部对话；导入项目时以新对话合并，不覆盖本地历史
+- 导入会拒绝明显无效 JSON，并兼容直接由对话数组组成的旧项目文件
+- 导入会过滤不含对话字段的对象；如果文件中没有可导入对话，会给出明确错误
+- 导入/导出失败提示会显示具体错误原因，方便判断是文件过大、格式错误还是写入失败
+
+**创作档案与资产操作**
+- 创作档案新增生成方式字段，可直接查看 text-to-image、image-to-video 等真实 generation mode
+- 资产详情升级为创作档案，支持复制 Prompt、同系列变体、换风格、重新生成与图片转视频
+- 重新生成图片保留原始提示词不变，绕过 LLM 直接调用图像 API
+- 同系列变体与换风格改为确定性图片任务，不再依赖 LLM 随机返回生成任务
+- 资产详情与右键菜单新增”用作参考”，可直接把资产加入当前输入引用并聚焦输入框
+- 资产详情与右键菜单新增”编辑 Prompt”，可把原 Prompt 填回输入框继续改写
+- 通过”编辑 Prompt”继续生成的新结果会保留父资产关系，避免分叉创作断谱系
+
+**素材系统**
+- 资产可标记为个人素材，素材会在卡片与参考图选择器中标星并优先显示
+- 画布与参考图选择器支持只看素材；创作档案中的来源资产支持悬停预览
+- 标记素材、删除资产与自由画布拖动位置会即时同步到对话存储，减少快速切换/导出时的状态落后
+
+**视频生成增强**
+- 图片转视频会强制把当前图片作为视频 source image；视频资产不再提供绕过费用确认的重新生成捷径
+- 从图片执行”做成视频”会自动切到视频工作区，让任务队列和完成结果保持可见
+
+**画布交互升级**
+- 自由画布新增资产级撤销/重做、小地图定位与谱系线开关，拖动、删除、标记素材等用户操作可恢复
+- 新增本地 Agent 动作队列：基于选中资产建议下一步动作，用户确认后复用现有资产动作执行
+- Agent 队列支持复制可审查动作计划，并在切换资产时清理过期动作，避免误执行旧资产计划
+
+**国际化与设置**
+- 重新生成、编辑 Prompt、图片转视频与 Provider 预检错误会跟随当前语言显示，减少英文界面中的中文硬编码
+- API 配置字段（Key/URL/Model）移至 Provider 卡片网格上方，无需滚到底部
+- 订阅/套餐类 Provider 点击显示资料卡片（官网/文档/购买入口），不误写入调用配置
+- 清理过时的统一 API 页面代码与重复 Provider 选择入口
+
 #### v1.9.0 (2026-06-29)
 
 **工作区与模型入口重构**
@@ -22,7 +77,6 @@
 - 修复首次启动或无 active conversation 时第一条消息无法发送的问题
 - 强化多对话历史与图片资产留存，避免恢复会话第一条消息使用错误上下文
 - 视频生成默认隐藏为实验功能，降低高成本误用风险
-- 清理过时的统一 API 页面代码与重复 Provider 选择入口
 
 #### v1.8.0 (2026-06-25)
 
@@ -285,6 +339,61 @@
 
 ## English
 
+#### v1.10.0 (2026-07-01)
+
+**Creative Lineage & Data Resilience**
+- Assets now keep generation lineage: provider, model, prompt, parameters, parent asset, references, and task source
+- Switching or importing older conversations now normalizes asset shape, so legacy assets without generation fields still enter the same iteration flow
+- Imported legacy assets with empty IDs, types, or labels are repaired automatically so lineage and selection state keep a valid asset identity
+- Import now repairs duplicate asset IDs and accepts string-form source asset fields, avoiding lineage loss or selection conflicts
+- Asset IDs, source IDs, and task IDs are normalized to strings, while unknown asset types fall back to images and `generation.mode` keeps the real generation mode, preventing old projects or external imports from corrupting lineage
+- Import now filters non-object assets and ignores non-object generation fields, avoiding corrupted project files polluting creative records
+- Asset updates now deep-merge generation fields, preventing partial resolution, status, or position updates from dropping the original prompt, model, and parent asset relationship
+- Import now normalizes message and task shape, filters non-object messages, repairs duplicate message IDs, and marks interrupted running tasks as errors so old projects do not spin forever after import
+- Conversation title inference now skips malformed messages and empty user content, using the first valid user prompt instead of producing blank imported titles
+- Local history loading now reuses the same conversation normalization, so malformed stored messages/assets and numeric activeId/deletedIds no longer bypass import safeguards
+- The main-process conversation store now normalizes conversation IDs, activeId, and deletedIds to strings, avoiding selection/deletion mismatches from legacy data
+- Conversation ledger updates for messages, task status, and asset add/update/remove are now pure helpers covered by core tests
+- Conversation ledger helpers tolerate non-array messages/assets so malformed legacy data does not crash synchronization
+- Added `npm run test:core` covering asset normalization, legacy project import compatibility, and error-alert formatting
+
+**Conversation Import/Export**
+- Added current-conversation JSON import/export for messages, assets, and creative lineage; imported files create a new local conversation instead of reusing external IDs
+- Conversation export now tries to inline remote image/video media as data URLs to reduce loss from expired temporary links
+- Added project-level export/import for all conversations; imported projects merge as new local conversations without overwriting history
+- Import now rejects obviously invalid JSON payloads and supports older project files that are plain conversation arrays
+- Import filters objects without conversation fields; files with no importable conversations now show an explicit error
+- Import/export failure alerts now include the concrete error reason, making file-size, format, and write failures easier to diagnose
+
+**Creative Records & Asset Operations**
+- Creative records now show generation mode directly, making text-to-image, image-to-video, and other generation modes visible
+- Asset details are now creative records with Copy Prompt, Series Variant, Restyle, Regenerate, and Image-to-Video actions
+- Regenerate now preserves the original prompt — bypasses LLM and calls the image API directly
+- Series Variant and Restyle now create deterministic image tasks instead of depending on the chat model to return a task
+- Asset details and context menus now support Use as Reference, adding the asset to the current input references and focusing the composer
+- Asset details and context menus now support Edit Prompt, loading the original prompt back into the composer for quick edits
+- Results generated after Edit Prompt keep the source asset as their parent so branched work remains traceable
+
+**Material System**
+- Assets can be marked as personal materials; marked items show a star badge and appear first in the reference picker
+- Canvas and reference picker can filter to materials only; source asset chips in creative records show hover previews
+- Marking materials, deleting assets, and dragging assets on the free canvas now sync immediately into conversation storage, reducing stale state during quick switching or export
+
+**Video Generation Enhancements**
+- Image-to-Video now forces the selected image as the video source image; video assets no longer expose a regenerate shortcut that bypasses cost confirmation
+- Running Generate Video from an image now switches to the video workspace so the task queue and completed result stay visible
+
+**Canvas Interaction Upgrades**
+- Free canvas now includes asset-level undo/redo, a minimap, and lineage-line toggles; user actions like moving, deleting, and marking materials can be restored
+- Added a local Agent action queue: suggested next steps are generated from the selected asset and executed only after user confirmation through existing asset actions
+- Agent Queue can now copy a reviewable action plan and clears stale queued actions when switching assets, avoiding accidental execution against the wrong asset
+
+**i18n & Settings**
+- Regenerate, Edit Prompt, Image-to-Video, and provider preflight errors now follow the active language, reducing Chinese hardcoded copy in the English UI
+- API config fields (Key/URL/Model) moved above the provider card grid; no more scrolling to the bottom
+- Subscription/plan providers show an info card (homepage/docs/purchase) instead of silently doing nothing
+- Removed obsolete unified API page code and duplicate Provider selection controls
+
 #### v1.9.0 (2026-06-29)
 
 **Workspace and Model Entry Refactor**
@@ -305,7 +414,6 @@
 - Fixed first-message failures when no active conversation exists
 - Strengthened multi-conversation history and image asset retention, including restored-conversation first-send context
 - Video generation is hidden by default as an experimental feature to reduce high-cost mistakes
-- Removed obsolete unified API page code and duplicate Provider selection controls
 
 #### v1.8.0 (2026-06-25)
 

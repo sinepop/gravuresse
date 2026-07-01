@@ -21,6 +21,7 @@ let crashCount = 0
 
 const SAVE_DIR = path.join(app.getPath('pictures'), 'Gravuresse')
 const MAX_ASSET_BYTES = 100 * 1024 * 1024
+const MAX_PROJECT_EXPORT_BYTES = 100 * 1024 * 1024
 const ASSET_MIME_EXTENSIONS = {
   'image/png': '.png',
   'image/jpeg': '.jpg',
@@ -155,6 +156,17 @@ function writeBufferAtomic(bytes, filePath) {
   }
 }
 
+function writeTextAtomic(text, filePath) {
+  const tmpFile = tempFileFor(filePath)
+  try {
+    fs.writeFileSync(tmpFile, text, 'utf8')
+    fs.renameSync(tmpFile, filePath)
+  } catch (e) {
+    try { fs.unlinkSync(tmpFile) } catch {}
+    throw e
+  }
+}
+
 function writeDataUrl(url, filePath, type) {
   const match = /^data:([\w.+-]+\/[\w.+-]+)?;base64,([a-z0-9+/=\s]+)$/i.exec(url || '')
   if (!match) throw new Error('Invalid data URL')
@@ -187,6 +199,69 @@ async function writeAssetUrl(url, filePath, type) {
     try { fs.unlinkSync(downloadPath) } catch {}
     throw e
   }
+}
+
+async function inlineExportAsset(asset = {}) {
+  if (!asset.url || !ASSET_TYPE_MIMES[asset.type]) return { asset, inlined: false }
+  if (asset.url.startsWith('data:')) return { asset, inlined: true }
+  if (!asset.url.startsWith('https://')) return { asset, inlined: false }
+
+  const downloadPath = path.join(app.getPath('temp'), `gravuresse-export-${crypto.randomUUID()}`)
+  try {
+    await downloadToFile(asset.url, downloadPath)
+    const bytes = fs.readFileSync(downloadPath)
+    const mime = validateAssetBytes(bytes, asset.type)
+    return {
+      asset: {
+        ...asset,
+        url: `data:${mime};base64,${bytes.toString('base64')}`,
+        originalUrl: asset.originalUrl || asset.url
+      },
+      inlined: true
+    }
+  } catch {
+    return { asset, inlined: false }
+  } finally {
+    try { fs.unlinkSync(downloadPath) } catch {}
+  }
+}
+
+async function inlineExportAssets(assets = []) {
+  const results = []
+  let inlined = 0
+  let skipped = 0
+  for (const asset of assets) {
+    const result = await inlineExportAsset(asset)
+    results.push(result.asset)
+    if (result.inlined) inlined++
+    else if (asset?.url?.startsWith('https://')) skipped++
+  }
+  return { assets: results, inlined, skipped }
+}
+
+function remoteExportAssetCount(assets = []) {
+  return assets.filter(asset => asset?.url?.startsWith('https://')).length
+}
+
+async function inlineExportConversations(conversations = []) {
+  const results = []
+  let inlined = 0
+  let skipped = 0
+  for (const conversation of conversations) {
+    const media = await inlineExportAssets(Array.isArray(conversation.assets) ? conversation.assets : [])
+    results.push({
+      title: conversation.title || '',
+      messages: Array.isArray(conversation.messages) ? conversation.messages : [],
+      assets: media.assets
+    })
+    inlined += media.inlined
+    skipped += media.skipped
+  }
+  return { conversations: results, inlined, skipped }
+}
+
+function remoteExportConversationAssetCount(conversations = []) {
+  return conversations.reduce((sum, conversation) => sum + remoteExportAssetCount(conversation.assets || []), 0)
 }
 
 function openExternalSafe(url) {
@@ -236,6 +311,90 @@ ipcMain.handle('conv:loadAll', () => store.loadAll())
 ipcMain.handle('conv:save', (_, id, data) => store.saveConversation(id, data))
 ipcMain.handle('conv:delete', (_, id) => store.deleteConversation(id))
 ipcMain.handle('conv:setActive', (_, id) => store.setActiveId(id))
+ipcMain.handle('conv:export', async (_, conversation = {}) => {
+  const title = normalizeAssetLabel(conversation.title || 'conversation')
+  const result = await dialog.showSaveDialog(mainWindow, {
+    defaultPath: `${title}.gravuresse.json`,
+    filters: [{ name: 'Gravuresse JSON', extensions: ['json'] }]
+  })
+  if (result.canceled || !result.filePath) return { canceled: true }
+
+  const exportAssets = Array.isArray(conversation.assets) ? conversation.assets : []
+  const media = await inlineExportAssets(exportAssets)
+  const buildPayload = (assets, mediaMeta) => ({
+    schemaVersion: 1,
+    app: 'Gravuresse',
+    exportedAt: new Date().toISOString(),
+    media: mediaMeta,
+    conversation: {
+      title: conversation.title || '',
+      messages: Array.isArray(conversation.messages) ? conversation.messages : [],
+      assets
+    }
+  })
+  let payload = buildPayload(media.assets, { inlined: media.inlined, skipped: media.skipped, fallback: false })
+  let text = JSON.stringify(payload, null, 2)
+  if (Buffer.byteLength(text, 'utf8') > MAX_PROJECT_EXPORT_BYTES && media.inlined > 0) {
+    payload = buildPayload(exportAssets, { inlined: 0, skipped: remoteExportAssetCount(exportAssets), fallback: true })
+    text = JSON.stringify(payload, null, 2)
+  }
+  if (Buffer.byteLength(text, 'utf8') > MAX_PROJECT_EXPORT_BYTES) {
+    throw new Error('Conversation export is too large')
+  }
+  writeTextAtomic(text, path.resolve(result.filePath))
+  return { canceled: false, filePath: path.resolve(result.filePath), media: payload.media }
+})
+ipcMain.handle('conv:exportProject', async (_, conversations = []) => {
+  const result = await dialog.showSaveDialog(mainWindow, {
+    defaultPath: `gravuresse-project-${new Date().toISOString().slice(0, 10)}.gravuresse.json`,
+    filters: [{ name: 'Gravuresse JSON', extensions: ['json'] }]
+  })
+  if (result.canceled || !result.filePath) return { canceled: true }
+
+  const sourceConversations = Array.isArray(conversations) ? conversations : []
+  const media = await inlineExportConversations(sourceConversations)
+  const buildPayload = (items, mediaMeta) => ({
+    schemaVersion: 1,
+    app: 'Gravuresse',
+    kind: 'project',
+    exportedAt: new Date().toISOString(),
+    media: mediaMeta,
+    conversations: items
+  })
+  let payload = buildPayload(media.conversations, { inlined: media.inlined, skipped: media.skipped, fallback: false })
+  let text = JSON.stringify(payload, null, 2)
+  if (Buffer.byteLength(text, 'utf8') > MAX_PROJECT_EXPORT_BYTES && media.inlined > 0) {
+    payload = buildPayload(sourceConversations.map(conversation => ({
+      title: conversation.title || '',
+      messages: Array.isArray(conversation.messages) ? conversation.messages : [],
+      assets: Array.isArray(conversation.assets) ? conversation.assets : []
+    })), { inlined: 0, skipped: remoteExportConversationAssetCount(sourceConversations), fallback: true })
+    text = JSON.stringify(payload, null, 2)
+  }
+  if (Buffer.byteLength(text, 'utf8') > MAX_PROJECT_EXPORT_BYTES) {
+    throw new Error('Project export is too large')
+  }
+  writeTextAtomic(text, path.resolve(result.filePath))
+  return { canceled: false, filePath: path.resolve(result.filePath), media: payload.media, count: sourceConversations.length }
+})
+ipcMain.handle('conv:import', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ['openFile'],
+    filters: [{ name: 'Gravuresse JSON', extensions: ['json'] }]
+  })
+  if (result.canceled || !result.filePaths?.[0]) return { canceled: true }
+
+  const filePath = path.resolve(result.filePaths[0])
+  const stat = fs.statSync(filePath)
+  if (stat.size > MAX_PROJECT_EXPORT_BYTES) {
+    throw new Error('Conversation import is too large')
+  }
+  const data = JSON.parse(fs.readFileSync(filePath, 'utf8'))
+  if (!data || (typeof data !== 'object' && !Array.isArray(data))) {
+    throw new Error('Invalid Gravuresse import file')
+  }
+  return { canceled: false, data }
+})
 
 // Unified provider call
 ipcMain.handle('provider:call', async (_, params = {}) => {

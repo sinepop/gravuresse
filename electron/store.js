@@ -40,11 +40,15 @@ function loadAll() {
   ensureDir()
   try {
     const raw = JSON.parse(fs.readFileSync(STORE_FILE, 'utf-8'))
-    const deletedIds = raw.deletedIds || []
+    const deletedIds = Array.isArray(raw.deletedIds) ? raw.deletedIds.map(String).filter(Boolean) : []
     const deleted = new Set(deletedIds)
-    const conversations = (raw.conversations || []).filter(c => !deleted.has(c.id))
-    const activeId = raw.activeId && !deleted.has(raw.activeId) && conversations.some(c => c.id === raw.activeId)
-      ? raw.activeId
+    const conversations = (Array.isArray(raw.conversations) ? raw.conversations : [])
+      .filter(c => c && typeof c === 'object' && (typeof c.id === 'string' || typeof c.id === 'number'))
+      .map(c => ({ ...c, id: String(c.id) }))
+      .filter(c => !deleted.has(c.id))
+    const requestedActiveId = raw.activeId ? String(raw.activeId) : null
+    const activeId = requestedActiveId && !deleted.has(requestedActiveId) && conversations.some(c => c.id === requestedActiveId)
+      ? requestedActiveId
       : conversations[0]?.id || null
     return {
       schemaVersion: raw.schemaVersion || SCHEMA_VERSION,
@@ -71,6 +75,8 @@ function saveAll(data) {
 }
 
 function saveConversation(convId, convData) {
+  convId = convId ? String(convId) : ''
+  if (!convId) return Promise.resolve()
   return enqueueWrite(() => {
     const data = loadAll()
     if ((data.deletedIds || []).includes(convId)) return
@@ -85,6 +91,8 @@ function saveConversation(convId, convData) {
 }
 
 function deleteConversation(convId) {
+  convId = convId ? String(convId) : ''
+  if (!convId) return Promise.resolve()
   return enqueueWrite(() => {
     const data = loadAll()
     data.conversations = data.conversations.filter(c => c.id !== convId)
@@ -95,6 +103,7 @@ function deleteConversation(convId) {
 }
 
 function setActiveId(convId) {
+  convId = convId ? String(convId) : null
   return enqueueWrite(() => {
     const data = loadAll()
     data.activeId = convId

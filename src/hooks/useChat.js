@@ -3,6 +3,7 @@ import { IMG_PROVIDERS } from '../providers/imageProviders'
 import { VID_PROVIDERS } from '../providers/videoProviders'
 import { resolveProviderId } from '../providers/aliases'
 import { t } from '../i18n'
+import { createGeneration } from '../utils/assetFactory'
 
 let _msgIdCounter = 0
 function nextId() { return Date.now() * 1000 + (++_msgIdCounter % 1000) }
@@ -31,32 +32,37 @@ function findProviderDef(track, providerLists = {}, id) {
 
 function precheckGeneration(track, providerDef, task, extra = {}) {
   if (!providerDef) return
+  const lang = extra.lang || 'zh'
+  const fmt = (key, values = {}) => Object.entries(values).reduce(
+    (text, [name, value]) => text.replace(`{${name}}`, value),
+    t(key, lang)
+  )
   if (providerDef.executable === false || providerDef.integrationStatus === 'metadata') {
-    throw new Error(`${providerDef.name} 当前只提供官网/购买/文档入口，请选择可执行 provider 或 Custom API。`)
+    throw new Error(fmt('providerMetadataOnlyError', { provider: providerDef.name }))
   }
   const constraints = providerDef.constraints?.[track] || providerDef.meta?.constraints?.[track] || {}
   const prompt = String(task.prompt || '')
   const maxPrompt = constraints.prompt?.maxLength
   if (maxPrompt && Array.from(prompt).length > maxPrompt) {
-    throw new Error(`Prompt 过长：当前 ${Array.from(prompt).length} 字符，${providerDef.name} 上限 ${maxPrompt} 字符。`)
+    throw new Error(fmt('promptTooLongError', { count: Array.from(prompt).length, provider: providerDef.name, max: maxPrompt }))
   }
   const negativePrompt = task.negative_prompt || task.negativePrompt || ''
   const negRule = constraints.negativePrompt
   if (negativePrompt && negRule && negRule.supported === false && negRule.strategy === 'unsupported') {
-    throw new Error(`${providerDef.name} 不支持 Negative Prompt，请清空负面提示词或换用支持的 provider。`)
+    throw new Error(fmt('negativePromptUnsupportedError', { provider: providerDef.name }))
   }
   if (track === 'video') {
     const durationRule = constraints.duration
     const duration = Number(task.duration)
     if (durationRule?.allowed?.length && Number.isFinite(duration) && !durationRule.allowed.includes(duration)) {
-      throw new Error(`${providerDef.name} 不支持 ${duration}s，请使用 ${durationRule.allowed.join('/')}s。`)
+      throw new Error(fmt('durationNotAllowedError', { provider: providerDef.name, duration, allowed: durationRule.allowed.join('/') }))
     }
-    if (durationRule?.min && duration < durationRule.min) throw new Error(`${providerDef.name} 最小时长为 ${durationRule.min}s。`)
-    if (durationRule?.max && duration > durationRule.max) throw new Error(`${providerDef.name} 最大时长为 ${durationRule.max}s。`)
+    if (durationRule?.min && duration < durationRule.min) throw new Error(fmt('durationMinError', { provider: providerDef.name, min: durationRule.min }))
+    if (durationRule?.max && duration > durationRule.max) throw new Error(fmt('durationMaxError', { provider: providerDef.name, max: durationRule.max }))
     const sourceRule = constraints.sourceImage || {}
     const requiresSource = sourceRule.required || sourceRule.requiredForModes?.includes(task.intent || extra.mode)
     if (requiresSource && !extra.sourceImageUrl) {
-      throw new Error(`${providerDef.name} 需要先选择一张源图才能提交图生视频任务。`)
+      throw new Error(fmt('sourceImageRequiredError', { provider: providerDef.name }))
     }
   }
 }
@@ -70,6 +76,44 @@ function taskAllowedInMode(task, generationMode) {
   if (generationMode === 'image') return task?.type === 'image'
   if (generationMode === 'video') return task?.type === 'video'
   return true
+}
+
+function idList(value) {
+  const list = Array.isArray(value) ? value : value ? [value] : []
+  return list
+    .filter(item => typeof item === 'string' || typeof item === 'number')
+    .map(item => String(item))
+    .filter(Boolean)
+}
+
+function uniqueIds(ids = []) {
+  return Array.from(new Set(idList(ids)))
+}
+
+function getTaskSourceIds(task = {}) {
+  return uniqueIds([...idList(task.sourceAssetIds), task.source_image_id])
+}
+
+function getTaskPromptReferenceIds(task = {}) {
+  return uniqueIds(task.promptReferenceAssetIds || [])
+}
+
+function buildGenerationMeta({ task, provider, mode, createdFrom, parentAssetId, taskId }) {
+  return createGeneration({
+    providerId: provider?.id || '',
+    model: provider?.model || '',
+    mode,
+    createdFrom: createdFrom || task.createdFrom || 'chat',
+    prompt: task.prompt || '',
+    negativePrompt: task.negative_prompt || task.negativePrompt || '',
+    ratio: task.ratio || '',
+    resolution: task.resolution || '',
+    duration: task.duration ?? null,
+    parentAssetId: parentAssetId || task.parentAssetId || task.source_image_id || null,
+    sourceAssetIds: getTaskSourceIds(task),
+    promptReferenceAssetIds: getTaskPromptReferenceIds(task),
+    taskId: taskId || task.taskId || null
+  })
 }
 
 export default function useChat(config, canvas, onVideoTaskCreated, activeConversationId, isActiveConversation, conversationBridge, providerLists) {
@@ -103,6 +147,7 @@ export default function useChat(config, canvas, onVideoTaskCreated, activeConver
   const appendMessage = useCallback((conversationId, message) => {
     if (canWriteToCurrentConversation(conversationId)) {
       setMessages(prev => [...prev, message])
+      conversationBridge?.appendMessage?.(conversationId, message)
       return true
     }
     return Boolean(conversationBridge?.appendMessage?.(conversationId, message))
@@ -117,19 +162,46 @@ export default function useChat(config, canvas, onVideoTaskCreated, activeConver
         tasks[idx] = { ...tasks[idx], ...patch }
         return { ...m, tasks }
       }))
+      conversationBridge?.updateTask?.(conversationId, msgId, idx, patch)
       return true
     }
     return Boolean(conversationBridge?.updateTask?.(conversationId, msgId, idx, patch))
   }, [canWriteToCurrentConversation, conversationBridge])
 
   const addAssetToConversation = useCallback((conversationId, asset) => {
-    if (canWriteToCurrentConversation(conversationId)) return canvas.addAsset(asset)
+    if (canWriteToCurrentConversation(conversationId)) {
+      const item = canvas.addAsset(asset)
+      conversationBridge?.addAsset?.(conversationId, item)
+      return item
+    }
     return conversationBridge?.addAsset?.(conversationId, asset) || null
+  }, [canvas, canWriteToCurrentConversation, conversationBridge])
+
+  const addPlaceholderToConversation = useCallback((conversationId, label, asset = {}) => {
+    const placeholder = {
+      type: 'image',
+      label: label || 'Generating...',
+      prompt: '',
+      url: '',
+      model: '',
+      ratio: '1:1',
+      style: '',
+      ...asset,
+      _generating: true
+    }
+    if (canWriteToCurrentConversation(conversationId)) {
+      const item = canvas.addAsset(placeholder)
+      conversationBridge?.addAsset?.(conversationId, item)
+      return item.id
+    }
+    const item = conversationBridge?.addAsset?.(conversationId, placeholder)
+    return item?.id || null
   }, [canvas, canWriteToCurrentConversation, conversationBridge])
 
   const updateAssetInConversation = useCallback((conversationId, assetId, patch) => {
     if (canWriteToCurrentConversation(conversationId)) {
       canvas.updateAsset(assetId, patch)
+      conversationBridge?.updateAsset?.(conversationId, assetId, patch)
       return true
     }
     return Boolean(conversationBridge?.updateAsset?.(conversationId, assetId, patch))
@@ -138,6 +210,7 @@ export default function useChat(config, canvas, onVideoTaskCreated, activeConver
   const removeAssetFromConversation = useCallback((conversationId, assetId) => {
     if (canWriteToCurrentConversation(conversationId)) {
       canvas.removeAsset(assetId)
+      conversationBridge?.removeAsset?.(conversationId, assetId)
       return true
     }
     return Boolean(conversationBridge?.removeAsset?.(conversationId, assetId))
@@ -154,12 +227,8 @@ export default function useChat(config, canvas, onVideoTaskCreated, activeConver
     const writesCurrent = canWriteToCurrentConversation(originConversationId)
     if (snapshot && !writesCurrent) {
       setMessages([...sourceMessages, userMsg])
-    } else {
-      setMessages(prev => [...prev, userMsg])
     }
-    if (!writesCurrent) {
-      appendMessage(originConversationId, userMsg)
-    }
+    appendMessage(originConversationId, userMsg)
     setLoading(true)
     loadingRef.current = true
 
@@ -262,6 +331,8 @@ ${modeRule}
 
       const allowedTasks = parsed?.tasks?.filter(task => taskAllowedInMode(task, generationMode)) || []
       if (allowedTasks.length > 0) {
+        const referenceIds = references?.map(r => r.id).filter(Boolean) || []
+        const forcedSourceImageId = genSettings?.sourceImageId || null
         const tasksData = allowedTasks.map(task => ({
           status: 'pending',
           type: task.type,
@@ -270,9 +341,14 @@ ${modeRule}
           negative_prompt: task.negative_prompt || defaultNegPrompt,
           ratio: task.ratio || defaultRatio,
           duration: parseDurationSeconds(task.duration, defaultDuration),
-          source_image_id: task.source_image_id,
+          source_image_id: task.source_image_id || forcedSourceImageId,
           intent: parsed.intent,
           resolution: genSettings?.resolution || '1024',
+          sourceAssetIds: uniqueIds([...idList(task.sourceAssetIds), task.source_image_id, forcedSourceImageId]),
+          promptReferenceAssetIds: referenceIds,
+          parentAssetId: genSettings?.parentAssetId || task.parentAssetId || task.source_image_id || forcedSourceImageId || null,
+          createdFrom: genSettings?.createdFrom || 'chat',
+          styleDirection: genSettings?.styleDirection || ''
         }))
         const replyMsg = {
           role: 'assistant',
@@ -308,7 +384,7 @@ ${modeRule}
       const providerDef = findProviderDef('image', providerLists, imgProvider.id) || IMG_PROVIDERS.find(p => p.id === imgProvider.id)
       const protocol = imgProvider.protocol || providerDef?.protocol || 'openai_image'
       const negativePrompt = task.negative_prompt || imgProvider.defaultNegPrompt || ''
-      precheckGeneration('image', providerDef, { ...task, negative_prompt: negativePrompt })
+      precheckGeneration('image', providerDef, { ...task, negative_prompt: negativePrompt }, { lang })
       const imageParams = {
         prompt: task.prompt, ratio: task.ratio || '1:1', resolution: task.resolution || '1024',
         negative_prompt: negativePrompt,
@@ -326,11 +402,37 @@ ${modeRule}
       }, () => window.electronAPI.generateImage(imageParams))
       const elapsed = Math.round((Date.now() - startTime) / 1000)
       if (!canWriteToConversation(originConversationId)) return
+      const providerForGeneration = { ...imgProvider, id: resolveProviderId('image', imgProvider.id) }
+      const generation = buildGenerationMeta({
+        task: { ...task, negative_prompt: negativePrompt },
+        provider: providerForGeneration,
+        mode: 'image'
+      })
       let assetId = placeholderId
       if (placeholderId) {
-        updateAssetInConversation(originConversationId, placeholderId, { url, prompt: task.prompt, label: task.label, model: imgProvider.model, ratio: task.ratio, _generating: false })
+        updateAssetInConversation(originConversationId, placeholderId, {
+          url,
+          prompt: task.prompt,
+          negativePrompt,
+          label: task.label,
+          model: imgProvider.model,
+          ratio: task.ratio,
+          resolution: task.resolution || '1024',
+          _generating: false,
+          generation
+        })
       } else {
-        const asset = addAssetToConversation(originConversationId, { type: 'image', url, prompt: task.prompt, label: task.label, model: imgProvider.model, ratio: task.ratio })
+        const asset = addAssetToConversation(originConversationId, {
+          type: 'image',
+          url,
+          prompt: task.prompt,
+          negativePrompt,
+          label: task.label,
+          model: imgProvider.model,
+          ratio: task.ratio,
+          resolution: task.resolution || '1024',
+          generation
+        })
         assetId = asset?.id
       }
       if (canWriteToCurrentConversation(originConversationId) && assetId) {
@@ -355,7 +457,7 @@ ${modeRule}
       const sourceAsset = task.source_image_id ? canvas.getAssetById(task.source_image_id) : null
       const sourceImageUrl = task.sourceImageUrl || sourceAsset?.url || ''
       const duration = parseDurationSeconds(task.duration, parseDurationSeconds(config?.general?.defaultDuration, 5))
-      precheckGeneration('video', providerDef, { ...task, duration }, { sourceImageUrl, mode: task.intent })
+      precheckGeneration('video', providerDef, { ...task, duration }, { sourceImageUrl, mode: task.intent, lang })
       const videoParams = {
         prompt: task.prompt, ratio: task.ratio || '1:1', duration,
         sourceImageUrl,
@@ -374,6 +476,14 @@ ${modeRule}
       if (!result?.taskId) throw new Error(result?.error || 'Video task was not created')
       if (!canWriteToConversation(originConversationId)) return
       const status = result.status === 'running' ? 'running' : 'queued'
+      const submittedTaskId = result.taskId
+      const videoTask = {
+        ...task,
+        duration,
+        sourceAssetIds: uniqueIds([...idList(task.sourceAssetIds), sourceAsset?.id]),
+        parentAssetId: task.parentAssetId || sourceAsset?.id || null,
+        taskId: submittedTaskId
+      }
       const queuedTask = onVideoTaskCreated?.({
         taskId: result.taskId,
         prompt: task.prompt,
@@ -382,7 +492,22 @@ ${modeRule}
         autoSave: config?.general?.autoSave !== false,
         onComplete: (result) => {
           if (!canWriteToConversation(originConversationId)) return null
-          const asset = addAssetToConversation(originConversationId, { type: 'video', url: result.videoUrl, prompt: task.prompt, label: task.label, model: provider.model })
+          const generation = buildGenerationMeta({
+            task: videoTask,
+            provider: { ...provider, id: resolveProviderId('video', provider.id) },
+            mode: 'video',
+            taskId: submittedTaskId
+          })
+          const asset = addAssetToConversation(originConversationId, {
+            type: 'video',
+            url: result.videoUrl,
+            prompt: task.prompt,
+            label: task.label,
+            model: provider.model,
+            ratio: task.ratio,
+            duration,
+            generation
+          })
           if (asset) updateTask({ status: 'done', assetId: asset.id })
           return asset
         },
@@ -392,6 +517,106 @@ ${modeRule}
       updateTask({ status, taskId: result.taskId, queueId: queuedTask?.id, elapsed })
     }
   }, [config, canvas, onVideoTaskCreated, canWriteToConversation, canWriteToCurrentConversation, addAssetToConversation, updateAssetInConversation, patchTask, providerLists])
+
+  const regenerateDirectly = useCallback(async (asset, lang, options = {}) => {
+    const originConversationId = options.conversationId || activeConversationIdRef.current
+    if (!originConversationId) return
+    if (asset.type && asset.type !== 'image') return
+
+    const task = {
+      id: 't1',
+      type: asset.type || 'image',
+      label: asset.label || t('regenerate', lang),
+      prompt: asset.generation?.prompt || asset.prompt || '',
+      ratio: asset.generation?.ratio || asset.ratio || config?.general?.defaultRatio || '1:1',
+      negative_prompt: asset.generation?.negativePrompt || asset.negativePrompt || '',
+      resolution: asset.resolution || asset.generation?.resolution || '1024',
+      duration: asset.duration || asset.generation?.duration,
+      parentAssetId: asset.id,
+      sourceAssetIds: uniqueIds([asset.id, ...idList(asset.generation?.sourceAssetIds)]),
+      createdFrom: 'regenerate'
+    }
+
+    const userMsg = {
+      id: nextId(),
+      role: 'user',
+      content: t('regenerateMessage', lang).replace('{prompt}', task.prompt),
+      createdAt: new Date().toISOString()
+    }
+    const replyMsg = { id: nextId(), role: 'assistant', content: `${t('regenerate', lang)}「${task.label}」`, tasks: [task], createdAt: new Date().toISOString() }
+    const msgId = replyMsg.id
+
+    appendMessage(originConversationId, userMsg)
+    appendMessage(originConversationId, replyMsg)
+
+    const placeholderId = task.type === 'image'
+      ? addPlaceholderToConversation(originConversationId, task.label, { generation: buildGenerationMeta({ task, provider: {}, mode: 'image' }) })
+      : null
+    try {
+      await doGenerate(msgId, task, lang, placeholderId, 0, originConversationId)
+    } catch (e) {
+      console.error('Regenerate failed:', e)
+      if (!canWriteToConversation(originConversationId)) return
+      if (placeholderId) removeAssetFromConversation(originConversationId, placeholderId)
+      patchTask(originConversationId, msgId, 0, { status: 'error', error: e.message })
+    }
+  }, [config, addPlaceholderToConversation, doGenerate, canWriteToConversation, removeAssetFromConversation, patchTask, appendMessage])
+
+  const createDerivedImageDirectly = useCallback(async (asset, lang, options = {}) => {
+    const originConversationId = options.conversationId || activeConversationIdRef.current
+    if (!originConversationId || asset.type === 'video') return
+    const basePrompt = asset.generation?.prompt || asset.prompt || ''
+    if (!basePrompt.trim()) return
+
+    const createdFrom = options.createdFrom || 'variation'
+    const styleDirection = options.styleDirection?.trim()
+    const instruction = createdFrom === 'restyle'
+      ? `Restyle the same subject and composition in this visual direction: ${styleDirection}. Keep the core subject, framing, and intent recognizable while changing the visual style, material feel, color palette, lighting, and atmosphere.`
+      : 'Create a new image in the same series. Keep the core subject, composition, style language, and quality bar recognizable, while varying details such as pose, lighting, environment accents, surface details, or secondary elements.'
+    const task = {
+      id: 't1',
+      type: 'image',
+      label: `${asset.label || t('image', lang)} · ${t(createdFrom === 'restyle' ? 'restyle' : 'variation', lang)}`,
+      prompt: `${basePrompt}\n\n${instruction}`,
+      ratio: asset.generation?.ratio || asset.ratio || config?.general?.defaultRatio || '1:1',
+      negative_prompt: asset.generation?.negativePrompt || asset.negativePrompt || '',
+      resolution: asset.resolution || asset.generation?.resolution || '1024',
+      parentAssetId: asset.id,
+      sourceAssetIds: [],
+      promptReferenceAssetIds: uniqueIds([asset.id, ...idList(asset.generation?.promptReferenceAssetIds)]),
+      createdFrom,
+      styleDirection: styleDirection || ''
+    }
+    const userMsg = {
+      id: nextId(),
+      role: 'user',
+      content: createdFrom === 'restyle'
+        ? `${t('restyle', lang)}：${styleDirection}`
+        : t('variation', lang),
+      createdAt: new Date().toISOString()
+    }
+    const replyMsg = {
+      id: nextId(),
+      role: 'assistant',
+      content: `${t(createdFrom === 'restyle' ? 'restyle' : 'variation', lang)}「${asset.label || ''}」`,
+      tasks: [task],
+      createdAt: new Date().toISOString()
+    }
+    const msgId = replyMsg.id
+
+    appendMessage(originConversationId, userMsg)
+    appendMessage(originConversationId, replyMsg)
+
+    const placeholderId = addPlaceholderToConversation(originConversationId, task.label, { generation: buildGenerationMeta({ task, provider: {}, mode: 'image' }) })
+    try {
+      await doGenerate(msgId, task, lang, placeholderId, 0, originConversationId)
+    } catch (e) {
+      console.error('Derived image generation failed:', e)
+      if (!canWriteToConversation(originConversationId)) return
+      removeAssetFromConversation(originConversationId, placeholderId)
+      patchTask(originConversationId, msgId, 0, { status: 'error', error: e.message })
+    }
+  }, [config, addPlaceholderToConversation, doGenerate, canWriteToConversation, removeAssetFromConversation, patchTask, appendMessage])
 
   const confirmGenerate = useCallback(async (msgId, task, taskIndex) => {
     const originConversationId = activeConversationIdRef.current
@@ -413,13 +638,10 @@ ${modeRule}
       if (!window.confirm(message)) return
     }
     const startTime = Date.now()
-    setMessages(prev => prev.map(m => {
-      if (m.id !== msgId) return m
-      const tasks = [...(m.tasks || [m.task])]
-      tasks[idx] = { ...tasks[idx], status: 'generating', startTime }
-      return { ...m, tasks }
-    }))
-    const placeholderId = task.type === 'image' ? canvas.addPlaceholder(task.label || '生成中...') : null
+    patchTask(originConversationId, msgId, idx, { status: 'generating', startTime })
+    const placeholderId = task.type === 'image'
+      ? addPlaceholderToConversation(originConversationId, task.label || t('generating', lang), { generation: buildGenerationMeta({ task, provider: {}, mode: 'image' }) })
+      : null
     try {
       await doGenerate(msgId, task, lang, placeholderId, idx, originConversationId)
     } catch (e) {
@@ -428,7 +650,7 @@ ${modeRule}
       if (placeholderId) removeAssetFromConversation(originConversationId, placeholderId)
       patchTask(originConversationId, msgId, idx, { status: 'error', error: e.message })
     }
-  }, [config, doGenerate, canvas, canWriteToConversation, removeAssetFromConversation, patchTask])
+  }, [config, doGenerate, addPlaceholderToConversation, canWriteToConversation, removeAssetFromConversation, patchTask])
 
   const batchGenerate = useCallback(async (msgId, task, count, taskIndex) => {
     const originConversationId = activeConversationIdRef.current
@@ -436,16 +658,14 @@ ${modeRule}
     const lang = config?.general?.language || 'zh'
     const idx = taskIndex ?? 0
     const startTime = Date.now()
-    setMessages(prev => prev.map(m => {
-      if (m.id !== msgId) return m
-      const tasks = [...(m.tasks || [m.task])]
-      tasks[idx] = { ...tasks[idx], status: 'generating', startTime, batchTotal: count, batchDone: 0 }
-      return { ...m, tasks }
-    }))
+    patchTask(originConversationId, msgId, idx, { status: 'generating', startTime, batchTotal: count, batchDone: 0 })
 
     const placeholderIds = []
     for (let i = 0; i < count; i++) {
-      placeholderIds.push(canvas.addPlaceholder(`${task.label || '生成中'} #${i + 1}`))
+      const itemTask = count > 1 ? { ...task, label: `${task.label} #${i + 1}` } : task
+      placeholderIds.push(addPlaceholderToConversation(originConversationId, `${task.label || t('generating', lang)} #${i + 1}`, {
+        generation: buildGenerationMeta({ task: itemTask, provider: {}, mode: 'image' })
+      }))
     }
 
     let done = 0
@@ -471,7 +691,7 @@ ${modeRule}
     if (!canWriteToConversation(originConversationId)) return
     failedIds.forEach(id => removeAssetFromConversation(originConversationId, id))
     patchTask(originConversationId, msgId, idx, { status: done > 0 && !hasFailure ? 'done' : done > 0 ? 'partial' : 'error', batchDone: done, error: done === 0 ? 'All batch items failed' : hasFailure ? `${count - done} of ${count} failed` : undefined })
-  }, [config, canvas, doGenerate, canWriteToConversation, removeAssetFromConversation, patchTask])
+  }, [config, addPlaceholderToConversation, doGenerate, canWriteToConversation, removeAssetFromConversation, patchTask])
 
   const setMessagesDirectly = useCallback((update) => {
     // No side effects inside the updater (CLAUDE.md red line) — the messagesRef
@@ -485,5 +705,5 @@ ${modeRule}
     lastImageContext.current = null
   }, [])
 
-  return { messages, loading, send, clear, confirmGenerate, batchGenerate, setMessages: setMessagesDirectly, lastImageContext, thinking, setThinking }
+  return { messages, loading, send, clear, confirmGenerate, batchGenerate, regenerateDirectly, createDerivedImageDirectly, setMessages: setMessagesDirectly, lastImageContext, thinking, setThinking }
 }
