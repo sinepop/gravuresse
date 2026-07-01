@@ -1045,6 +1045,24 @@ function ProviderTab({ track, providers, config, onChange, lang }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <TrackStatusPanel track={track} provider={provider} current={current} lang={lang} />
 
+      {/* ── Provider Selection ── */}
+      <SectionHeading labelKey="switchProvider" lang={lang} />
+      <div style={{ color: 'var(--text-muted)', fontSize: 11, lineHeight: 1.5 }}>{t('switchProviderHint', lang)}</div>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        {['usage', 'subscription'].map(mode => {
+          const active = billingView === mode
+          return (
+            <button key={mode} onClick={() => setBillingView(mode)} style={{ ...btnS(false), padding: '7px 10px', background: active ? 'var(--accent-soft)' : 'var(--bg-surface)', color: active ? 'var(--accent)' : 'var(--text-secondary)', borderColor: active ? 'var(--border-accent)' : 'var(--border-default)' }}>
+              {t(mode === 'usage' ? 'usageBilling' : 'subscriptionBilling', lang)} · {billingCounts[mode]}
+            </button>
+          )
+        })}
+      </div>
+      <div style={{ color: billingView === 'subscription' ? 'var(--danger)' : 'var(--text-muted)', background: billingView === 'subscription' ? 'var(--danger-soft)' : 'transparent', border: billingView === 'subscription' ? '1px solid var(--danger-border)' : 'none', borderRadius: 'var(--radius-sm)', padding: billingView === 'subscription' ? '7px 9px' : 0, fontSize: 11, lineHeight: 1.5 }}>
+        {t(billingView === 'subscription' ? 'subscriptionBillingDesc' : 'usageBillingDesc', lang)}
+      </div>
+      <ProviderWorkbench track={track} providers={visibleProviders} selectedProviderId={current.id || ''} onSelect={selectProvider} lang={lang} />
+
       {/* ── Current Provider Config ── */}
       {!isExecutableProvider(provider) ? (
         <NonExecutableInfoCard provider={provider} track={track} lang={lang} />
@@ -1094,27 +1112,6 @@ function ProviderTab({ track, providers, config, onChange, lang }) {
           {testResult && <div style={{ fontSize: 12, color: testResult.ok ? 'var(--success)' : 'var(--danger)', fontFamily: 'var(--font-body)' }}>{testResult.ok ? `✓ ${t('testSuccess', lang)} ${testResult.count} ${t('models', lang)}` : `✗ ${testResult.msg}`}</div>}
         </>
       )}
-
-      {/* ── Switch Provider ── */}
-      <details>
-        <summary style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', cursor: 'pointer', fontFamily: 'var(--font-body)', userSelect: 'none' }}>{t('switchProvider', lang)} <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 400 }}>— {t('switchProviderHint', lang)}</span></summary>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginTop: 10 }}>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {['usage', 'subscription'].map(mode => {
-              const active = billingView === mode
-              return (
-                <button key={mode} onClick={() => setBillingView(mode)} style={{ ...btnS(false), padding: '7px 10px', background: active ? 'var(--accent-soft)' : 'var(--bg-surface)', color: active ? 'var(--accent)' : 'var(--text-secondary)', borderColor: active ? 'var(--border-accent)' : 'var(--border-default)' }}>
-                  {t(mode === 'usage' ? 'usageBilling' : 'subscriptionBilling', lang)} · {billingCounts[mode]}
-                </button>
-              )
-            })}
-          </div>
-          <div style={{ color: billingView === 'subscription' ? 'var(--danger)' : 'var(--text-muted)', background: billingView === 'subscription' ? 'var(--danger-soft)' : 'transparent', border: billingView === 'subscription' ? '1px solid var(--danger-border)' : 'none', borderRadius: 'var(--radius-sm)', padding: billingView === 'subscription' ? '7px 9px' : 0, fontSize: 11, lineHeight: 1.5 }}>
-            {t(billingView === 'subscription' ? 'subscriptionBillingDesc' : 'usageBillingDesc', lang)}
-          </div>
-          <ProviderWorkbench track={track} providers={visibleProviders} selectedProviderId={current.id || ''} onSelect={selectProvider} lang={lang} />
-        </div>
-      </details>
 
       {/* ── Advanced options ── */}
       {isExecutableProvider(provider) && (
