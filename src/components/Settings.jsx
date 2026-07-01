@@ -688,14 +688,12 @@ function ProviderCard({ track, provider, selected, onSelect, lang }) {
           <div style={{ marginTop: 2, color: 'var(--text-muted)', fontSize: 10 }}>{provider.platform} · {regionLabel(info.region, lang)}</div>
         </div>
         <button
-          onClick={() => executable && onSelect(provider)}
-          disabled={!executable}
-          title={executable ? t('provider', lang) : t('metadataOnly', lang)}
+          onClick={() => onSelect(provider)}
+          title={executable ? t('provider', lang) : t('viewMaterials', lang)}
           style={{
             ...btnS(false),
             padding: '5px 8px',
             fontSize: 11,
-            opacity: executable ? 1 : 0.45,
             color: selected ? 'var(--accent)' : 'var(--text-secondary)'
           }}
         >
@@ -877,6 +875,71 @@ function TrackStatusPanel({ track, provider, current, lang }) {
   )
 }
 
+function SectionHeading({ labelKey, lang }) {
+  return (
+    <div style={{ color: 'var(--text-primary)', fontSize: 13, fontWeight: 600, fontFamily: 'var(--font-body)' }}>
+      {t(labelKey, lang)}
+    </div>
+  )
+}
+
+function PresetBadge({ show, lang }) {
+  if (!show) return null
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 3,
+      padding: '1px 6px', borderRadius: 'var(--radius-sm)',
+      background: 'var(--accent-soft)', color: 'var(--accent)',
+      fontSize: 10, lineHeight: 1.4, fontWeight: 500, marginLeft: 4,
+      fontFamily: 'var(--font-body)'
+    }}>
+      <Ic n="check" size={9} />{t('presetValue', lang)}
+    </span>
+  )
+}
+
+function NonExecutableInfoCard({ provider, track, lang }) {
+  const info = providerInfo(provider, track)
+  const linkButtons = LINK_BUTTONS.filter(button => info.links?.[button.key])
+
+  return (
+    <div style={{
+      border: '1px solid var(--border-subtle)',
+      background: 'var(--bg-elevated)',
+      borderRadius: 'var(--radius-sm)',
+      padding: 12, display: 'flex', flexDirection: 'column', gap: 10
+    }}>
+      <SectionHeading labelKey="currentProviderConfig" lang={lang} />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <Ic n={providerIcon(track)} size={14} />
+        <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
+          {providerDisplayName(provider, lang, track)}
+        </span>
+      </div>
+      {localizedDescription(info, lang) && (
+        <div style={{ color: 'var(--text-secondary)', fontSize: 11, lineHeight: 1.5 }}>
+          {localizedDescription(info, lang)}
+        </div>
+      )}
+      {linkButtons.length > 0 && (
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {linkButtons.map(button => (
+            <button key={button.key} onClick={() => openExternal(info.links[button.key])}
+              style={{ ...btnS(false), padding: '5px 8px', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+              <Ic n={button.icon} size={11} />{t(button.labelKey, lang)}
+            </button>
+          ))}
+        </div>
+      )}
+      {(track === 'video' || info.billing?.mode === 'subscription') && localizedBillingNote(info, lang) && (
+        <div style={{ color: 'var(--danger)', background: 'var(--danger-soft)', border: '1px solid var(--danger-border)', borderRadius: 'var(--radius-sm)', padding: '7px 9px', fontSize: 11, lineHeight: 1.5 }}>
+          {localizedBillingNote(info, lang)}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function ProviderTab({ track, providers, config, onChange, lang }) {
   const current = config?.providers?.[track] || {}
   const allVisibleProviders = sortProvidersForTrack(filterMainstreamProviders(providers, track, current.id), track, current)
@@ -973,7 +1036,6 @@ function ProviderTab({ track, providers, config, onChange, lang }) {
   }
 
   const selectProvider = (p) => {
-    if (!isExecutableProvider(p)) return
     onChange(track, { id: p.id, apiKey: '', sessionToken: '', customAuth: {}, baseUrl: p.defaultUrl || '', model: p.defaultModel || '', protocol: p.protocol, format: p.format })
     setModels([])
     setTestResult(null)
@@ -982,88 +1044,98 @@ function ProviderTab({ track, providers, config, onChange, lang }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <TrackStatusPanel track={track} provider={provider} current={current} lang={lang} />
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        {['usage', 'subscription'].map(mode => {
-          const active = billingView === mode
-          return (
-            <button key={mode} onClick={() => setBillingView(mode)} style={{ ...btnS(false), padding: '7px 10px', background: active ? 'var(--accent-soft)' : 'var(--bg-surface)', color: active ? 'var(--accent)' : 'var(--text-secondary)', borderColor: active ? 'var(--border-accent)' : 'var(--border-default)' }}>
-              {t(mode === 'usage' ? 'usageBilling' : 'subscriptionBilling', lang)} · {billingCounts[mode]}
-            </button>
-          )
-        })}
-      </div>
-      <div style={{ color: billingView === 'subscription' ? 'var(--danger)' : 'var(--text-muted)', background: billingView === 'subscription' ? 'var(--danger-soft)' : 'transparent', border: billingView === 'subscription' ? '1px solid var(--danger-border)' : 'none', borderRadius: 'var(--radius-sm)', padding: billingView === 'subscription' ? '7px 9px' : 0, fontSize: 11, lineHeight: 1.5 }}>
-        {t(billingView === 'subscription' ? 'subscriptionBillingDesc' : 'usageBillingDesc', lang)}
-      </div>
-      <ProviderWorkbench track={track} providers={visibleProviders} selectedProviderId={current.id || ''} onSelect={selectProvider} lang={lang} />
+
+      {/* ── Current Provider Config ── */}
       {!isExecutableProvider(provider) ? (
-        <div style={{ color: 'var(--text-muted)', background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-sm)', padding: 10, fontSize: 12, lineHeight: 1.5 }}>
-          {t('metadataOnlyProviderDesc', lang)}
-        </div>
+        <NonExecutableInfoCard provider={provider} track={track} lang={lang} />
       ) : (
         <>
-      <label style={labelS()}>
-        {t('apiKey', lang)}
-        <input type="password" value={apiKeyValue} placeholder={apiKeyRedacted ? t('configuredPlaceholder', lang) : 'sk-...'} onChange={e => onChange(track, { apiKey: e.target.value })} style={inputS()} />
-      </label>
-      {usesSessionAuth && (
-        <label style={labelS()}>
-          {t('sessionToken', lang)}
-          <input type="password" value={sessionTokenValue} placeholder={sessionTokenRedacted ? t('configuredPlaceholder', lang) : 'sess-...'} onChange={e => onChange(track, { sessionToken: e.target.value })} style={inputS()} />
-        </label>
-      )}
-      <label style={labelS()}>
-        {t('baseUrl', lang)} <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>({t('optional', lang)})</span>
-        <div style={{ display: 'flex', gap: 6 }}>
-          <input type="text" value={current.baseUrl || ''} placeholder={provider?.defaultUrl || ''} onChange={e => onChange(track, { baseUrl: e.target.value })} style={{ ...inputS(), flex: 1 }} />
-          <button onClick={handleRestoreUrl} title={t('restoreDefault', lang)} style={{ padding: '7px 10px', background: 'var(--bg-surface)', border: '1px solid var(--border-default)', borderRadius: 'var(--radius-sm)', color: 'var(--text-muted)', fontSize: 11, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'var(--font-body)' }}>
-            <Ic n="refresh" size={12} />
-          </button>
-        </div>
-      </label>
-      <label style={labelS()}>
-        {t('model', lang)}
-        {models.length > 0 ? (
-          <select value={current.model || ''} onChange={e => onChange(track, { model: e.target.value })} style={selectS()}>
-            {models.map(m => <option key={m.id} value={m.id}>{m.id}</option>)}
-          </select>
-        ) : (
-          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-            <input type="text" value={current.model || ''} placeholder={provider?.defaultModel || ''} onChange={e => onChange(track, { model: e.target.value })} style={{ ...inputS(), flex: 1 }} />
-            {loadingModels && <span style={{ fontSize: 11, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>...</span>}
+          <SectionHeading labelKey="currentProviderConfig" lang={lang} />
+          <label style={labelS()}>
+            {t('apiKey', lang)}
+            <input type="password" value={apiKeyValue} placeholder={apiKeyRedacted ? t('configuredPlaceholder', lang) : 'sk-...'} onChange={e => onChange(track, { apiKey: e.target.value })} style={inputS()} />
+          </label>
+          {usesSessionAuth && (
+            <label style={labelS()}>
+              {t('sessionToken', lang)}
+              <input type="password" value={sessionTokenValue} placeholder={sessionTokenRedacted ? t('configuredPlaceholder', lang) : 'sess-...'} onChange={e => onChange(track, { sessionToken: e.target.value })} style={inputS()} />
+            </label>
+          )}
+          <label style={labelS()}>
+            <span>{t('baseUrl', lang)} <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>({t('optional', lang)})</span><PresetBadge show={current.baseUrl === provider?.defaultUrl && Boolean(provider?.defaultUrl)} lang={lang} /></span>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <input type="text" value={current.baseUrl || ''} placeholder={provider?.defaultUrl || ''} onChange={e => onChange(track, { baseUrl: e.target.value })} style={{ ...inputS(), flex: 1 }} />
+              <button onClick={handleRestoreUrl} title={t('restoreDefault', lang)} style={{ padding: '7px 10px', background: 'var(--bg-surface)', border: '1px solid var(--border-default)', borderRadius: 'var(--radius-sm)', color: 'var(--text-muted)', fontSize: 11, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'var(--font-body)' }}>
+                <Ic n="refresh" size={12} />
+              </button>
+            </div>
+          </label>
+          <label style={labelS()}>
+            <span>{t('model', lang)}<PresetBadge show={current.model === provider?.defaultModel && Boolean(provider?.defaultModel)} lang={lang} /></span>
+            {models.length > 0 ? (
+              <select value={current.model || ''} onChange={e => onChange(track, { model: e.target.value })} style={selectS()}>
+                {models.map(m => <option key={m.id} value={m.id}>{m.id}</option>)}
+              </select>
+            ) : (
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <input type="text" value={current.model || ''} placeholder={provider?.defaultModel || ''} onChange={e => onChange(track, { model: e.target.value })} style={{ ...inputS(), flex: 1 }} />
+                {loadingModels && <span style={{ fontSize: 11, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>...</span>}
+              </div>
+            )}
+          </label>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button onClick={handleTest} disabled={testing || !hasCredential} style={{ ...btnS(false), opacity: !hasCredential ? 0.4 : 1 }}>
+              {testing ? t('testing', lang) : t('connectTest', lang)}
+            </button>
+            <button onClick={handleClear} style={{ ...btnS(false), color: 'var(--danger)' }}>
+              {t('clearConfig', lang)}
+            </button>
           </div>
-        )}
-      </label>
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        <button onClick={handleTest} disabled={testing || !hasCredential} style={{ ...btnS(false), opacity: !hasCredential ? 0.4 : 1 }}>
-          {testing ? t('testing', lang) : t('connectTest', lang)}
-        </button>
-        <button onClick={handleClear} style={{ ...btnS(false), color: 'var(--danger)' }}>
-          {t('clearConfig', lang)}
-        </button>
-      </div>
-      {testResult && <div style={{ fontSize: 12, color: testResult.ok ? 'var(--success)' : 'var(--danger)', fontFamily: 'var(--font-body)' }}>{testResult.ok ? `✓ ${t('testSuccess', lang)} ${testResult.count} ${t('models', lang)}` : `✗ ${testResult.msg}`}</div>}
+          {testResult && <div style={{ fontSize: 12, color: testResult.ok ? 'var(--success)' : 'var(--danger)', fontFamily: 'var(--font-body)' }}>{testResult.ok ? `✓ ${t('testSuccess', lang)} ${testResult.count} ${t('models', lang)}` : `✗ ${testResult.msg}`}</div>}
+        </>
+      )}
 
-      {/* Advanced options */}
-      <details open={showAdvanced} onToggle={e => setShowAdvanced(e.target.open)}>
-        <summary style={{ fontSize: 12, color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'var(--font-body)', userSelect: 'none' }}>{t('advanced', lang)}</summary>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginTop: 10, borderLeft: '2px solid var(--border-subtle)', marginLeft: 4, paddingLeft: 12 }}>
-          {track === 'chat' && (
-            <label style={labelS()}>
-              {t('customSystemPrompt', lang)}
-              <textarea value={current.customSystemPrompt || ''} placeholder={t('customSystemPromptPh', lang)} onChange={e => onChange(track, { customSystemPrompt: e.target.value })} style={{ ...inputS(), minHeight: 60, resize: 'vertical' }} />
-            </label>
-          )}
-          {track === 'image' && (
-            <label style={labelS()}>
-              {t('defaultNegPrompt', lang)}
-              <input type="text" value={current.defaultNegPrompt || ''} placeholder={t('defaultNegPromptPh', lang)} onChange={e => onChange(track, { defaultNegPrompt: e.target.value })} style={inputS()} />
-            </label>
-          )}
-          <CustomApiFields track={track} provider={provider} current={current} onChange={onChange} lang={lang} />
+      {/* ── Switch Provider ── */}
+      <details>
+        <summary style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', cursor: 'pointer', fontFamily: 'var(--font-body)', userSelect: 'none' }}>{t('switchProvider', lang)} <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 400 }}>— {t('switchProviderHint', lang)}</span></summary>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginTop: 10 }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {['usage', 'subscription'].map(mode => {
+              const active = billingView === mode
+              return (
+                <button key={mode} onClick={() => setBillingView(mode)} style={{ ...btnS(false), padding: '7px 10px', background: active ? 'var(--accent-soft)' : 'var(--bg-surface)', color: active ? 'var(--accent)' : 'var(--text-secondary)', borderColor: active ? 'var(--border-accent)' : 'var(--border-default)' }}>
+                  {t(mode === 'usage' ? 'usageBilling' : 'subscriptionBilling', lang)} · {billingCounts[mode]}
+                </button>
+              )
+            })}
+          </div>
+          <div style={{ color: billingView === 'subscription' ? 'var(--danger)' : 'var(--text-muted)', background: billingView === 'subscription' ? 'var(--danger-soft)' : 'transparent', border: billingView === 'subscription' ? '1px solid var(--danger-border)' : 'none', borderRadius: 'var(--radius-sm)', padding: billingView === 'subscription' ? '7px 9px' : 0, fontSize: 11, lineHeight: 1.5 }}>
+            {t(billingView === 'subscription' ? 'subscriptionBillingDesc' : 'usageBillingDesc', lang)}
+          </div>
+          <ProviderWorkbench track={track} providers={visibleProviders} selectedProviderId={current.id || ''} onSelect={selectProvider} lang={lang} />
         </div>
       </details>
-        </>
+
+      {/* ── Advanced options ── */}
+      {isExecutableProvider(provider) && (
+        <details open={showAdvanced} onToggle={e => setShowAdvanced(e.target.open)}>
+          <summary style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', cursor: 'pointer', fontFamily: 'var(--font-body)', userSelect: 'none' }}>{t('advanced', lang)}</summary>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginTop: 10, borderLeft: '2px solid var(--border-subtle)', marginLeft: 4, paddingLeft: 12 }}>
+            {track === 'chat' && (
+              <label style={labelS()}>
+                {t('customSystemPrompt', lang)}
+                <textarea value={current.customSystemPrompt || ''} placeholder={t('customSystemPromptPh', lang)} onChange={e => onChange(track, { customSystemPrompt: e.target.value })} style={{ ...inputS(), minHeight: 60, resize: 'vertical' }} />
+              </label>
+            )}
+            {track === 'image' && (
+              <label style={labelS()}>
+                {t('defaultNegPrompt', lang)}
+                <input type="text" value={current.defaultNegPrompt || ''} placeholder={t('defaultNegPromptPh', lang)} onChange={e => onChange(track, { defaultNegPrompt: e.target.value })} style={inputS()} />
+              </label>
+            )}
+            <CustomApiFields track={track} provider={provider} current={current} onChange={onChange} lang={lang} />
+          </div>
+        </details>
       )}
     </div>
   )

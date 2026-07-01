@@ -5,13 +5,18 @@ import { t } from '../i18n'
 const MENU_ITEMS = [
   { id: 'view', key: 'viewImage', icon: 'eye' },
   { id: 'download', key: 'downloadFile', icon: 'download' },
-  { id: 'regenerate', key: 'regenerate', icon: 'refresh' },
+  { id: 'regenerate', key: 'regenerate', icon: 'refresh', type: 'image' },
+  { id: 'variation', key: 'variation', icon: 'sparkle', type: 'image' },
+  { id: 'restyle', key: 'restyle', icon: 'image', type: 'image' },
   { id: 'toVideo', key: 'toVideo', icon: 'film', type: 'image' },
-  { id: 'copyPrompt', key: 'copyPrompt', icon: 'link' },
+  { id: 'toggleMaterial', icon: 'star' },
+  { id: 'useAsReference', key: 'useAsReference', icon: 'link', requiresUrl: true },
+  { id: 'usePrompt', key: 'usePrompt', icon: 'pencil', requiresPrompt: true },
+  { id: 'copyPrompt', key: 'copyPrompt', icon: 'copy' },
   { id: 'delete', key: 'delete', icon: 'trash', danger: true }
 ]
 
-export default function ContextMenu({ x, y, asset, onClose, onAction, lang, videoEnabled = false }) {
+export default function ContextMenu({ x, y, asset, onClose, onAction, lang, videoEnabled = false, referenceEnabled = false }) {
   const ref = useRef(null)
   const [position, setPosition] = useState({ left: x, top: y })
 
@@ -41,6 +46,9 @@ export default function ContextMenu({ x, y, asset, onClose, onAction, lang, vide
 
   const items = MENU_ITEMS.filter(item => {
     if (item.id === 'toVideo' && !videoEnabled) return false
+    if (item.id === 'useAsReference' && !referenceEnabled) return false
+    if (item.requiresUrl && !asset?.url) return false
+    if (item.requiresPrompt && !(asset?.generation?.prompt || asset?.prompt)) return false
     return !item.type || item.type === asset?.type
   })
   return (
@@ -52,7 +60,7 @@ export default function ContextMenu({ x, y, asset, onClose, onAction, lang, vide
           onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
         >
           <Ic n={item.icon} size={12} color={item.danger ? 'var(--danger)' : 'var(--text-secondary)'} />
-          {t(item.key, lang)}
+          {t(item.key || (asset?.isMaterial ? 'unmarkMaterial' : 'markMaterial'), lang)}
         </button>
       ))}
     </div>

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import AssetCard from './AssetCard'
 import AssetDetail from './AssetDetail'
 import Ic from './icons'
@@ -486,9 +486,334 @@ function GeneratingOverlay({ asset }) {
   )
 }
 
-export default function CanvasPanel({ canvas, lang, onContextMenu, generationMode = 'image' }) {
+function MiniMap({ assets, selectedId, setSelectedId, scale, offset, setOffset, viewportRef, lang }) {
+  if (!assets?.length) return null
+  const cardW = 240
+  const cardH = 260
+  const mapW = 168
+  const mapH = 112
+  const points = assets.map((asset, i) => {
+    const col = i % 4
+    const row = Math.floor(i / 4)
+    return {
+      asset,
+      x: asset.x !== undefined ? asset.x : 30 + col * 280,
+      y: asset.y !== undefined ? asset.y : 30 + row * 280
+    }
+  })
+  const minX = Math.min(...points.map(p => p.x)) - 80
+  const minY = Math.min(...points.map(p => p.y)) - 80
+  const maxX = Math.max(...points.map(p => p.x + cardW)) + 80
+  const maxY = Math.max(...points.map(p => p.y + cardH)) + 80
+  const spanX = Math.max(maxX - minX, 1)
+  const spanY = Math.max(maxY - minY, 1)
+  const mapScale = Math.min(mapW / spanX, mapH / spanY)
+  const contentW = spanX * mapScale
+  const contentH = spanY * mapScale
+  const padX = (mapW - contentW) / 2
+  const padY = (mapH - contentH) / 2
+  const toMapX = (x) => padX + (x - minX) * mapScale
+  const toMapY = (y) => padY + (y - minY) * mapScale
+  const viewport = viewportRef.current?.getBoundingClientRect()
+  const viewX = viewport ? toMapX(-offset.x / scale) : 0
+  const viewY = viewport ? toMapY(-offset.y / scale) : 0
+  const viewW = viewport ? Math.min(mapW, (viewport.width / scale) * mapScale) : 0
+  const viewH = viewport ? Math.min(mapH, (viewport.height / scale) * mapScale) : 0
+
+  const navigate = (e) => {
+    const rect = e.currentTarget.getBoundingClientRect()
+    const mx = e.clientX - rect.left
+    const my = e.clientY - rect.top
+    const canvasX = minX + ((mx - padX) / mapScale)
+    const canvasY = minY + ((my - padY) / mapScale)
+    const viewportRect = viewportRef.current?.getBoundingClientRect()
+    if (!viewportRect) return
+    setOffset({
+      x: viewportRect.width / 2 - canvasX * scale,
+      y: viewportRect.height / 2 - canvasY * scale
+    })
+  }
+
+  return (
+    <div data-toolbar="true" className="glass-floating" title={t('minimap', lang)} onMouseDown={e => e.stopPropagation()} onClick={navigate} style={{
+      position: 'absolute', top: 14, right: 14, zIndex: 18,
+      width: mapW, height: mapH, borderRadius: 'var(--radius-md)',
+      padding: 0, overflow: 'hidden', cursor: 'crosshair'
+    }}>
+      <svg width={mapW} height={mapH} style={{ display: 'block' }}>
+        <rect x="0" y="0" width={mapW} height={mapH} fill="var(--bg-surface)" opacity="0.72" />
+        {points.map(({ asset, x, y }) => (
+          <rect
+            key={asset.id}
+            x={toMapX(x)}
+            y={toMapY(y)}
+            width={Math.max(5, cardW * mapScale)}
+            height={Math.max(5, cardH * mapScale)}
+            rx="2"
+            fill={asset.id === selectedId ? 'var(--accent)' : asset.isMaterial ? 'var(--accent-soft)' : 'var(--text-muted)'}
+            stroke={asset.id === selectedId ? 'var(--accent)' : 'var(--border-subtle)'}
+            opacity={asset.id === selectedId ? 0.95 : 0.65}
+            onClick={(e) => { e.stopPropagation(); setSelectedId(asset.id) }}
+          />
+        ))}
+        {viewport && (
+          <rect
+            x={Math.max(0, Math.min(mapW, viewX))}
+            y={Math.max(0, Math.min(mapH, viewY))}
+            width={Math.max(8, viewW)}
+            height={Math.max(8, viewH)}
+            fill="transparent"
+            stroke="var(--accent)"
+            strokeWidth="1.5"
+            strokeDasharray="3 2"
+          />
+        )}
+      </svg>
+    </div>
+  )
+}
+
+function assetCanvasPosition(asset, index) {
+  const col = index % 4
+  const row = Math.floor(index / 4)
+  return {
+    x: asset.x !== undefined ? asset.x : 30 + col * 280,
+    y: asset.y !== undefined ? asset.y : 30 + row * 280
+  }
+}
+
+function LineageLines({ assets }) {
+  if (!assets?.length) return null
+  const assetById = new Map(assets.map((asset, index) => [asset.id, { asset, index, ...assetCanvasPosition(asset, index) }]))
+  const lines = []
+  assets.forEach((asset, index) => {
+    const target = assetById.get(asset.id)
+    const refs = [
+      asset.generation?.parentAssetId,
+      ...(asset.generation?.sourceAssetIds || []),
+      ...(asset.generation?.promptReferenceAssetIds || [])
+    ].filter(Boolean)
+    Array.from(new Set(refs)).forEach(refId => {
+      const source = assetById.get(refId)
+      if (!source || source.asset.id === asset.id) return
+      lines.push({ id: `${refId}-${asset.id}-${index}`, source, target })
+    })
+  })
+  if (lines.length === 0) return null
+  return (
+    <svg width="2000" height="1500" style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 0, overflow: 'visible' }}>
+      <defs>
+        <marker id="lineage-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="strokeWidth">
+          <path d="M0,0 L8,4 L0,8 Z" fill="var(--accent)" opacity="0.7" />
+        </marker>
+      </defs>
+      {lines.map(line => {
+        const x1 = line.source.x + 120
+        const y1 = line.source.y + 130
+        const x2 = line.target.x + 120
+        const y2 = line.target.y + 130
+        const midX = (x1 + x2) / 2
+        return (
+          <path
+            key={line.id}
+            d={`M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`}
+            fill="none"
+            stroke="var(--accent)"
+            strokeWidth="2"
+            strokeOpacity="0.42"
+            strokeDasharray="6 5"
+            markerEnd="url(#lineage-arrow)"
+          />
+        )
+      })}
+    </svg>
+  )
+}
+
+function makeAgentActions(asset, { referenceEnabled, videoEnabled, lang }) {
+  if (!asset) return []
+  const prompt = asset.generation?.prompt || asset.prompt || ''
+  const isImage = asset.type === 'image'
+  const items = [
+    { action: 'toggleMaterial', label: asset.isMaterial ? t('unmarkMaterial', lang) : t('markMaterial', lang), icon: 'star' }
+  ]
+  if (asset.url && referenceEnabled) items.push({ action: 'useAsReference', label: t('useAsReference', lang), icon: 'link' })
+  if (prompt) items.push({ action: 'usePrompt', label: t('usePrompt', lang), icon: 'pencil' })
+  if (isImage) {
+    items.push({ action: 'variation', label: t('variation', lang), icon: 'sparkle' })
+    items.push({ action: 'restyle', label: t('restyle', lang), icon: 'image' })
+    items.push({ action: 'regenerate', label: t('regenerate', lang), icon: 'refresh' })
+    if (videoEnabled) items.push({ action: 'toVideo', label: t('toVideo', lang), icon: 'film' })
+  }
+  return items.map((item, index) => ({ ...item, id: `${asset.id}-${item.action}-${index}`, assetId: asset.id }))
+}
+
+function formatAgentPlan(asset, queue, lang) {
+  if (!asset || queue.length === 0) return ''
+  const title = t('agentPlanTitle', lang)
+  const assetLabel = asset.label || asset.name || asset.id
+  const lines = [
+    title,
+    `${t('agentPlanAsset', lang)}: ${assetLabel} (${asset.type || 'asset'}, ${asset.id})`,
+    ''
+  ]
+  queue.forEach((item, index) => {
+    lines.push(`${index + 1}. ${item.label} [${item.action}]`)
+  })
+  return lines.join('\n')
+}
+
+function AgentQueue({ selectedAsset, onAction, referenceEnabled, videoEnabled, lang }) {
+  const [open, setOpen] = useState(false)
+  const [queue, setQueue] = useState([])
+  const [running, setRunning] = useState(false)
+  const [copiedPlan, setCopiedPlan] = useState(false)
+  const suggested = useMemo(
+    () => makeAgentActions(selectedAsset, { referenceEnabled, videoEnabled, lang }),
+    [selectedAsset, referenceEnabled, videoEnabled, lang]
+  )
+
+  useEffect(() => {
+    setQueue(prev => prev.filter(item => item.assetId === selectedAsset?.id))
+    setCopiedPlan(false)
+  }, [selectedAsset?.id])
+
+  const addSuggested = () => {
+    if (!selectedAsset) return
+    setQueue(prev => {
+      const existing = new Set(prev.map(item => item.id))
+      return [...prev, ...suggested.filter(item => !existing.has(item.id))]
+    })
+    setOpen(true)
+  }
+
+  const removeItem = (id) => setQueue(prev => prev.filter(item => item.id !== id))
+  const clear = () => setQueue([])
+  const copyPlan = async () => {
+    const plan = formatAgentPlan(selectedAsset, queue, lang)
+    if (!plan) return
+    try {
+      await navigator.clipboard.writeText(plan)
+      setCopiedPlan(true)
+      window.setTimeout(() => setCopiedPlan(false), 1200)
+    } catch {
+      setCopiedPlan(false)
+    }
+  }
+  const runItem = async (item) => {
+    if (!selectedAsset || item.assetId !== selectedAsset.id) return
+    await onAction?.(item.action, selectedAsset)
+    removeItem(item.id)
+  }
+  const runAll = async () => {
+    if (running) return
+    setRunning(true)
+    try {
+      for (const item of [...queue]) {
+        await runItem(item)
+      }
+    } finally {
+      setRunning(false)
+    }
+  }
+
+  return (
+    <div data-toolbar="true" className="glass-floating" onMouseDown={e => e.stopPropagation()} style={{
+      position: 'absolute', top: 14, left: 14, zIndex: 18,
+      width: open ? 260 : 'auto', borderRadius: 'var(--radius-md)',
+      padding: open ? 8 : 6
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <button onClick={() => setOpen(prev => !prev)} title={t('agentQueue', lang)} style={agentBtnStyle}>
+          <Ic n="zap" size={13} /> {t('agentQueue', lang)}
+        </button>
+        {open && (
+          <button onClick={addSuggested} disabled={!selectedAsset || suggested.length === 0} style={{ ...agentBtnStyle, opacity: selectedAsset && suggested.length > 0 ? 1 : 0.45 }}>
+            <Ic n="plus" size={12} /> {t('proposeActions', lang)}
+          </button>
+        )}
+      </div>
+      {open && (
+        <div style={{ marginTop: 8 }}>
+          {queue.length === 0 ? (
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', padding: '8px 4px' }}>
+              {selectedAsset ? t('noAgentActions', lang) : t('selectAssetFirst', lang)}
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {queue.map(item => (
+                <div key={item.id} style={{
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)',
+                  borderRadius: 'var(--radius-sm)', padding: '5px 6px'
+                }}>
+                  <Ic n={item.icon} size={11} />
+                  <span style={{ flex: 1, minWidth: 0, fontSize: 11, color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {item.label}
+                  </span>
+                  <button onClick={() => runItem(item)} disabled={running} title={t('executeAction', lang)} style={agentIconBtnStyle}>
+                    <Ic n="check" size={11} />
+                  </button>
+                  <button onClick={() => removeItem(item.id)} disabled={running} title={t('delete', lang)} style={agentIconBtnStyle}>
+                    <Ic n="close" size={11} />
+                  </button>
+                </div>
+              ))}
+              <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                <button onClick={copyPlan} disabled={running || queue.length === 0} style={{ ...agentBtnStyle, flex: 1 }}>
+                  <Ic n={copiedPlan ? 'check' : 'copy'} size={11} /> {copiedPlan ? t('copied', lang) : t('copyAgentPlan', lang)}
+                </button>
+                <button onClick={runAll} disabled={running} style={{ ...agentBtnStyle, flex: 1 }}>
+                  <Ic n="zap" size={11} /> {t('runAllActions', lang)}
+                </button>
+              </div>
+              <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                <button onClick={clear} disabled={running} style={{ ...agentBtnStyle, flex: 1 }}>
+                  <Ic n="trash" size={11} /> {t('clearQueue', lang)}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+const agentBtnStyle = {
+  background: 'transparent',
+  border: '1px solid var(--border-subtle)',
+  borderRadius: 'var(--radius-sm)',
+  color: 'var(--text-secondary)',
+  fontSize: 11,
+  padding: '5px 8px',
+  cursor: 'pointer',
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: 5
+}
+
+const agentIconBtnStyle = {
+  background: 'transparent',
+  border: 'none',
+  color: 'var(--text-muted)',
+  cursor: 'pointer',
+  width: 22,
+  height: 22,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  padding: 0,
+  borderRadius: 'var(--radius-sm)'
+}
+
+export default function CanvasPanel({ canvas, lang, onContextMenu, onAssetAction, generationMode = 'image', videoEnabled = false, referenceEnabled = false }) {
   const { selectedAsset, selectedId, setSelectedId, viewMode, setViewMode } = canvas
-  const assets = (canvas.assets || []).filter(asset => asset.type === generationMode)
+  const modeAssets = (canvas.assets || []).filter(asset => asset.type === generationMode)
+  const materialCount = modeAssets.filter(asset => asset.isMaterial === true).length
+  const [showMaterialsOnly, setShowMaterialsOnly] = useState(false)
+  const assets = showMaterialsOnly ? modeAssets.filter(asset => asset.isMaterial === true) : modeAssets
   const visibleSelectedAsset = assets.some(asset => asset.id === selectedId) ? selectedAsset : null
   const [activeTool, setActiveTool] = useState('select')
   const [drawColor, setDrawColor] = useState('#E8A849')
@@ -496,6 +821,7 @@ export default function CanvasPanel({ canvas, lang, onContextMenu, generationMod
   const [scale, setScale] = useState(1)
   const [offset, setOffset] = useState({ x: 0, y: 0 })
   const [draggedAsset, setDraggedAsset] = useState(null)
+  const [showLineage, setShowLineage] = useState(false)
 
   const scaleRef = useRef(1)
   useEffect(() => {
@@ -504,12 +830,26 @@ export default function CanvasPanel({ canvas, lang, onContextMenu, generationMod
 
   const drawingCanvasRef = useRef(null)
   const dragCleanupRef = useRef(null)
+  const viewportRef = useRef(null)
 
   useEffect(() => {
     if (selectedId && !assets.some(asset => asset.id === selectedId)) {
       setSelectedId(null)
     }
   }, [assets, selectedId, setSelectedId])
+
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      const tag = e.target?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.target?.isContentEditable) return
+      if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'z') return
+      e.preventDefault()
+      if (e.shiftKey) canvas.redo()
+      else canvas.undo()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [canvas.undo, canvas.redo])
 
   // Unmount cleanup for mouse drag listeners
   useEffect(() => {
@@ -588,12 +928,28 @@ export default function CanvasPanel({ canvas, lang, onContextMenu, generationMod
       const finalY = startY + dy
 
       setDraggedAsset(null)
-      canvas.updateAsset(asset.id, { x: finalX, y: finalY })
+      if (onAssetAction) {
+        onAssetAction('moveAsset', { ...asset, x: finalX, y: finalY })
+      } else {
+        canvas.updateAsset(asset.id, { x: finalX, y: finalY }, { history: true })
+      }
     }
 
     window.addEventListener('mousemove', onMouseMove)
     window.addEventListener('mouseup', onMouseUp)
   }
+
+  const handleSelectLinkedAsset = useCallback((id) => {
+    const target = canvas.allAssets.find(asset => asset.id === id)
+    if (!target) return
+    if (target.type === generationMode) {
+      setSelectedId(id)
+      return
+    }
+    onAssetAction?.('selectAsset', target)
+  }, [canvas.allAssets, generationMode, onAssetAction, setSelectedId])
+
+  const emptyTitle = showMaterialsOnly && modeAssets.length > 0 ? t('noMaterialAssets', lang) : t('canvasEmpty', lang)
 
   return (
     <div style={{ display: 'flex', height: '100%' }}>
@@ -609,6 +965,30 @@ export default function CanvasPanel({ canvas, lang, onContextMenu, generationMod
             <Ic n="layoutGrid" size={12} />
             {t('freeView', lang)}
           </button>
+          <button onClick={canvas.undo} disabled={!canvas.canUndo} title={t('undo', lang)} style={{ ...filterBtnStyle(false), opacity: canvas.canUndo ? 1 : 0.45, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+            <Ic n="undo" size={12} />
+          </button>
+          <button onClick={canvas.redo} disabled={!canvas.canRedo} title={t('redo', lang)} style={{ ...filterBtnStyle(false), opacity: canvas.canRedo ? 1 : 0.45, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+            <Ic n="redo" size={12} />
+          </button>
+          <button
+            onClick={() => setShowMaterialsOnly(prev => !prev)}
+            disabled={materialCount === 0 && !showMaterialsOnly}
+            title={materialCount === 0 ? t('noMaterialAssets', lang) : t('materialsOnly', lang)}
+            style={{ ...filterBtnStyle(showMaterialsOnly), opacity: materialCount === 0 && !showMaterialsOnly ? 0.45 : 1, display: 'inline-flex', alignItems: 'center', gap: 5 }}
+          >
+            <Ic n="star" size={12} />
+            {t('materialsOnly', lang)}
+          </button>
+          <button
+            onClick={() => setShowLineage(prev => !prev)}
+            disabled={viewMode !== 'free'}
+            title={t('lineageLines', lang)}
+            style={{ ...filterBtnStyle(showLineage), opacity: viewMode === 'free' ? 1 : 0.45, display: 'inline-flex', alignItems: 'center', gap: 5 }}
+          >
+            <Ic n="link" size={12} />
+            {t('lineageLines', lang)}
+          </button>
           <button title={t('openNanaGallery', lang)} onClick={() => openExternal(OPENNANA_PROMPT_GALLERY_URL)} style={{ ...filterBtnStyle(false), display: 'inline-flex', alignItems: 'center', gap: 5 }}>
             <Ic n="sparkle" size={12} />
             {t('openNanaGallery', lang)}
@@ -616,7 +996,7 @@ export default function CanvasPanel({ canvas, lang, onContextMenu, generationMod
           <div style={{ flex: 1 }} />
           <span style={{ fontSize: 10, color: 'var(--text-ghost)', fontFamily: 'var(--font-mono)' }}>{assets.length} {t('assetUnit', lang)}</span>
         </div>
-        <div className={assets.length === 0 ? 'canvas-surface' : undefined} style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column' }}>
+        <div ref={viewportRef} className={assets.length === 0 ? 'canvas-surface' : undefined} style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column' }}>
           {assets.length === 0 ? (
             <div className="canvas-empty-state">
               <div className="canvas-empty-icon">
@@ -624,7 +1004,7 @@ export default function CanvasPanel({ canvas, lang, onContextMenu, generationMod
               </div>
               <div>
                 <div className="canvas-empty-title">
-                  {t('canvasEmpty', lang)}
+                  {emptyTitle}
                 </div>
                 <div className="canvas-empty-description">
                   {generationMode === 'video'
@@ -666,6 +1046,7 @@ export default function CanvasPanel({ canvas, lang, onContextMenu, generationMod
                 lang={lang}
               >
                 <div style={{ position: 'relative', minWidth: 2000, minHeight: 1500 }}>
+                  {showLineage && <LineageLines assets={assets} />}
                   {assets.map((a, i) => {
                     const col = i % 4
                     const row = Math.floor(i / 4)
@@ -702,11 +1083,21 @@ export default function CanvasPanel({ canvas, lang, onContextMenu, generationMod
             </>
           )}
           {viewMode === 'free' && <EditBar activeTool={activeTool} setActiveTool={setActiveTool} drawColor={drawColor} setDrawColor={setDrawColor} drawWidth={drawWidth} setDrawWidth={setDrawWidth} onClearDrawings={handleClearDrawings} lang={lang} />}
+          {viewMode === 'free' && assets.length > 0 && (
+            <MiniMap assets={assets} selectedId={selectedId} setSelectedId={setSelectedId} scale={scale} offset={offset} setOffset={setOffset} viewportRef={viewportRef} lang={lang} />
+          )}
+          <AgentQueue selectedAsset={visibleSelectedAsset} onAction={onAssetAction} referenceEnabled={referenceEnabled} videoEnabled={videoEnabled} lang={lang} />
         </div>
       </div>
       {visibleSelectedAsset && (
         <AssetDetail asset={visibleSelectedAsset} onClose={() => setSelectedId(null)}
-          onDelete={() => canvas.removeAsset(visibleSelectedAsset.id)} onRegenerate={null} lang={lang} />
+          allAssets={canvas.allAssets}
+          onDelete={() => onAssetAction?.('delete', visibleSelectedAsset)}
+          onAction={onAssetAction}
+          onSelectAsset={handleSelectLinkedAsset}
+          lang={lang}
+          videoEnabled={videoEnabled}
+          referenceEnabled={referenceEnabled} />
       )}
     </div>
   )

@@ -16,6 +16,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveConversation: (id, data) => ipcRenderer.invoke('conv:save', id, data),
   deleteConversation: (id) => ipcRenderer.invoke('conv:delete', id),
   setActiveConversation: (id) => ipcRenderer.invoke('conv:setActive', id),
+  exportConversation: (conversation) => ipcRenderer.invoke('conv:export', conversation),
+  exportProject: (conversations) => ipcRenderer.invoke('conv:exportProject', conversations),
+  importConversation: () => ipcRenderer.invoke('conv:import'),
 
   chat: (messages, provider) => ipcRenderer.invoke('api:chat', messages, provider),
   generateImage: (params) => ipcRenderer.invoke('api:image', params),

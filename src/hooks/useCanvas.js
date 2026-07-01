@@ -1,20 +1,43 @@
-import { useState, useCallback, useMemo } from 'react'
-import { createAsset } from '../utils/assetFactory'
+import { useState, useCallback, useMemo, useRef } from 'react'
+import { createAsset, mergeAsset } from '../utils/assetFactory'
+
+function cloneAssets(assets) {
+  if (typeof structuredClone === 'function') return structuredClone(assets)
+  return JSON.parse(JSON.stringify(assets))
+}
+
+function normalizeAssets(assets) {
+  return Array.isArray(assets) ? assets.map(asset => createAsset(asset)) : []
+}
 
 export default function useCanvas() {
   const [assets, setAssets] = useState([])
   const [selectedId, setSelectedId] = useState(null)
   const [viewMode, setViewMode] = useState('grid')
+  const undoStack = useRef([])
+  const redoStack = useRef([])
 
-  const addAsset = useCallback((asset) => {
-    const item = createAsset(asset)
-    setAssets(prev => [item, ...prev])
-    return item
+  const commitAssets = useCallback((updater, options = {}) => {
+    setAssets(prev => {
+      const next = typeof updater === 'function' ? updater(prev) : updater
+      if (next === prev) return prev
+      if (options.history === true) {
+        undoStack.current.push(cloneAssets(prev))
+        if (undoStack.current.length > 80) undoStack.current.shift()
+        redoStack.current = []
+      }
+      return next
+    })
   }, [])
 
-  const addPlaceholder = useCallback((label) => {
-    const item = {
-      id: `asset_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+  const addAsset = useCallback((asset, options = {}) => {
+    const item = createAsset(asset)
+    commitAssets(prev => [item, ...prev], options)
+    return item
+  }, [commitAssets])
+
+  const addPlaceholder = useCallback((label, asset = {}, options = {}) => {
+    const item = createAsset({
       type: 'image',
       label: label || 'Generating...',
       prompt: '',
@@ -22,35 +45,57 @@ export default function useCanvas() {
       model: '',
       ratio: '1:1',
       style: '',
-      createdAt: new Date().toISOString(),
+      ...asset,
       _generating: true
-    }
-    setAssets(prev => [item, ...prev])
+    })
+    commitAssets(prev => [item, ...prev], options)
     return item.id
-  }, [])
+  }, [commitAssets])
 
-  const removeAsset = useCallback((id) => {
-    setAssets(prev => prev.filter(a => a.id !== id))
+  const removeAsset = useCallback((id, options = {}) => {
+    commitAssets(prev => prev.filter(a => a.id !== id), options)
     setSelectedId(prev => prev === id ? null : prev)
-  }, [])
+  }, [commitAssets])
 
   const replaceAssets = useCallback((nextAssets) => {
-    setAssets(Array.isArray(nextAssets) ? nextAssets : [])
+    const normalized = normalizeAssets(nextAssets)
+    undoStack.current = []
+    redoStack.current = []
+    setAssets(normalized)
+    return normalized
   }, [])
 
-  const updateAsset = useCallback((id, patch) => {
-    setAssets(prev => prev.map(a => a.id === id ? { ...a, ...patch } : a))
-  }, [])
+  const updateAsset = useCallback((id, patch, options = {}) => {
+    commitAssets(prev => prev.map(a => a.id === id ? mergeAsset(a, patch) : a), options)
+  }, [commitAssets])
 
-  const updateAssets = useCallback((patches) => {
-    setAssets(prev => prev.map(a => patches[a.id] ? { ...a, ...patches[a.id] } : a))
-  }, [])
+  const updateAssets = useCallback((patches, options = {}) => {
+    commitAssets(prev => prev.map(a => patches[a.id] ? mergeAsset(a, patches[a.id]) : a), options)
+  }, [commitAssets])
 
   const getAssetById = useCallback((id) => assets.find(a => a.id === id), [assets])
 
   const clear = useCallback(() => {
-    setAssets([])
+    commitAssets([], { history: true })
     setSelectedId(null)
+  }, [commitAssets])
+
+  const undo = useCallback(() => {
+    setAssets(prev => {
+      if (undoStack.current.length === 0) return prev
+      const next = undoStack.current.pop()
+      redoStack.current.push(cloneAssets(prev))
+      return cloneAssets(next)
+    })
+  }, [])
+
+  const redo = useCallback(() => {
+    setAssets(prev => {
+      if (redoStack.current.length === 0) return prev
+      const next = redoStack.current.pop()
+      undoStack.current.push(cloneAssets(prev))
+      return cloneAssets(next)
+    })
   }, [])
 
   const selectedAsset = assets.find(a => a.id === selectedId) || null
@@ -74,6 +119,10 @@ export default function useCanvas() {
     updateAsset,
     updateAssets,
     getAssetById,
+    undo,
+    redo,
+    canUndo: undoStack.current.length > 0,
+    canRedo: redoStack.current.length > 0,
     clear
-  }), [sortedAssets, assets, selectedAsset, selectedId, viewMode, addAsset, addPlaceholder, removeAsset, replaceAssets, updateAsset, updateAssets, getAssetById, clear])
+  }), [sortedAssets, assets, selectedAsset, selectedId, viewMode, addAsset, addPlaceholder, removeAsset, replaceAssets, updateAsset, updateAssets, getAssetById, undo, redo, clear])
 }
