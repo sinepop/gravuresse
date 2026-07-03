@@ -1,343 +1,449 @@
-# 更新日志 / Changelog
+﻿# 鏇存柊鏃ュ織 / Changelog
 
-## 中文
+## 涓枃
+
+#### v2.1.0 (2026-07-03)
+
+**Provider API setup and release cleanup**
+- Updated the title-bar version badge to read from `package.json` so the UI no longer shows the stale `v1.8.0`.
+- Expanded Provider-first API configuration across chat/image/video with selectable providers, saved profiles, credential modes, model fetching, manual model fallback, and provider billing/reference states.
+- Added custom image/video API templates, template presets, template path readiness checks, and automatic safe presets for fal, Replicate, and Custom Video.
+- Improved model fetching for versioned API base URLs, Gemini endpoints, custom model-list paths, redacted errors, and non-standard endpoint fallback.
+- Hardened template validation, custom auth handling, provider/profile switching, saved credential reuse, and video polling session persistence.
+- Added core tests for provider normalization, model fetching, auth resolution, custom templates, asset lineage, and import compatibility.
+
+#### v2.0.1 (2026-07-01)
+
+**鍥剧墖 API 閰嶇疆涓庝腑杞珯婕旂ず**
+- 鏂板鈥滀腑杞珯 / GPT Image 2鈥濅綔涓哄浘鐗?API 涓诲叆鍙ｏ紝榛樿浣跨敤 `gpt-image-2` 涓?OpenAI Images 鍏煎璺緞
+- API 閰嶇疆椤垫寜 Hermes Agent 鐨?Provider-first 妯″紡閲嶆帓锛氬厛涓嬫媺閫夋嫨渚涘簲鍟嗭紝鍐嶉€夋嫨璁よ瘉鏂瑰紡銆佸～鍐欏嚟璇併€佹媺鍙栧苟閫夋嫨妯″瀷
+- API 閰嶇疆椤垫柊澧炲凡淇濆瓨妯″瀷閰嶇疆涓嬫媺锛屽彲鐩存帴鍒囨崲鍘嗗彶 Provider + 鍑瘉 + Base URL + Model 缁勫悎
+- Provider 涓嬫媺鍙睍绀哄彲鐩存帴璋冪敤鐨?API 渚涘簲鍟嗭紱璁㈤槄/璧勬枡鍏ュ彛淇濈暀涓哄崱鐗囪鏄庡拰璐拱/鐧诲綍閾炬帴锛岄伩鍏嶈淇濆瓨涓轰笉鍙皟鐢ㄩ厤缃?- 鍥剧墖閰嶇疆椤电畝鍖栦负 Provider銆佽璇佹柟寮忋€丄PI Key/Session Token銆佷腑杞珯 Base URL銆佹ā鍨嬩笌娴嬭瘯鐢熷浘锛涘畼鏂?Provider 鐨?Base URL 绉诲叆楂樼骇閫夐」
+- 妯″瀷鍖烘柊澧炲埛鏂版寜閽紝鑷姩鎷夊彇澶辫触鎴栧垰鏀瑰畬閰嶇疆鏃跺彲鎵嬪姩閲嶆柊鑾峰彇妯″瀷鍒楄〃
+- 鏂板鍥剧墖鐪熷疄鐢熸垚娴嬭瘯锛屼娇鐢ㄦ渶灏忔祴璇?prompt 杩斿洖缂╃暐鍥撅紝閬垮厤鍙潬妯″瀷鍒楄〃璇垽鍙敤鎬?- Chat / Image / Video 鎵€鏈夊凡閰嶇疆 Provider 閮戒細灏濊瘯鑷姩鎷夊彇妯″瀷鍒楄〃锛涒€滄祴璇曡繛鎺モ€濈粺涓€灞曠ず妯″瀷鎷夊彇缁撴灉锛岃嚜瀹氫箟鍥剧墖/瑙嗛鍏ュ彛涓嶅啀闇€瑕佹墜鍔ㄧ粫杩?- 妯″瀷鎷夊彇澶嶇敤 Provider 鑷韩鐨?Bearer銆丠eader銆丵uery銆丼ession 涓庢棤閴存潈閰嶇疆锛屼笉鍐嶅彧鎸変腑杞珯鎴?Bearer Key 澶勭悊
+- 淇濆瓨鍚庣殑鑴辨晱鍑瘉銆侀潪 Bearer 閴存潈涓庢棤閴存潈 Provider 浼氬湪妯″瀷鎷夊彇銆佽繛鎺ユ祴璇曘€佺湡瀹炵敓鎴愬拰蹇嵎妯″瀷鍒囨崲涓娇鐢ㄥ悓涓€濂楀垽鏂紝閬垮厤璁剧疆椤垫樉绀哄彲鐢ㄤ絾鐢熸垚鏃惰璇嫤
+- 鐪熷疄 Provider 璋冪敤涓庡仴搴锋鏌ョ幇鍦ㄤ篃鏀寔鑷畾涔?`authType/customAuth` 瑕嗙洊鍜屾棤閴存潈 Provider锛岄伩鍏嶆ā鍨嬭兘鎷変絾鐢熸垚鏃朵粛鎸?Bearer 鍙戦€?- 鑷畾涔夊浘鐗?瑙嗛 API 鐨勮璇佹柟寮忚ˉ榻?Query Key 閫夐」锛屽苟鍦?fallback Provider 鍒楄〃涓繚鐣欏畬鏁撮壌鏉冮€夐」
+- 缂洪厤缃彁绀烘敼涓?Provider / 鍑瘉 / 妯″瀷锛屼笉鍐嶆妸鎵€鏈夐壌鏉冮兘鎻忚堪鎴?API Key锛涘揩鎹锋ā鍨嬫寜閽湪褰撳墠閰嶇疆鏈尮閰嶅巻鍙?profile 鏃舵樉绀哄綋鍓嶆ā鍨嬶紝閬垮厤璇涓虹涓€鏉″巻鍙查厤缃?- 蹇嵎鍒囨崲淇濆瓨杩囩殑 Provider profile 鍚庯紝涓昏繘绋嬭皟鐢ㄤ細浼樺厛鍖归厤宸蹭繚瀛?profile 鍑瘉锛岄伩鍏嶄繚瀛樿惤鐩樺墠鐭殏璋冪敤鏃?Provider锛涘巻鍙?metadata/璁㈤槄 profile 涓嶅啀鍑虹幇鍦ㄥ揩鎹峰垏鎹㈡垨 saved profile 涓嬫媺涓?- 鍚屼竴 Provider 涓嬪垏鎹笉鍚?Base URL/妯″瀷 profile 鏃讹紝涓昏繘绋嬩篃浼氬尮閰嶅搴斿凡淇濆瓨 profile锛岄伩鍏嶅揩鍒囧悗鐭殏浣跨敤鏃х鐐规垨鏃фā鍨?- 璁剧疆椤甸€夋嫨宸蹭繚瀛?profile 鍚庯紝鑷姩鎷夊彇妯″瀷涓庤繛鎺ユ祴璇曚篃浼氫粠瀵瑰簲 profile 鍥炲彇鑴辨晱鍑瘉锛屼笉鍐嶅彧渚濊禆褰撳墠 active provider
+- Chat / Image / Video 鐨勬墍鏈夊彲鎵ц Provider 閮戒細鍦ㄥ綋鍓嶉厤缃尯鐩存帴灞曠ず Base URL 涓庢ā鍨嬫媺鍙栧叆鍙ｏ紝涓嶅啀鍙妸涓浆绔欏綋浣滃彲閰嶇疆 API
+- 璁剧疆椤典笉鍐嶇敤涓绘祦 Provider 鐧藉悕鍗曢殣钘?registry/fallback 涓殑鍏跺畠 API锛涚櫧鍚嶅崟鍙繚鐣欎负鎺掑簭鏉冮噸锛岄伩鍏嶆柊澧?Provider 宸叉敞鍐屽嵈鏃犳硶閫夋嫨
+- 妯″瀷鎷夊彇浼氳瘑鍒畼鏂?API 宸插寘鍚増鏈矾寰勭殑 Base URL锛堜緥濡?`/v1`銆乣/v1beta`銆乣/api/v3`锛夛紝閬垮厤鎶婄伀灞辩瓑瀹樻柟绔偣閿欒鎷兼垚閲嶅鐗堟湰璺緞
+- Gemini 妯″瀷鎷夊彇浼氳瘑鍒敤鎴峰～鍐欑殑 `/v1beta` 绔偣锛屼笉鍐嶉噸澶嶆嫾鎺?`/v1beta/v1beta/models`
+- 妯″瀷閰嶇疆鍦ㄤ笅鎷夐€夋嫨涔嬪濮嬬粓淇濈暀鎵嬪姩杈撳叆妗嗭紝鍦ㄧ嚎鍒楄〃鎴栧唴缃洰褰曟病鏈夎鐩栫殑鏂版ā鍨嬩篃鑳界洿鎺ュ～鍐?- 鑷姩/鎵嬪姩鎷夊彇妯″瀷鍚庝細鏄剧ず鎷夊彇缁撴灉銆佺┖鍒楄〃鎻愮ず鎴栧け璐ユ彁绀猴紝涓嶅啀闈欓粯娓呯┖妯″瀷鍒楄〃
+- 璁剧疆椤典富鍔ㄦ媺鍙栨ā鍨嬫垨娴嬭瘯杩炴帴鏃朵細鏄剧ず Provider 杩斿洖鐨勮劚鏁忛敊璇紝涓嶅啀鎶?Key銆丅ase URL 鎴栫鐐归敊璇吉瑁呮垚绌烘ā鍨嬪垪琛?- Provider 涓嶆彁渚涙爣鍑嗘ā鍨嬪垪琛ㄦ帴鍙ｆ椂浼氶檷绾т负鎺ㄨ崘妯″瀷/鎵嬪姩杈撳叆鎻愮ず锛屼笉鍐嶆妸 404/405 璇垽涓哄嚟璇佷笉鍙敤
+- Provider 榛樿妯″瀷涓虹┖浣嗗唴缃洰褰曟湁鎺ㄨ崘椤规椂锛岄€夋嫨 Provider 浼氳嚜鍔ㄥ啓鍏ョ涓€鏉℃帹鑽愭ā鍨嬶紝閬垮厤涓嬫媺鍙浣嗕繚瀛橀厤缃负绌?- 鏃ч厤缃垨淇濆瓨 profile 鏃朵篃浼氱敤 Provider 鎺ㄨ崘妯″瀷琛ラ綈绌烘ā鍨嬶紝閬垮厤閲嶅惎鍚庡揩鎹锋ā鍨嬪垏鎹㈡紡鎺夎閰嶇疆
+- 淇濆瓨璁剧疆鍓嶄細鍐嶆褰掍竴鍖栧綋鍓?Provider 鐨勭┖妯″瀷锛岄伩鍏嶇晫闈㈡樉绀烘帹鑽愭ā鍨嬩絾 active provider 钀界洏涓虹┖
+- 鑷畾涔?API 澧炲姞妯″瀷鍒楄〃璺緞閰嶇疆锛岃嚜鍔ㄦ媺鍙栨ā鍨嬪彲閫傞厤 `/api/models`銆乣/v1/model/list` 绛夐潪鏍囧噯绔偣锛屽苟闄愬埗涓虹浉瀵硅矾寰勯伩鍏嶇粫杩?Base URL
+- 鑷畾涔夊浘鐗?瑙嗛 API 楂樼骇閰嶇疆鏂板璇锋眰鏂规硶涓?JSON Body 妯℃澘锛屽彲鐩存帴閫傞厤闈炴爣鍑嗙敓鎴愩€佹彁浜ゅ拰杞鎺ュ彛锛屼笉鍐嶉渶瑕佹敼浠ｇ爜
+- 鏆傛棤鍘熺敓 handler 鐨勫浘鐗?瑙嗛 API Provider 鐜板湪鍙綔涓衡€滆嚜瀹氫箟 API鈥濋厤缃細閫夋嫨 Provider 鍚庡～鍐欓珮绾ц矾寰勪笌妯℃澘鍗冲彲璧伴€氱敤 custom pipeline
+- 娓叉煋绔?fallback Provider 鍒楄〃涔熶細鎶婂獟浣?API metadata 鍏ュ彛褰掍竴鍖栦负妯℃澘鍨嬭嚜瀹氫箟 API锛岄伩鍏嶄富杩涚▼鍒楄〃涓嶅彲鐢ㄦ椂涓嬫媺鑳藉姏閫€鍖?- 鑷畾涔夊浘鐗囪姹傛ā鏉跨幇鍦ㄤ紭鍏堜娇鐢ㄨ缃〉鍐欏叆鐨?`requestBody`锛屽苟鍦ㄧ紪杈戞椂娓呯悊鏃?`body/submitBody` 鍒悕锛岄伩鍏嶅巻鍙查厤缃鐩栨柊妯℃澘
+- 鍒囨崲 Provider 鏃朵細娓呯悊鏃?Provider 鐨勯珮绾фā鏉裤€佽矾寰勩€佹柟娉曘€丅ody銆佽疆璇笌妯″瀷鍒楄〃璺緞锛岄伩鍏嶆柊渚涘簲鍟嗚鐢ㄤ笂涓€濂?API 閰嶇疆
+- 鍒囨崲宸蹭繚瀛?Provider profile 涓庢竻绌洪厤缃篃澶嶇敤鍚屼竴濂楁竻鐞嗛€昏緫锛岄伩鍏嶅揩鎹锋ā鍨嬪垏鎹㈠悗娈嬬暀涓婁竴鏉?profile 鐨勯珮绾?API 瀛楁
+- 鏃х増 profile 涓殑 `customTemplate`銆侀《灞傛ā鏉垮瓧娈靛拰 `modelsPath` 浼氬湪鍒囨崲/淇濆瓨鏃跺綊涓€鍖栧埌褰撳墠 `template/modelListPath` 缁撴瀯锛岄伩鍏嶅崌绾у悗涓㈠け鑷畾涔?API 閰嶇疆
+- 鎵嬪姩杈撳叆鎴栧垏鎹㈡ā鍨嬫椂涓嶄細鍐嶈Е鍙戣嚜鍔ㄦ媺鍙栵紝鑷姩鎷夊彇鍙搷搴?Provider銆佸嚟璇併€佺鐐瑰拰璁よ瘉鏂瑰紡鍙樺寲
+- 蹇€熷垏鎹?Provider銆佸嚟璇佹垨绔偣鏃讹紝杈冩棭杩斿洖鐨勬ā鍨嬫媺鍙栬姹備細琚拷鐣ワ紝涓嶄細瑕嗙洊褰撳墠 Provider 鐨勬ā鍨嬪垪琛?- 褰撳嚟璇佹垨绔偣琚竻绌烘椂锛屼細绔嬪嵆鍙栨秷鏃фā鍨嬫媺鍙栫粨鏋滅殑鍥炲啓骞舵竻绌哄姞杞芥€侊紝閬垮厤鏃犳晥閰嶇疆涓嬫樉绀烘棫妯″瀷
+- 杩炴帴娴嬭瘯涓庢祴璇曠敓鍥句細浣跨敤褰撳墠閫夋嫨鐨勮璇佹柟寮忓拰鑷畾涔夎璇佸弬鏁帮紝涓嶅啀鍥為€€鍒?Provider 榛樿 authType
+- 璁剧疆椤典繚瀛樹細绛夊緟涓昏繘绋嬮厤缃惤鐩樺畬鎴愬悗鍐嶅叧闂紝閬垮厤鍒氫繚瀛?Provider/妯″瀷鍚庣珛鍒荤敓鎴愭椂鍛戒腑鏃ч厤缃?- 璁剧疆淇濆瓨涓細绂佺敤 Escape/鍏抽棴鎿嶄綔锛屼繚瀛樺け璐ユ椂鍦ㄥ脊绐楀唴鏄剧ず閿欒锛屼笉鍐嶅彧鍐欏叆鎺у埗鍙?- Provider 鍋ュ悍妫€鏌ヤ細闄愬埗鑷畾涔?Header 鍚嶃€佹敮鎸?Query 閴存潈鍙傛暟锛屽苟鍦ㄧ敤鎴疯緭鍏ユ柊鏄庢枃鍑瘉鏃舵祴璇曞綋鍓嶈緭鍏ョ鐐癸紝鑰屼笉鏄敊璇洖钀藉埌榛樿绔偣
+- 褰撳墠 Provider 閰嶇疆鍖烘柊澧?API Key銆佹帶鍒跺彴銆佸厖鍊?璐拱涓庢枃妗ｇ洿杈炬寜閽紝鍑忓皯閰嶇疆鏃跺湪鍗＄墖鍒楄〃閲屽弽澶嶅鎵惧叆鍙?- Provider 鍗＄墖涓庡綋鍓嶉厤缃尯鏂板鈥滅洿杩?API / 鑷畾涔?API / 璁㈤槄璧勬枡 / 璧勬枡鍏ュ彛鈥濊皟鐢ㄧ姸鎬佸拰鎺ュ叆鏂瑰紡鎻愮ず锛屽尯鍒嗗彲璋冪敤 API 涓庝粎璐﹀彿/璁㈤槄璇存槑
+- 褰撳墠 Provider 閰嶇疆鍖烘柊澧炲氨缁鏌ワ紝閫愰」鏄剧ず鍑瘉銆佺鐐广€佹ā鍨嬫槸鍚﹂綈鍏紝骞跺彲涓€閿～鍏ユ帹鑽?Base URL 涓庢ā鍨?- 鑷姩鎷夊彇妯″瀷涓庢祴璇曡繛鎺ヤ細鍦ㄥ綋鍓?Base URL 涓虹┖鏃跺洖閫€鍒?Provider 榛樿绔偣锛屽噺灏戝垰閫変緵搴斿晢鍚庣殑鎵嬪姩閰嶇疆姝ラ
+- Provider 閰嶇疆鏂板鍐呯疆妯″瀷鐩綍锛氬湪绾挎媺鍙栧け璐ユ垨 Provider 涓嶆彁渚涙爣鍑嗘ā鍨嬫帴鍙ｆ椂锛屾ā鍨嬩笅鎷変粛浼氭樉绀烘帹鑽愭ā鍨嬶紝閬垮厤鐢ㄦ埛鎵嬪姩鏌ユā鍨嬪悕
+- 娓叉煋绔?fallback Provider 鍒楄〃涔熶細淇濈暀璁よ瘉鏂瑰紡銆佹ā鍨嬬洰褰曘€佽皟鐢ㄧ姸鎬佸拰鎺ュ叆鏂瑰紡锛岄伩鍏嶄富杩涚▼ Provider 鍒楄〃鍔犺浇澶辫触鏃堕€€鍥炲埌鎵嬪伐閰嶇疆
+- 妯″瀷鍒楄〃杩斿洖寮傚父褰㈢姸鏃朵細琚畨鍏ㄨ涓虹┖鍒楄〃锛岄伩鍏嶈缃〉鍥犱负涓浆/Provider 杩斿洖鏍煎紡涓嶆爣鍑嗚€屽穿婧?- 鏈彇鍒版ā鍨嬪垪琛ㄤ笉鍐嶈褰撲綔 API 涓嶅彲鐢紱鐢ㄦ埛浠嶅彲鎵嬪姩杈撳叆妯″瀷锛屽苟鐢ㄦ祴璇曠敓鍥剧‘璁ょ湡瀹炵敓鎴愯兘鍔?- 鍥剧敓瑙嗛浠诲姟浼氶殢浠诲姟淇濆瓨鏉ユ簮鍥剧墖 URL锛屽苟鍦ㄦ墽琛屾椂鍥炴煡鐩爣瀵硅瘽璧勪骇锛岄伩鍏嶅垏鎹㈠璇濇垨寮傛鎵ц鏃朵涪澶辨潵婧愬浘
+- Custom Image API 鏀寔 `/v1` 璺緞鍘婚噸锛岄伩鍏嶄腑杞珯 Base URL 宸插惈 `/v1` 鏃舵嫾鍑?`/v1/v1/images/generations`
+- 澧炲己鍥剧墖杩斿洖瑙ｆ瀽锛屽吋瀹?`b64_json`銆乣url`銆乣image_url`銆乣images`銆乣output`銆乣result` 涓庤嚜瀹氫箟鍝嶅簲璺緞锛涘綋鍝嶅簲璺緞鎸囧悜 `b64_json/base64` 鏃朵細鑷姩杞负 data URL
 
 #### v2.0.0 (2026-07-01)
 
-**创作谱系与数据韧性**
-- 新增资产生成谱系：记录 provider、模型、prompt、参数、父资产、参考资产与任务来源
-- 切换/导入旧对话时会统一补全资产结构，缺少 generation 字段的旧资产也能进入同一条迭代链路
-- 导入旧资产时会自动修复空 ID、空类型和空标签，避免谱系和选择状态因为无效资产身份断裂
-- 导入会自动修复重复资产 ID，并兼容字符串形式的来源资产字段，避免谱系映射丢失或选择冲突
-- 资产 ID、来源 ID 与任务 ID 会统一归一化为字符串，未知资产类型会回退为图片，同时保留 `generation.mode` 的真实生成方式，避免旧项目或外部导入污染创作谱系
-- 导入会过滤非对象资产，并忽略非对象 generation 字段，避免坏项目文件污染创作档案
-- 资产更新会深合并 generation 字段，避免局部回写分辨率、状态或坐标时丢失原 prompt、模型与父资产关系
-- 导入会规范化消息与任务结构，过滤非对象消息、修复重复消息 ID，并把已中断的运行中任务标记为错误，避免旧项目导入后永久转圈
-- 对话标题推断会跳过坏消息和空 user 内容，优先使用第一条有效用户提示，避免导入后出现空标题
-- 本地历史加载也会复用同一套会话规范化，旧 store 中的坏消息、坏资产、数字 activeId/deletedIds 不再绕过导入防御
-- 主进程会话 store 也会统一 conversation ID、activeId 与 deletedIds 为字符串，避免旧数据在删除/恢复/选中状态上失配
-- 对话消息、任务状态与资产增删改的账本逻辑抽为纯函数，并纳入核心测试覆盖
-- 对话账本工具会容错非数组 messages/assets，避免旧坏数据触发同步崩溃
-- 新增 `npm run test:core`，覆盖资产结构归一化、旧项目导入兼容与错误提示格式
+**鍒涗綔璋辩郴涓庢暟鎹煣鎬?*
+- 鏂板璧勪骇鐢熸垚璋辩郴锛氳褰?provider銆佹ā鍨嬨€乸rompt銆佸弬鏁般€佺埗璧勪骇銆佸弬鑰冭祫浜т笌浠诲姟鏉ユ簮
+- 鍒囨崲/瀵煎叆鏃у璇濇椂浼氱粺涓€琛ュ叏璧勪骇缁撴瀯锛岀己灏?generation 瀛楁鐨勬棫璧勪骇涔熻兘杩涘叆鍚屼竴鏉¤凯浠ｉ摼璺?
+- 瀵煎叆鏃ц祫浜ф椂浼氳嚜鍔ㄤ慨澶嶇┖ ID銆佺┖绫诲瀷鍜岀┖鏍囩锛岄伩鍏嶈氨绯诲拰閫夋嫨鐘舵€佸洜涓烘棤鏁堣祫浜ц韩浠芥柇瑁?
+- 瀵煎叆浼氳嚜鍔ㄤ慨澶嶉噸澶嶈祫浜?ID锛屽苟鍏煎瀛楃涓插舰寮忕殑鏉ユ簮璧勪骇瀛楁锛岄伩鍏嶈氨绯绘槧灏勪涪澶辨垨閫夋嫨鍐茬獊
+- 璧勪骇 ID銆佹潵婧?ID 涓庝换鍔?ID 浼氱粺涓€褰掍竴鍖栦负瀛楃涓诧紝鏈煡璧勪骇绫诲瀷浼氬洖閫€涓哄浘鐗囷紝鍚屾椂淇濈暀 `generation.mode` 鐨勭湡瀹炵敓鎴愭柟寮忥紝閬垮厤鏃ч」鐩垨澶栭儴瀵煎叆姹℃煋鍒涗綔璋辩郴
+- 瀵煎叆浼氳繃婊ら潪瀵硅薄璧勪骇锛屽苟蹇界暐闈炲璞?generation 瀛楁锛岄伩鍏嶅潖椤圭洰鏂囦欢姹℃煋鍒涗綔妗ｆ
+- 璧勪骇鏇存柊浼氭繁鍚堝苟 generation 瀛楁锛岄伩鍏嶅眬閮ㄥ洖鍐欏垎杈ㄧ巼銆佺姸鎬佹垨鍧愭爣鏃朵涪澶卞師 prompt銆佹ā鍨嬩笌鐖惰祫浜у叧绯?
+- 瀵煎叆浼氳鑼冨寲娑堟伅涓庝换鍔＄粨鏋勶紝杩囨护闈炲璞℃秷鎭€佷慨澶嶉噸澶嶆秷鎭?ID锛屽苟鎶婂凡涓柇鐨勮繍琛屼腑浠诲姟鏍囪涓洪敊璇紝閬垮厤鏃ч」鐩鍏ュ悗姘镐箙杞湀
+- 瀵硅瘽鏍囬鎺ㄦ柇浼氳烦杩囧潖娑堟伅鍜岀┖ user 鍐呭锛屼紭鍏堜娇鐢ㄧ涓€鏉℃湁鏁堢敤鎴锋彁绀猴紝閬垮厤瀵煎叆鍚庡嚭鐜扮┖鏍囬
+- 鏈湴鍘嗗彶鍔犺浇涔熶細澶嶇敤鍚屼竴濂椾細璇濊鑼冨寲锛屾棫 store 涓殑鍧忔秷鎭€佸潖璧勪骇銆佹暟瀛?activeId/deletedIds 涓嶅啀缁曡繃瀵煎叆闃插尽
+- 涓昏繘绋嬩細璇?store 涔熶細缁熶竴 conversation ID銆乤ctiveId 涓?deletedIds 涓哄瓧绗︿覆锛岄伩鍏嶆棫鏁版嵁鍦ㄥ垹闄?鎭㈠/閫変腑鐘舵€佷笂澶遍厤
+- 瀵硅瘽娑堟伅銆佷换鍔＄姸鎬佷笌璧勪骇澧炲垹鏀圭殑璐︽湰閫昏緫鎶戒负绾嚱鏁帮紝骞剁撼鍏ユ牳蹇冩祴璇曡鐩?
+- 瀵硅瘽璐︽湰宸ュ叿浼氬閿欓潪鏁扮粍 messages/assets锛岄伩鍏嶆棫鍧忔暟鎹Е鍙戝悓姝ュ穿婧?
+- 鏂板 `npm run test:core`锛岃鐩栬祫浜х粨鏋勫綊涓€鍖栥€佹棫椤圭洰瀵煎叆鍏煎涓庨敊璇彁绀烘牸寮?
 
-**对话导入/导出**
-- 新增当前对话导入/导出 JSON，保留消息、资产与创作谱系，导入时创建新的本地对话而不复用外部 ID
-- 导出对话时会尽量把远程图片/视频内联为 data URL，降低临时链接过期导致作品丢失的风险
-- 新增项目级导出/导入，可一次迁移全部对话；导入项目时以新对话合并，不覆盖本地历史
-- 导入会拒绝明显无效 JSON，并兼容直接由对话数组组成的旧项目文件
-- 导入会过滤不含对话字段的对象；如果文件中没有可导入对话，会给出明确错误
-- 导入/导出失败提示会显示具体错误原因，方便判断是文件过大、格式错误还是写入失败
+**瀵硅瘽瀵煎叆/瀵煎嚭**
+- 鏂板褰撳墠瀵硅瘽瀵煎叆/瀵煎嚭 JSON锛屼繚鐣欐秷鎭€佽祫浜т笌鍒涗綔璋辩郴锛屽鍏ユ椂鍒涘缓鏂扮殑鏈湴瀵硅瘽鑰屼笉澶嶇敤澶栭儴 ID
+- 瀵煎嚭瀵硅瘽鏃朵細灏介噺鎶婅繙绋嬪浘鐗?瑙嗛鍐呰仈涓?data URL锛岄檷浣庝复鏃堕摼鎺ヨ繃鏈熷鑷翠綔鍝佷涪澶辩殑椋庨櫓
+- 鏂板椤圭洰绾у鍑?瀵煎叆锛屽彲涓€娆¤縼绉诲叏閮ㄥ璇濓紱瀵煎叆椤圭洰鏃朵互鏂板璇濆悎骞讹紝涓嶈鐩栨湰鍦板巻鍙?
+- 瀵煎叆浼氭嫆缁濇槑鏄炬棤鏁?JSON锛屽苟鍏煎鐩存帴鐢卞璇濇暟缁勭粍鎴愮殑鏃ч」鐩枃浠?
+- 瀵煎叆浼氳繃婊や笉鍚璇濆瓧娈电殑瀵硅薄锛涘鏋滄枃浠朵腑娌℃湁鍙鍏ュ璇濓紝浼氱粰鍑烘槑纭敊璇?
+- 瀵煎叆/瀵煎嚭澶辫触鎻愮ず浼氭樉绀哄叿浣撻敊璇師鍥狅紝鏂逛究鍒ゆ柇鏄枃浠惰繃澶с€佹牸寮忛敊璇繕鏄啓鍏ュけ璐?
 
-**创作档案与资产操作**
-- 创作档案新增生成方式字段，可直接查看 text-to-image、image-to-video 等真实 generation mode
-- 资产详情升级为创作档案，支持复制 Prompt、同系列变体、换风格、重新生成与图片转视频
-- 重新生成图片保留原始提示词不变，绕过 LLM 直接调用图像 API
-- 同系列变体与换风格改为确定性图片任务，不再依赖 LLM 随机返回生成任务
-- 资产详情与右键菜单新增”用作参考”，可直接把资产加入当前输入引用并聚焦输入框
-- 资产详情与右键菜单新增”编辑 Prompt”，可把原 Prompt 填回输入框继续改写
-- 通过”编辑 Prompt”继续生成的新结果会保留父资产关系，避免分叉创作断谱系
+**鍒涗綔妗ｆ涓庤祫浜ф搷浣?*
+- 鍒涗綔妗ｆ鏂板鐢熸垚鏂瑰紡瀛楁锛屽彲鐩存帴鏌ョ湅 text-to-image銆乮mage-to-video 绛夌湡瀹?generation mode
+- 璧勪骇璇︽儏鍗囩骇涓哄垱浣滄。妗堬紝鏀寔澶嶅埗 Prompt銆佸悓绯诲垪鍙樹綋銆佹崲椋庢牸銆侀噸鏂扮敓鎴愪笌鍥剧墖杞棰?
+- 閲嶆柊鐢熸垚鍥剧墖淇濈暀鍘熷鎻愮ず璇嶄笉鍙橈紝缁曡繃 LLM 鐩存帴璋冪敤鍥惧儚 API
+- 鍚岀郴鍒楀彉浣撲笌鎹㈤鏍兼敼涓虹‘瀹氭€у浘鐗囦换鍔★紝涓嶅啀渚濊禆 LLM 闅忔満杩斿洖鐢熸垚浠诲姟
+- 璧勪骇璇︽儏涓庡彸閿彍鍗曟柊澧炩€濈敤浣滃弬鑰冣€濓紝鍙洿鎺ユ妸璧勪骇鍔犲叆褰撳墠杈撳叆寮曠敤骞惰仛鐒﹁緭鍏ユ
+- 璧勪骇璇︽儏涓庡彸閿彍鍗曟柊澧炩€濈紪杈?Prompt鈥濓紝鍙妸鍘?Prompt 濉洖杈撳叆妗嗙户缁敼鍐?
+- 閫氳繃鈥濈紪杈?Prompt鈥濈户缁敓鎴愮殑鏂扮粨鏋滀細淇濈暀鐖惰祫浜у叧绯伙紝閬垮厤鍒嗗弶鍒涗綔鏂氨绯?
 
-**素材系统**
-- 资产可标记为个人素材，素材会在卡片与参考图选择器中标星并优先显示
-- 画布与参考图选择器支持只看素材；创作档案中的来源资产支持悬停预览
-- 标记素材、删除资产与自由画布拖动位置会即时同步到对话存储，减少快速切换/导出时的状态落后
+**绱犳潗绯荤粺**
+- 璧勪骇鍙爣璁颁负涓汉绱犳潗锛岀礌鏉愪細鍦ㄥ崱鐗囦笌鍙傝€冨浘閫夋嫨鍣ㄤ腑鏍囨槦骞朵紭鍏堟樉绀?
+- 鐢诲竷涓庡弬鑰冨浘閫夋嫨鍣ㄦ敮鎸佸彧鐪嬬礌鏉愶紱鍒涗綔妗ｆ涓殑鏉ユ簮璧勪骇鏀寔鎮仠棰勮
+- 鏍囪绱犳潗銆佸垹闄よ祫浜т笌鑷敱鐢诲竷鎷栧姩浣嶇疆浼氬嵆鏃跺悓姝ュ埌瀵硅瘽瀛樺偍锛屽噺灏戝揩閫熷垏鎹?瀵煎嚭鏃剁殑鐘舵€佽惤鍚?
 
-**视频生成增强**
-- 图片转视频会强制把当前图片作为视频 source image；视频资产不再提供绕过费用确认的重新生成捷径
-- 从图片执行”做成视频”会自动切到视频工作区，让任务队列和完成结果保持可见
+**瑙嗛鐢熸垚澧炲己**
+- 鍥剧墖杞棰戜細寮哄埗鎶婂綋鍓嶅浘鐗囦綔涓鸿棰?source image锛涜棰戣祫浜т笉鍐嶆彁渚涚粫杩囪垂鐢ㄧ‘璁ょ殑閲嶆柊鐢熸垚鎹峰緞
+- 浠庡浘鐗囨墽琛屸€濆仛鎴愯棰戔€濅細鑷姩鍒囧埌瑙嗛宸ヤ綔鍖猴紝璁╀换鍔￠槦鍒楀拰瀹屾垚缁撴灉淇濇寔鍙
 
-**画布交互升级**
-- 自由画布新增资产级撤销/重做、小地图定位与谱系线开关，拖动、删除、标记素材等用户操作可恢复
-- 新增本地 Agent 动作队列：基于选中资产建议下一步动作，用户确认后复用现有资产动作执行
-- Agent 队列支持复制可审查动作计划，并在切换资产时清理过期动作，避免误执行旧资产计划
+**鐢诲竷浜や簰鍗囩骇**
+- 鑷敱鐢诲竷鏂板璧勪骇绾ф挙閿€/閲嶅仛銆佸皬鍦板浘瀹氫綅涓庤氨绯荤嚎寮€鍏筹紝鎷栧姩銆佸垹闄ゃ€佹爣璁扮礌鏉愮瓑鐢ㄦ埛鎿嶄綔鍙仮澶?
+- 鏂板鏈湴 Agent 鍔ㄤ綔闃熷垪锛氬熀浜庨€変腑璧勪骇寤鸿涓嬩竴姝ュ姩浣滐紝鐢ㄦ埛纭鍚庡鐢ㄧ幇鏈夎祫浜у姩浣滄墽琛?
+- Agent 闃熷垪鏀寔澶嶅埗鍙鏌ュ姩浣滆鍒掞紝骞跺湪鍒囨崲璧勪骇鏃舵竻鐞嗚繃鏈熷姩浣滐紝閬垮厤璇墽琛屾棫璧勪骇璁″垝
 
-**国际化与设置**
-- 重新生成、编辑 Prompt、图片转视频与 Provider 预检错误会跟随当前语言显示，减少英文界面中的中文硬编码
-- API 配置字段（Key/URL/Model）移至 Provider 卡片网格上方，无需滚到底部
-- 订阅/套餐类 Provider 点击显示资料卡片（官网/文档/购买入口），不误写入调用配置
-- 清理过时的统一 API 页面代码与重复 Provider 选择入口
+**鍥介檯鍖栦笌璁剧疆**
+- 閲嶆柊鐢熸垚銆佺紪杈?Prompt銆佸浘鐗囪浆瑙嗛涓?Provider 棰勬閿欒浼氳窡闅忓綋鍓嶈瑷€鏄剧ず锛屽噺灏戣嫳鏂囩晫闈腑鐨勪腑鏂囩‖缂栫爜
+- API 閰嶇疆瀛楁锛圞ey/URL/Model锛夌Щ鑷?Provider 鍗＄墖缃戞牸涓婃柟锛屾棤闇€婊氬埌搴曢儴
+- 璁㈤槄/濂楅绫?Provider 鐐瑰嚮鏄剧ず璧勬枡鍗＄墖锛堝畼缃?鏂囨。/璐拱鍏ュ彛锛夛紝涓嶈鍐欏叆璋冪敤閰嶇疆
+- 娓呯悊杩囨椂鐨勭粺涓€ API 椤甸潰浠ｇ爜涓庨噸澶?Provider 閫夋嫨鍏ュ彛
 
 #### v1.9.0 (2026-06-29)
 
-**工作区与模型入口重构**
-- 默认进入生图工作区，独立对话入口移除，但保留共享对话面板与多对话历史
-- 模型选择入口移入对话框工具条，只显示设置中保存过的对话模型与当前媒体模型
-- 画布按当前工作区自动过滤图片/视频资产，移除重复的全部/图片/视频筛选
-- OpenNana 提示词库入口移到画布网格/自由切换旁
+**宸ヤ綔鍖轰笌妯″瀷鍏ュ彛閲嶆瀯**
+- 榛樿杩涘叆鐢熷浘宸ヤ綔鍖猴紝鐙珛瀵硅瘽鍏ュ彛绉婚櫎锛屼絾淇濈暀鍏变韩瀵硅瘽闈㈡澘涓庡瀵硅瘽鍘嗗彶
+- 妯″瀷閫夋嫨鍏ュ彛绉诲叆瀵硅瘽妗嗗伐鍏锋潯锛屽彧鏄剧ず璁剧疆涓繚瀛樿繃鐨勫璇濇ā鍨嬩笌褰撳墠濯掍綋妯″瀷
+- 鐢诲竷鎸夊綋鍓嶅伐浣滃尯鑷姩杩囨护鍥剧墖/瑙嗛璧勪骇锛岀Щ闄ら噸澶嶇殑鍏ㄩ儴/鍥剧墖/瑙嗛绛涢€?
+- OpenNana 鎻愮ず璇嶅簱鍏ュ彛绉诲埌鐢诲竷缃戞牸/鑷敱鍒囨崲鏃?
 
-**API 设置与 Provider 梳理**
-- 设置页 API 配置改为对话/图像/视频三栏目，视频栏目跟随实验视频开关显示
-- Provider 列表精简为主流可用项，并按按量付费与订阅/套餐分区
-- 火山方舟 Coding Plan 与 OpenCode Go 完全拆分为独立资料入口
-- ChatGPT Plus/Pro、Claude Pro/Max 等网页订阅仅作为资料入口，不误写入调用配置
-- 修复旧 provider id 迁移导致 API Key 被清空的问题
+**API 璁剧疆涓?Provider 姊崇悊**
+- 璁剧疆椤?API 閰嶇疆鏀逛负瀵硅瘽/鍥惧儚/瑙嗛涓夋爮鐩紝瑙嗛鏍忕洰璺熼殢瀹為獙瑙嗛寮€鍏虫樉绀?
+- Provider 鍒楄〃绮剧畝涓轰富娴佸彲鐢ㄩ」锛屽苟鎸夋寜閲忎粯璐逛笌璁㈤槄/濂楅鍒嗗尯
+- 鐏北鏂硅垷 Coding Plan 涓?OpenCode Go 瀹屽叏鎷嗗垎涓虹嫭绔嬭祫鏂欏叆鍙?
+- ChatGPT Plus/Pro銆丆laude Pro/Max 绛夌綉椤佃闃呬粎浣滀负璧勬枡鍏ュ彛锛屼笉璇啓鍏ヨ皟鐢ㄩ厤缃?
+- 淇鏃?provider id 杩佺Щ瀵艰嚧 API Key 琚竻绌虹殑闂
 
-**稳定性与体验修复**
-- 新用户默认浅色主题，并修复深色主题下 select/option 与弱文本可读性
-- 修复首次启动或无 active conversation 时第一条消息无法发送的问题
-- 强化多对话历史与图片资产留存，避免恢复会话第一条消息使用错误上下文
-- 视频生成默认隐藏为实验功能，降低高成本误用风险
+**绋冲畾鎬т笌浣撻獙淇**
+- 鏂扮敤鎴烽粯璁ゆ祬鑹蹭富棰橈紝骞朵慨澶嶆繁鑹蹭富棰樹笅 select/option 涓庡急鏂囨湰鍙鎬?
+- 淇棣栨鍚姩鎴栨棤 active conversation 鏃剁涓€鏉℃秷鎭棤娉曞彂閫佺殑闂
+- 寮哄寲澶氬璇濆巻鍙蹭笌鍥剧墖璧勪骇鐣欏瓨锛岄伩鍏嶆仮澶嶄細璇濈涓€鏉℃秷鎭娇鐢ㄩ敊璇笂涓嬫枃
+- 瑙嗛鐢熸垚榛樿闅愯棌涓哄疄楠屽姛鑳斤紝闄嶄綆楂樻垚鏈鐢ㄩ闄?
 
 #### v1.8.0 (2026-06-25)
 
-**Provider Profiles — 多配置切换**
-- 新增 Provider Profiles 系统：每个轨道（chat/image/video）可保存多组 API Key + 模型组合
-- 新增 `ModelSelector` 组件替代原 `ModelBar`：在聊天面板顶部快速切换已保存的模型配置
-- 配置加密覆盖 Profile 中的 API Key（`safeStorage` 加密）
-- 设置页大幅扩展：Profile 管理、模型测试、手动输入模型、比例/分辨率预览
-- 删除模型去重：重复保存同一 Provider+Model 组合自动合并
+**Provider Profiles 鈥?澶氶厤缃垏鎹?*
+- 鏂板 Provider Profiles 绯荤粺锛氭瘡涓建閬擄紙chat/image/video锛夊彲淇濆瓨澶氱粍 API Key + 妯″瀷缁勫悎
+- 鏂板 `ModelSelector` 缁勪欢鏇夸唬鍘?`ModelBar`锛氬湪鑱婂ぉ闈㈡澘椤堕儴蹇€熷垏鎹㈠凡淇濆瓨鐨勬ā鍨嬮厤缃?
+- 閰嶇疆鍔犲瘑瑕嗙洊 Profile 涓殑 API Key锛坄safeStorage` 鍔犲瘑锛?
+- 璁剧疆椤靛ぇ骞呮墿灞曪細Profile 绠＄悊銆佹ā鍨嬫祴璇曘€佹墜鍔ㄨ緭鍏ユā鍨嬨€佹瘮渚?鍒嗚鲸鐜囬瑙?
+- 鍒犻櫎妯″瀷鍘婚噸锛氶噸澶嶄繚瀛樺悓涓€ Provider+Model 缁勫悎鑷姩鍚堝苟
 
-**UI 调整**
-- 侧栏精简：移除"对话"模块入口（聊天面板始终可见），默认进入"生图"
-- 版本号标签移至标题栏
-- 聊天面板根据当前模块（生图/视频）显示对应输入提示
+**UI 璋冩暣**
+- 渚ф爮绮剧畝锛氱Щ闄?瀵硅瘽"妯″潡鍏ュ彛锛堣亰澶╅潰鏉垮缁堝彲瑙侊級锛岄粯璁よ繘鍏?鐢熷浘"
+- 鐗堟湰鍙锋爣绛剧Щ鑷虫爣棰樻爮
+- 鑱婂ぉ闈㈡澘鏍规嵁褰撳墠妯″潡锛堢敓鍥?瑙嗛锛夋樉绀哄搴旇緭鍏ユ彁绀?
 
 #### v1.7.0 (2026-06-24)
 
-**国内媒体 Provider 扩展**
-- 新增阿里万相 / Wan：生图（wan2.6-t2i）+ 生视频（wan2.7-t2v），异步任务 submit/poll handler
-- 新增百度千帆：生图（qwen-image）+ 生视频（qianfan-video-latest），异步任务 handler
-- 新增腾讯混元 / TokenHub：生视频（hy-video-1.5），OpenAI 兼容 submit/query handler
-- 新增 Vidu metadata 入口
-- 新增火山方舟 Coding Plan / OpenCode 资料入口
-- Custom Image/Video 新增千帆、混元、万相、Vidu 中转预设
+**鍥藉唴濯掍綋 Provider 鎵╁睍**
+- 鏂板闃块噷涓囩浉 / Wan锛氱敓鍥撅紙wan2.6-t2i锛? 鐢熻棰戯紙wan2.7-t2v锛夛紝寮傛浠诲姟 submit/poll handler
+- 鏂板鐧惧害鍗冨竼锛氱敓鍥撅紙qwen-image锛? 鐢熻棰戯紙qianfan-video-latest锛夛紝寮傛浠诲姟 handler
+- 鏂板鑵捐娣峰厓 / TokenHub锛氱敓瑙嗛锛坔y-video-1.5锛夛紝OpenAI 鍏煎 submit/query handler
+- 鏂板 Vidu metadata 鍏ュ彛
+- 鏂板鐏北鏂硅垷 Coding Plan / OpenCode 璧勬枡鍏ュ彛
+- Custom Image/Video 鏂板鍗冨竼銆佹贩鍏冦€佷竾鐩搞€乂idu 涓浆棰勮
 
-**UI 重构**
-- 布局从绝对定位+渐变网格背景重构为 flexbox 系统
-- ModelBar 移到底部固定栏（48px），全局可见
-- 侧栏改为固定结构（sidebar + 聊天面板 + 画布三栏）
-- 移除 glass-floating 样式，统一为 elevated 卡片风格
-- 设置页新增 Coding Plan / OpenCode / 即梦 链接按钮
-- 国内 Provider 自动排序置顶
+**UI 閲嶆瀯**
+- 甯冨眬浠庣粷瀵瑰畾浣?娓愬彉缃戞牸鑳屾櫙閲嶆瀯涓?flexbox 绯荤粺
+- ModelBar 绉诲埌搴曢儴鍥哄畾鏍忥紙48px锛夛紝鍏ㄥ眬鍙
+- 渚ф爮鏀逛负鍥哄畾缁撴瀯锛坰idebar + 鑱婂ぉ闈㈡澘 + 鐢诲竷涓夋爮锛?
+- 绉婚櫎 glass-floating 鏍峰紡锛岀粺涓€涓?elevated 鍗＄墖椋庢牸
+- 璁剧疆椤垫柊澧?Coding Plan / OpenCode / 鍗虫ⅵ 閾炬帴鎸夐挳
+- 鍥藉唴 Provider 鑷姩鎺掑簭缃《
 
-**Provider 注册表完善**
-- 火山方舟链接全面更新为中文文档
-- 阿里万相 integrationStatus 从 metadata → handler
-- 各 Provider 补充中文名称和国内友好链接
+**Provider 娉ㄥ唽琛ㄥ畬鍠?*
+- 鐏北鏂硅垷閾炬帴鍏ㄩ潰鏇存柊涓轰腑鏂囨枃妗?
+- 闃块噷涓囩浉 integrationStatus 浠?metadata 鈫?handler
+- 鍚?Provider 琛ュ厖涓枃鍚嶇О鍜屽浗鍐呭弸濂介摼鎺?
 
 #### v1.6.1 (2026-06-23)
 
-**改进**
-- NSIS 安装选项：支持选择安装目录（不再一键安装）
-- Provider ID 别名去重：主进程统一从 config.js 导入，消除 main.js 重复定义
-- Fallback Provider 列表同步：Chat 从 9 个扩展到 15 个，Image 新增 SiliconFlow
-- 简化 store.js 写入队列（与 config.js 保持一致）
-- .gitignore 增强：添加 OS/编辑器/崩溃转储/密钥文件防护
+**鏀硅繘**
+- NSIS 瀹夎閫夐」锛氭敮鎸侀€夋嫨瀹夎鐩綍锛堜笉鍐嶄竴閿畨瑁咃級
+- Provider ID 鍒悕鍘婚噸锛氫富杩涚▼缁熶竴浠?config.js 瀵煎叆锛屾秷闄?main.js 閲嶅瀹氫箟
+- Fallback Provider 鍒楄〃鍚屾锛欳hat 浠?9 涓墿灞曞埌 15 涓紝Image 鏂板 SiliconFlow
+- 绠€鍖?store.js 鍐欏叆闃熷垪锛堜笌 config.js 淇濇寔涓€鑷达級
+- .gitignore 澧炲己锛氭坊鍔?OS/缂栬緫鍣?宕╂簝杞偍/瀵嗛挜鏂囦欢闃叉姢
 
-**清理**
-- 移除过时文件：.codex/、CODEX_TASK.md、根目录残渣图片/docx
+**娓呯悊**
+- 绉婚櫎杩囨椂鏂囦欢锛?codex/銆丆ODEX_TASK.md銆佹牴鐩綍娈嬫福鍥剧墖/docx
 
 #### v1.6.0 (2026-06-21)
 
-**Provider 架构重构**
-- 统一 Provider 注册表：17 个 Provider 按平台组织（openai/anthropic/google/volcengine/alibaba/moonshot/zhipu/deepseek/siliconflow/groq/together/openrouter/xai/perplexity/lingyi/runway/happyhorse）
-- 统一 Auth 层：支持 bearer/header/query/cookie/session 五种鉴权方式
-- 统一 Request Pipeline：所有 API 调用走 `provider:call` IPC
-- 每个平台可声明多种能力（chat/image/video），不再按轨道拆分 Provider
-- 新增国内平台支持：硅基流动、零一万物、Groq、Together AI、xAI、Perplexity
-- 废弃旧的 electron/api/chat.js / image.js / video.js
+**Provider 鏋舵瀯閲嶆瀯**
+- 缁熶竴 Provider 娉ㄥ唽琛細17 涓?Provider 鎸夊钩鍙扮粍缁囷紙openai/anthropic/google/volcengine/alibaba/moonshot/zhipu/deepseek/siliconflow/groq/together/openrouter/xai/perplexity/lingyi/runway/happyhorse锛?
+- 缁熶竴 Auth 灞傦細鏀寔 bearer/header/query/cookie/session 浜旂閴存潈鏂瑰紡
+- 缁熶竴 Request Pipeline锛氭墍鏈?API 璋冪敤璧?`provider:call` IPC
+- 姣忎釜骞冲彴鍙０鏄庡绉嶈兘鍔涳紙chat/image/video锛夛紝涓嶅啀鎸夎建閬撴媶鍒?Provider
+- 鏂板鍥藉唴骞冲彴鏀寔锛氱鍩烘祦鍔ㄣ€侀浂涓€涓囩墿銆丟roq銆乀ogether AI銆亁AI銆丳erplexity
+- 搴熷純鏃х殑 electron/api/chat.js / image.js / video.js
 
-**UI 风格更新**
-- 配色改为冷调蓝主题（#4A6CF7），替换原来的金色/琥珀色
-- Notion 风格扁平化设计：减少阴影、边框，增加留白
-- 增加 `--space-*` 间距 Token 体系
-- 暗色模式改为深蓝灰底（#0D0D12），不再是暖灰
-- 分辨率选项改为标准命名（标准/高清/超清/2K/4K）
-- 绘图工具栏仅在自由画布模式下显示
+**UI 椋庢牸鏇存柊**
+- 閰嶈壊鏀逛负鍐疯皟钃濅富棰橈紙#4A6CF7锛夛紝鏇挎崲鍘熸潵鐨勯噾鑹?鐞ョ弨鑹?
+- Notion 椋庢牸鎵佸钩鍖栬璁★細鍑忓皯闃村奖銆佽竟妗嗭紝澧炲姞鐣欑櫧
+- 澧炲姞 `--space-*` 闂磋窛 Token 浣撶郴
+- 鏆楄壊妯″紡鏀逛负娣辫摑鐏板簳锛?0D0D12锛夛紝涓嶅啀鏄殩鐏?
+- 鍒嗚鲸鐜囬€夐」鏀逛负鏍囧噯鍛藉悕锛堟爣鍑?楂樻竻/瓒呮竻/2K/4K锛?
+- 缁樺浘宸ュ叿鏍忎粎鍦ㄨ嚜鐢辩敾甯冩ā寮忎笅鏄剧ず
 
-**其他**
-- 项目文件清理：移除仓库中旧 API 文件，更新 .gitignore
+**鍏朵粬**
+- 椤圭洰鏂囦欢娓呯悊锛氱Щ闄や粨搴撲腑鏃?API 鏂囦欢锛屾洿鏂?.gitignore
 
-**安全与代码质量加固**
-- **IPC 监听提升**：将窗口最小化/最大化/关闭及状态查询的 IPC 注册，从内部辅助函数范围提升至 `electron/main.js` 模块的顶级作用域，消除了潜在的内存泄露隐患，严格遵循 Electron 安全规范。
-- **UI 样式规范统一**：增加了遮罩背景色、渐变与危险边框的 CSS 全局变量，移过了主要组件中的硬编码颜色与边框设置，全面替换为主题变量。
-- **图标包装器统一**：在 `icons.jsx` 中增加了缺失窗口控件与画布工具图标的映射，将各组件中所有原生 `<svg>` 和 direct lucide 引用全部规范化替换为 `<Ic />`。
+**瀹夊叏涓庝唬鐮佽川閲忓姞鍥?*
+- **IPC 鐩戝惉鎻愬崌**锛氬皢绐楀彛鏈€灏忓寲/鏈€澶у寲/鍏抽棴鍙婄姸鎬佹煡璇㈢殑 IPC 娉ㄥ唽锛屼粠鍐呴儴杈呭姪鍑芥暟鑼冨洿鎻愬崌鑷?`electron/main.js` 妯″潡鐨勯《绾т綔鐢ㄥ煙锛屾秷闄や簡娼滃湪鐨勫唴瀛樻硠闇查殣鎮ｏ紝涓ユ牸閬靛惊 Electron 瀹夊叏瑙勮寖銆?
+- **UI 鏍峰紡瑙勮寖缁熶竴**锛氬鍔犱簡閬僵鑳屾櫙鑹层€佹笎鍙樹笌鍗遍櫓杈规鐨?CSS 鍏ㄥ眬鍙橀噺锛岀Щ杩囦簡涓昏缁勪欢涓殑纭紪鐮侀鑹蹭笌杈规璁剧疆锛屽叏闈㈡浛鎹负涓婚鍙橀噺銆?
+- **鍥炬爣鍖呰鍣ㄧ粺涓€**锛氬湪 `icons.jsx` 涓鍔犱簡缂哄け绐楀彛鎺т欢涓庣敾甯冨伐鍏峰浘鏍囩殑鏄犲皠锛屽皢鍚勭粍浠朵腑鎵€鏈夊師鐢?`<svg>` 鍜?direct lucide 寮曠敤鍏ㄩ儴瑙勮寖鍖栨浛鎹负 `<Ic />`銆?
 
-**状态与生命周期修复**
-- **Ref 状态副作用清理**：移除了 `AssetDetail.jsx` 状态更新器内部直接修改 ref 的操作，引入了与其同步的 `offsetRef` 读取最新偏移量，保证了 React 状态的纯度。
-- **卡片自由移动竞态修复**：在 `useCanvas.js` 中新增 `updateAssets` 批量更新函数；重构了 `CanvasPanel.jsx` 在 Free Mode 下的坐标初始化，将坐标分配采用单次原子批量更新，彻底消除了由于逐个卡片修改导致的顺次重渲染级联和无限循环隐患。
-- **事件监听泄漏修复**：在 `CanvasPanel.jsx` 中引入 `dragCleanupRef` 与卸载清理 effect，保证在组件意外销毁时释放绑定在 window 上的拖拽监听事件，杜绝内存泄露。
-- **i18n 缺陷修复与传播**：修复了 `MessageBubble.jsx` 排队中与查询视频状态的中英文转换 bug，使 `ContextMenu.jsx` (右键菜单) 与 `TaskQueue.jsx` (任务队列) 能够正确消费 `lang` 配置与 `t()` 函数翻译，完成底栏 model 轨道的翻译转换。
+**鐘舵€佷笌鐢熷懡鍛ㄦ湡淇**
+- **Ref 鐘舵€佸壇浣滅敤娓呯悊**锛氱Щ闄や簡 `AssetDetail.jsx` 鐘舵€佹洿鏂板櫒鍐呴儴鐩存帴淇敼 ref 鐨勬搷浣滐紝寮曞叆浜嗕笌鍏跺悓姝ョ殑 `offsetRef` 璇诲彇鏈€鏂板亸绉婚噺锛屼繚璇佷簡 React 鐘舵€佺殑绾害銆?
+- **鍗＄墖鑷敱绉诲姩绔炴€佷慨澶?*锛氬湪 `useCanvas.js` 涓柊澧?`updateAssets` 鎵归噺鏇存柊鍑芥暟锛涢噸鏋勪簡 `CanvasPanel.jsx` 鍦?Free Mode 涓嬬殑鍧愭爣鍒濆鍖栵紝灏嗗潗鏍囧垎閰嶉噰鐢ㄥ崟娆″師瀛愭壒閲忔洿鏂帮紝褰诲簳娑堥櫎浜嗙敱浜庨€愪釜鍗＄墖淇敼瀵艰嚧鐨勯『娆￠噸娓叉煋绾ц仈鍜屾棤闄愬惊鐜殣鎮ｃ€?
+- **浜嬩欢鐩戝惉娉勬紡淇**锛氬湪 `CanvasPanel.jsx` 涓紩鍏?`dragCleanupRef` 涓庡嵏杞芥竻鐞?effect锛屼繚璇佸湪缁勪欢鎰忓閿€姣佹椂閲婃斁缁戝畾鍦?window 涓婄殑鎷栨嫿鐩戝惉浜嬩欢锛屾潨缁濆唴瀛樻硠闇层€?
+- **i18n 缂洪櫡淇涓庝紶鎾?*锛氫慨澶嶄簡 `MessageBubble.jsx` 鎺掗槦涓笌鏌ヨ瑙嗛鐘舵€佺殑涓嫳鏂囪浆鎹?bug锛屼娇 `ContextMenu.jsx` (鍙抽敭鑿滃崟) 涓?`TaskQueue.jsx` (浠诲姟闃熷垪) 鑳藉姝ｇ‘娑堣垂 `lang` 閰嶇疆涓?`t()` 鍑芥暟缈昏瘧锛屽畬鎴愬簳鏍?model 杞ㄩ亾鐨勭炕璇戣浆鎹€?
 
 #### v1.5.0 (2026-06-08)
 
-**安全加固**
-- URL 重定向安全：阻止 HTTPS→HTTP 协议降级，限制最大重定向次数，支持相对路径 redirect
-- CSP 统一管理：移除 index.html 中的 CSP meta tag，由主进程 session header 统一控制
-- API Key 加密存储：使用 Electron safeStorage 加密 API Key，解密失败时自动清空避免发送垃圾数据
-- Electron 导航边界：阻止非应用内导航和 `window.open` 子窗口，Markdown 外链统一走主进程 HTTPS 校验后 `shell.openExternal`
-- 渲染进程配置脱敏：`config:get` 只返回 redacted API Key，真实密钥保留在主进程并由 API IPC 读取
-- 安全保存素材：移除高风险任意路径保存接口，图片/视频保存统一走主进程生成路径或保存对话框，强制 `.png`/`.mp4` 扩展名
-- 下载与响应限制：素材下载增加 HTTPS 校验、redirect 复校验、100MB 大小上限、总超时和临时文件 rename；API 响应增加 25MB 上限
-- 文件写入原子性：配置和对话数据写入使用 tmp+rename 原子模式，并发写操作通过队列序列化
-- Gemini API Key URL 编码：修复含特殊字符时 URL 断裂的问题
+**瀹夊叏鍔犲浐**
+- URL 閲嶅畾鍚戝畨鍏細闃绘 HTTPS鈫扝TTP 鍗忚闄嶇骇锛岄檺鍒舵渶澶ч噸瀹氬悜娆℃暟锛屾敮鎸佺浉瀵硅矾寰?redirect
+- CSP 缁熶竴绠＄悊锛氱Щ闄?index.html 涓殑 CSP meta tag锛岀敱涓昏繘绋?session header 缁熶竴鎺у埗
+- API Key 鍔犲瘑瀛樺偍锛氫娇鐢?Electron safeStorage 鍔犲瘑 API Key锛岃В瀵嗗け璐ユ椂鑷姩娓呯┖閬垮厤鍙戦€佸瀮鍦炬暟鎹?
+- Electron 瀵艰埅杈圭晫锛氶樆姝㈤潪搴旂敤鍐呭鑸拰 `window.open` 瀛愮獥鍙ｏ紝Markdown 澶栭摼缁熶竴璧颁富杩涚▼ HTTPS 鏍￠獙鍚?`shell.openExternal`
+- 娓叉煋杩涚▼閰嶇疆鑴辨晱锛歚config:get` 鍙繑鍥?redacted API Key锛岀湡瀹炲瘑閽ヤ繚鐣欏湪涓昏繘绋嬪苟鐢?API IPC 璇诲彇
+- 瀹夊叏淇濆瓨绱犳潗锛氱Щ闄ら珮椋庨櫓浠绘剰璺緞淇濆瓨鎺ュ彛锛屽浘鐗?瑙嗛淇濆瓨缁熶竴璧颁富杩涚▼鐢熸垚璺緞鎴栦繚瀛樺璇濇锛屽己鍒?`.png`/`.mp4` 鎵╁睍鍚?
+- 涓嬭浇涓庡搷搴旈檺鍒讹細绱犳潗涓嬭浇澧炲姞 HTTPS 鏍￠獙銆乺edirect 澶嶆牎楠屻€?00MB 澶у皬涓婇檺銆佹€昏秴鏃跺拰涓存椂鏂囦欢 rename锛汚PI 鍝嶅簲澧炲姞 25MB 涓婇檺
+- 鏂囦欢鍐欏叆鍘熷瓙鎬э細閰嶇疆鍜屽璇濇暟鎹啓鍏ヤ娇鐢?tmp+rename 鍘熷瓙妯″紡锛屽苟鍙戝啓鎿嶄綔閫氳繃闃熷垪搴忓垪鍖?
+- Gemini API Key URL 缂栫爜锛氫慨澶嶅惈鐗规畩瀛楃鏃?URL 鏂鐨勯棶棰?
 
-**状态管理修复**
-- 对话重命名持久化：修复重命名后刷新页面丢失的 bug
-- 对话切换防丢：切换/新建/删除前 flush 当前对话，异步 chat/image/video 结果写回发起对话而不是丢弃或串到当前对话
-- 对话存储恢复：损坏的 `conversations.json` 会备份后从空 store 恢复，删除 tombstone 在读取和写入时都生效
-- 画布状态稳定性：useCanvas 返回值 memoization，避免级联重渲染
-- 任务队列闭包修复：useTaskQueue 使用 canvasRef 消除 stale closure
-- 视频任务轮询：视频提交接入任务队列，成功但无 `videoUrl` 时继续 running，完成后生成 video asset
-- 写队列竞态修复：history:save 走统一写队列，防止并发覆盖
+**鐘舵€佺鐞嗕慨澶?*
+- 瀵硅瘽閲嶅懡鍚嶆寔涔呭寲锛氫慨澶嶉噸鍛藉悕鍚庡埛鏂伴〉闈涪澶辩殑 bug
+- 瀵硅瘽鍒囨崲闃蹭涪锛氬垏鎹?鏂板缓/鍒犻櫎鍓?flush 褰撳墠瀵硅瘽锛屽紓姝?chat/image/video 缁撴灉鍐欏洖鍙戣捣瀵硅瘽鑰屼笉鏄涪寮冩垨涓插埌褰撳墠瀵硅瘽
+- 瀵硅瘽瀛樺偍鎭㈠锛氭崯鍧忕殑 `conversations.json` 浼氬浠藉悗浠庣┖ store 鎭㈠锛屽垹闄?tombstone 鍦ㄨ鍙栧拰鍐欏叆鏃堕兘鐢熸晥
+- 鐢诲竷鐘舵€佺ǔ瀹氭€э細useCanvas 杩斿洖鍊?memoization锛岄伩鍏嶇骇鑱旈噸娓叉煋
+- 浠诲姟闃熷垪闂寘淇锛歶seTaskQueue 浣跨敤 canvasRef 娑堥櫎 stale closure
+- 瑙嗛浠诲姟杞锛氳棰戞彁浜ゆ帴鍏ヤ换鍔￠槦鍒楋紝鎴愬姛浣嗘棤 `videoUrl` 鏃剁户缁?running锛屽畬鎴愬悗鐢熸垚 video asset
+- 鍐欓槦鍒楃珵鎬佷慨澶嶏細history:save 璧扮粺涓€鍐欓槦鍒楋紝闃叉骞跺彂瑕嗙洊
 
-**稳定性**
-- 崩溃恢复退避：renderer 崩溃后 5 秒退避重启，最多 3 次，超限提示手动操作
-- 错误边界：新增 ErrorBoundary 组件，渲染崩溃时显示友好提示而非白屏
-- Settings 弹窗 Escape 关闭、Lightbox Escape 关闭 + 点击背景关闭
-- 视频预览 CSP：增加 `media-src 'self' https: data: blob:`，AssetCard/AssetDetail 使用 `<video controls>` 渲染视频
-- 打包依赖升级：Electron 42.3.3、electron-builder 26.15.2、electron-vite 5.0.0、Vite 7.3.5，打包时复制运行时 helper 和图标进 `dist`
+**绋冲畾鎬?*
+- 宕╂簝鎭㈠閫€閬匡細renderer 宕╂簝鍚?5 绉掗€€閬块噸鍚紝鏈€澶?3 娆★紝瓒呴檺鎻愮ず鎵嬪姩鎿嶄綔
+- 閿欒杈圭晫锛氭柊澧?ErrorBoundary 缁勪欢锛屾覆鏌撳穿婧冩椂鏄剧ず鍙嬪ソ鎻愮ず鑰岄潪鐧藉睆
+- Settings 寮圭獥 Escape 鍏抽棴銆丩ightbox Escape 鍏抽棴 + 鐐瑰嚮鑳屾櫙鍏抽棴
+- 瑙嗛棰勮 CSP锛氬鍔?`media-src 'self' https: data: blob:`锛孉ssetCard/AssetDetail 浣跨敤 `<video controls>` 娓叉煋瑙嗛
+- 鎵撳寘渚濊禆鍗囩骇锛欵lectron 42.3.3銆乪lectron-builder 26.15.2銆乪lectron-vite 5.0.0銆乂ite 7.3.5锛屾墦鍖呮椂澶嶅埗杩愯鏃?helper 鍜屽浘鏍囪繘 `dist`
 
 #### v1.3.1 (2026-06-05)
 
-**画布生成动效**
-- 生成图片时画布显示 shimmer 占位卡片，参考 Lovart 动效风格，渐变闪烁提示生成中
+**鐢诲竷鐢熸垚鍔ㄦ晥**
+- 鐢熸垚鍥剧墖鏃剁敾甯冩樉绀?shimmer 鍗犱綅鍗＄墖锛屽弬鑰?Lovart 鍔ㄦ晥椋庢牸锛屾笎鍙橀棯鐑佹彁绀虹敓鎴愪腑
 
-**多图生成支持**
-- AI 返回多个生成任务时，画布正确显示所有图片，不再只显示第一张
+**澶氬浘鐢熸垚鏀寔**
+- AI 杩斿洖澶氫釜鐢熸垚浠诲姟鏃讹紝鐢诲竷姝ｇ‘鏄剧ず鎵€鏈夊浘鐗囷紝涓嶅啀鍙樉绀虹涓€寮?
 
-**批量生成稳定性**
-- 批量生成不再因单张失败而中断，全程显示占位符和进度，失败项自动清理
+**鎵归噺鐢熸垚绋冲畾鎬?*
+- 鎵归噺鐢熸垚涓嶅啀鍥犲崟寮犲け璐ヨ€屼腑鏂紝鍏ㄧ▼鏄剧ず鍗犱綅绗﹀拰杩涘害锛屽け璐ラ」鑷姩娓呯悊
 
-**保存弹窗修复**
-- "保存到本地"不再弹出两次对话框，统一走 IPC 通道
+**淇濆瓨寮圭獥淇**
+- "淇濆瓨鍒版湰鍦?涓嶅啀寮瑰嚭涓ゆ瀵硅瘽妗嗭紝缁熶竴璧?IPC 閫氶亾
 
-**工具栏交互修复**
-- 画布底部绘图工具栏按钮恢复正常响应，不再被画布拖拽事件拦截
+**宸ュ叿鏍忎氦浜掍慨澶?*
+- 鐢诲竷搴曢儴缁樺浘宸ュ叿鏍忔寜閽仮澶嶆甯稿搷搴旓紝涓嶅啀琚敾甯冩嫋鎷戒簨浠舵嫤鎴?
 
-**右键菜单接线**
-- 画布资产右键菜单可正常打开，支持查看大图/下载/删除/重新生成
+**鍙抽敭鑿滃崟鎺ョ嚎**
+- 鐢诲竷璧勪骇鍙抽敭鑿滃崟鍙甯告墦寮€锛屾敮鎸佹煡鐪嬪ぇ鍥?涓嬭浇/鍒犻櫎/閲嶆柊鐢熸垚
 
-**对话命名编辑**
-- 双击对话标题可重命名，支持 Enter 确认 / Escape 取消
+**瀵硅瘽鍛藉悕缂栬緫**
+- 鍙屽嚮瀵硅瘽鏍囬鍙噸鍛藉悕锛屾敮鎸?Enter 纭 / Escape 鍙栨秷
 
-**分辨率扩展**
-- 新增 2K (2560) 和 4K (3840) 分辨率选项，尺寸按比例动态缩放
+**鍒嗚鲸鐜囨墿灞?*
+- 鏂板 2K (2560) 鍜?4K (3840) 鍒嗚鲸鐜囬€夐」锛屽昂瀵告寜姣斾緥鍔ㄦ€佺缉鏀?
 
 #### v1.3.0 (2026-06-04)
 
-**对话生成设置**
-- 对话输入栏新增「生成设置」面板，可直接调整图片比例、风格预设、分辨率（标准/高清/超清）
-- 生成设置从 Settings 移至对话框，方便随时切换，无需打开设置页
+**瀵硅瘽鐢熸垚璁剧疆**
+- 瀵硅瘽杈撳叆鏍忔柊澧炪€岀敓鎴愯缃€嶉潰鏉匡紝鍙洿鎺ヨ皟鏁村浘鐗囨瘮渚嬨€侀鏍奸璁俱€佸垎杈ㄧ巼锛堟爣鍑?楂樻竻/瓒呮竻锛?
+- 鐢熸垚璁剧疆浠?Settings 绉昏嚦瀵硅瘽妗嗭紝鏂逛究闅忔椂鍒囨崲锛屾棤闇€鎵撳紑璁剧疆椤?
 
-**批量生成**
-- 生成任务卡片新增「批量」按钮，支持一次生成 2/3/4 张图片
-- 批量进度实时显示（如 2/4），失败项跳过继续
+**鎵归噺鐢熸垚**
+- 鐢熸垚浠诲姟鍗＄墖鏂板銆屾壒閲忋€嶆寜閽紝鏀寔涓€娆＄敓鎴?2/3/4 寮犲浘鐗?
+- 鎵归噺杩涘害瀹炴椂鏄剧ず锛堝 2/4锛夛紝澶辫触椤硅烦杩囩户缁?
 
-**计时器**
-- AI 思考和图片/视频生成过程中显示实时计时（秒数），避免用户长久等待无反馈
-- 生成完成后显示总用时
+**璁℃椂鍣?*
+- AI 鎬濊€冨拰鍥剧墖/瑙嗛鐢熸垚杩囩▼涓樉绀哄疄鏃惰鏃讹紙绉掓暟锛夛紝閬垮厤鐢ㄦ埛闀夸箙绛夊緟鏃犲弽棣?
+- 鐢熸垚瀹屾垚鍚庢樉绀烘€荤敤鏃?
 
-**API 可靠性修复**
-- 修复切换 Provider 时 `protocol` 字段未保存到配置的 bug，导致图片生成始终失败
-- 新增即梦/Seedream (`ark_image`) 专用图片生成端点，修正 URL 路径错误
-- 图片生成新增自动重试机制（失败后间隔 2 秒重试 1 次）
-- 视频生成同样修复 protocol 解析逻辑
+**API 鍙潬鎬т慨澶?*
+- 淇鍒囨崲 Provider 鏃?`protocol` 瀛楁鏈繚瀛樺埌閰嶇疆鐨?bug锛屽鑷村浘鐗囩敓鎴愬缁堝け璐?
+- 鏂板鍗虫ⅵ/Seedream (`ark_image`) 涓撶敤鍥剧墖鐢熸垚绔偣锛屼慨姝?URL 璺緞閿欒
+- 鍥剧墖鐢熸垚鏂板鑷姩閲嶈瘯鏈哄埗锛堝け璐ュ悗闂撮殧 2 绉掗噸璇?1 娆★級
+- 瑙嗛鐢熸垚鍚屾牱淇 protocol 瑙ｆ瀽閫昏緫
 
-**画布模式区分**
-- 网格模式：结构化排列，自动分列，无缩放平移，纯滚动浏览
-- 自由模式：无限画布，自由定位，4 列间距排布，支持缩放平移
-- 新图片/视频生成时，边框金色呼吸闪烁动画提示用户
+**鐢诲竷妯″紡鍖哄垎**
+- 缃戞牸妯″紡锛氱粨鏋勫寲鎺掑垪锛岃嚜鍔ㄥ垎鍒楋紝鏃犵缉鏀惧钩绉伙紝绾粴鍔ㄦ祻瑙?
+- 鑷敱妯″紡锛氭棤闄愮敾甯冿紝鑷敱瀹氫綅锛? 鍒楅棿璺濇帓甯冿紝鏀寔缂╂斁骞崇Щ
+- 鏂板浘鐗?瑙嗛鐢熸垚鏃讹紝杈规閲戣壊鍛煎惛闂儊鍔ㄧ敾鎻愮ず鐢ㄦ埛
 
-**参考图功能改为可选**
-- 参考图按钮默认隐藏，在设置 > 其他中可开启
-- 开启后对话框出现参考图按钮
+**鍙傝€冨浘鍔熻兘鏀逛负鍙€?*
+- 鍙傝€冨浘鎸夐挳榛樿闅愯棌锛屽湪璁剧疆 > 鍏朵粬涓彲寮€鍚?
+- 寮€鍚悗瀵硅瘽妗嗗嚭鐜板弬鑰冨浘鎸夐挳
 
-**图片自动保存**
-- 生成的图片自动保存到 `Pictures/Gravuresse/` 目录
-- 支持 base64 和 URL 两种格式的图片下载保存
+**鍥剧墖鑷姩淇濆瓨**
+- 鐢熸垚鐨勫浘鐗囪嚜鍔ㄤ繚瀛樺埌 `Pictures/Gravuresse/` 鐩綍
+- 鏀寔 base64 鍜?URL 涓ょ鏍煎紡鐨勫浘鐗囦笅杞戒繚瀛?
 
-**其他修复**
-- 修复画布编辑工具栏「文字」图标缺失（TOOL_ICONS 键名 type→text）
-- 修复网格模式多张图片只显示一张的布局问题
-- 设置新增「自动保存图片到本地」和「启用参考图」开关
+**鍏朵粬淇**
+- 淇鐢诲竷缂栬緫宸ュ叿鏍忋€屾枃瀛椼€嶅浘鏍囩己澶憋紙TOOL_ICONS 閿悕 type鈫抰ext锛?
+- 淇缃戞牸妯″紡澶氬紶鍥剧墖鍙樉绀轰竴寮犵殑甯冨眬闂
+- 璁剧疆鏂板銆岃嚜鍔ㄤ繚瀛樺浘鐗囧埌鏈湴銆嶅拰銆屽惎鐢ㄥ弬鑰冨浘銆嶅紑鍏?
 
 #### v1.2.0 (2026-06-04)
 
-**无限画布**
-- 参考 Figma/Lovart 的画布交互，鼠标滚轮以光标为中心缩放，拖拽平移
-- 浮动缩放控件：放大、缩小、适应画布、缩放比例显示
+**鏃犻檺鐢诲竷**
+- 鍙傝€?Figma/Lovart 鐨勭敾甯冧氦浜掞紝榧犳爣婊氳疆浠ュ厜鏍囦负涓績缂╂斁锛屾嫋鎷藉钩绉?
+- 娴姩缂╂斁鎺т欢锛氭斁澶с€佺缉灏忋€侀€傚簲鐢诲竷銆佺缉鏀炬瘮渚嬫樉绀?
 
-**画布编辑工具栏**
-- 底部居中 Figma 风格工具栏：选择、移动、铅笔、矩形、圆形、直线、文字
-- 工具激活时内联显示颜色盘和线宽选项
-- HTML5 Canvas overlay 实时预览绘制形状
+**鐢诲竷缂栬緫宸ュ叿鏍?*
+- 搴曢儴灞呬腑 Figma 椋庢牸宸ュ叿鏍忥細閫夋嫨銆佺Щ鍔ㄣ€侀搮绗斻€佺煩褰€佸渾褰€佺洿绾裤€佹枃瀛?
+- 宸ュ叿婵€娲绘椂鍐呰仈鏄剧ず棰滆壊鐩樺拰绾垮閫夐」
+- HTML5 Canvas overlay 瀹炴椂棰勮缁樺埗褰㈢姸
 
-**深度思考**
-- 对话输入栏新增「深度思考」开关，开启后调用 Anthropic extended thinking
-- 思考过程可折叠展示，独立于正文内容
+**娣卞害鎬濊€?*
+- 瀵硅瘽杈撳叆鏍忔柊澧炪€屾繁搴︽€濊€冦€嶅紑鍏筹紝寮€鍚悗璋冪敤 Anthropic extended thinking
+- 鎬濊€冭繃绋嬪彲鎶樺彔灞曠ず锛岀嫭绔嬩簬姝ｆ枃鍐呭
 
-**参考图/视频**
-- 对话输入栏新增「参考图」按钮，可从素材画廊选取多张参考图
-- 参考图缩略图预览，支持单独移除
-- 参考内容注入系统 prompt，AI 结合上下文理解意图
+**鍙傝€冨浘/瑙嗛**
+- 瀵硅瘽杈撳叆鏍忔柊澧炪€屽弬鑰冨浘銆嶆寜閽紝鍙粠绱犳潗鐢诲粖閫夊彇澶氬紶鍙傝€冨浘
+- 鍙傝€冨浘缂╃暐鍥鹃瑙堬紝鏀寔鍗曠嫭绉婚櫎
+- 鍙傝€冨唴瀹规敞鍏ョ郴缁?prompt锛孉I 缁撳悎涓婁笅鏂囩悊瑙ｆ剰鍥?
 
-**图片缩放预览**
-- 素材详情面板图片支持滚轮缩放、拖拽平移、双击重置
-- 独立 lightbox 模式全屏查看
+**鍥剧墖缂╂斁棰勮**
+- 绱犳潗璇︽儏闈㈡澘鍥剧墖鏀寔婊氳疆缂╂斁銆佹嫋鎷藉钩绉汇€佸弻鍑婚噸缃?
+- 鐙珛 lightbox 妯″紡鍏ㄥ睆鏌ョ湅
 
-**UI 全面优化**
-- 标题栏窗口按钮改为精致 SVG 图标，关闭按钮悬停红色高亮
-- 发送按钮加大、渐变金色、悬停放大带阴影
-- 底部模型栏按钮加大，标签大写+金色分隔线，版本号胶囊样式
-- 设置面板输入框加宽，保存按钮渐变+悬停上浮
-- 全组件迁移至 Lucide React 图标库
-- 自定义应用图标
+**UI 鍏ㄩ潰浼樺寲**
+- 鏍囬鏍忕獥鍙ｆ寜閽敼涓虹簿鑷?SVG 鍥炬爣锛屽叧闂寜閽偓鍋滅孩鑹查珮浜?
+- 鍙戦€佹寜閽姞澶с€佹笎鍙橀噾鑹层€佹偓鍋滄斁澶у甫闃村奖
+- 搴曢儴妯″瀷鏍忔寜閽姞澶э紝鏍囩澶у啓+閲戣壊鍒嗛殧绾匡紝鐗堟湰鍙疯兌鍥婃牱寮?
+- 璁剧疆闈㈡澘杈撳叆妗嗗姞瀹斤紝淇濆瓨鎸夐挳娓愬彉+鎮仠涓婃诞
+- 鍏ㄧ粍浠惰縼绉昏嚦 Lucide React 鍥炬爣搴?
+- 鑷畾涔夊簲鐢ㄥ浘鏍?
 
-**其他**
-- 修复对话切换时内容丢失的 bug（stale closure + sync race condition）
-- 修复 ZoomableImage 拖拽偏移闭包问题
+**鍏朵粬**
+- 淇瀵硅瘽鍒囨崲鏃跺唴瀹逛涪澶辩殑 bug锛坰tale closure + sync race condition锛?
+- 淇 ZoomableImage 鎷栨嫿鍋忕Щ闂寘闂
 
 #### v1.1.0 (2026-06-03)
 
-**生成流程优化**
-- 图片生成改为「先出提示词 → 确认 → 再生成」，用户可在生成前审阅和调整 prompt
-- 生成后支持自然语言迭代修改，AI 基于上次 prompt 增量调整，保留满意的部分
-- 任务卡片实时显示状态：待确认 → 生成中 → 已完成/失败
+**鐢熸垚娴佺▼浼樺寲**
+- 鍥剧墖鐢熸垚鏀逛负銆屽厛鍑烘彁绀鸿瘝 鈫?纭 鈫?鍐嶇敓鎴愩€嶏紝鐢ㄦ埛鍙湪鐢熸垚鍓嶅闃呭拰璋冩暣 prompt
+- 鐢熸垚鍚庢敮鎸佽嚜鐒惰瑷€杩唬淇敼锛孉I 鍩轰簬涓婃 prompt 澧為噺璋冩暣锛屼繚鐣欐弧鎰忕殑閮ㄥ垎
+- 浠诲姟鍗＄墖瀹炴椂鏄剧ず鐘舵€侊細寰呯‘璁?鈫?鐢熸垚涓?鈫?宸插畬鎴?澶辫触
 
-**多对话管理**
-- 支持多对话并行，每个对话独立消息和画布资产
-- 对话列表栏：新建、切换、删除对话
-- 对话数据自动持久化，切换不丢失
+**澶氬璇濈鐞?*
+- 鏀寔澶氬璇濆苟琛岋紝姣忎釜瀵硅瘽鐙珛娑堟伅鍜岀敾甯冭祫浜?
+- 瀵硅瘽鍒楄〃鏍忥細鏂板缓銆佸垏鎹€佸垹闄ゅ璇?
+- 瀵硅瘽鏁版嵁鑷姩鎸佷箙鍖栵紝鍒囨崲涓嶄涪澶?
 
-**设置页面重构**
-- 左侧导航布局：通用设置（外观/语言/其他）+ API 配置（对话/图像/视频）
-- 模型字段自动获取：输入 API Key 后自动拉取可用模型列表，下拉选择
-- Base URL 增加「恢复默认」按钮
-- API 配置增加「清空配置」按钮
-- 高级选项：Chat 自定义 System Prompt，Image 自定义 Negative Prompt
-- 去除免费 Pollinations API（质量不佳）
+**璁剧疆椤甸潰閲嶆瀯**
+- 宸︿晶瀵艰埅甯冨眬锛氶€氱敤璁剧疆锛堝瑙?璇█/鍏朵粬锛? API 閰嶇疆锛堝璇?鍥惧儚/瑙嗛锛?
+- 妯″瀷瀛楁鑷姩鑾峰彇锛氳緭鍏?API Key 鍚庤嚜鍔ㄦ媺鍙栧彲鐢ㄦā鍨嬪垪琛紝涓嬫媺閫夋嫨
+- Base URL 澧炲姞銆屾仮澶嶉粯璁ゃ€嶆寜閽?
+- API 閰嶇疆澧炲姞銆屾竻绌洪厤缃€嶆寜閽?
+- 楂樼骇閫夐」锛欳hat 鑷畾涔?System Prompt锛孖mage 鑷畾涔?Negative Prompt
+- 鍘婚櫎鍏嶈垂 Pollinations API锛堣川閲忎笉浣筹級
 
-**主题与国际化**
-- 深色主题完整实现（CSS 变量全覆盖，含系统偏好媒体查询）
-- 中英文切换，设置页/标题栏/底栏/聊天面板文案跟随语言
-- 字体大小可调（小/中/大）
-- 设置组件改用 CSS 变量，跟随主题切换
+**涓婚涓庡浗闄呭寲**
+- 娣辫壊涓婚瀹屾暣瀹炵幇锛圕SS 鍙橀噺鍏ㄨ鐩栵紝鍚郴缁熷亸濂藉獟浣撴煡璇級
+- 涓嫳鏂囧垏鎹紝璁剧疆椤?鏍囬鏍?搴曟爮/鑱婂ぉ闈㈡澘鏂囨璺熼殢璇█
+- 瀛椾綋澶у皬鍙皟锛堝皬/涓?澶э級
+- 璁剧疆缁勪欢鏀圭敤 CSS 鍙橀噺锛岃窡闅忎富棰樺垏鎹?
 
-**体验改进**
-- 设置齿轮图标替换为更精致的 Lucide Settings 图标
-- 消息气泡支持文本选中复制
-- 对话输入框 Shift+Enter 换行，自动增高
-- 图片资产详情增加「保存到本地」按钮
-- 图片点击放大预览（lightbox）
-- 修复图片/视频生成失败时无反馈的问题
-- 修复描述画面时误触发图片生成的逻辑问题
-- 废弃模型自动迁移（如旧配置中的 pollinations 自动重置）
+**浣撻獙鏀硅繘**
+- 璁剧疆榻胯疆鍥炬爣鏇挎崲涓烘洿绮捐嚧鐨?Lucide Settings 鍥炬爣
+- 娑堟伅姘旀场鏀寔鏂囨湰閫変腑澶嶅埗
+- 瀵硅瘽杈撳叆妗?Shift+Enter 鎹㈣锛岃嚜鍔ㄥ楂?
+- 鍥剧墖璧勪骇璇︽儏澧炲姞銆屼繚瀛樺埌鏈湴銆嶆寜閽?
+- 鍥剧墖鐐瑰嚮鏀惧ぇ棰勮锛坙ightbox锛?
+- 淇鍥剧墖/瑙嗛鐢熸垚澶辫触鏃舵棤鍙嶉鐨勯棶棰?
+- 淇鎻忚堪鐢婚潰鏃惰瑙﹀彂鍥剧墖鐢熸垚鐨勯€昏緫闂
+- 搴熷純妯″瀷鑷姩杩佺Щ锛堝鏃ч厤缃腑鐨?pollinations 鑷姩閲嶇疆锛?
 
 #### v1.0.0 (2026-06-03)
 
-- 对话驱动的多模态生成：输入自然语言，AI 自动识别意图并调度图像/视频任务
-- 支持多家对话、图像、视频 Provider
-- 素材画廊支持网格/自由布局，右键菜单操作
-- 视频生成任务队列，支持进度追踪与重试
-- 设置面板按轨道独立配置 Provider、API Key、Base URL、模型
-- 一键连接测试验证 API Key
-- 白色主题，支持深色/浅色/跟随系统
-- NSIS 安装包，支持 Windows x64
+- 瀵硅瘽椹卞姩鐨勫妯℃€佺敓鎴愶細杈撳叆鑷劧璇█锛孉I 鑷姩璇嗗埆鎰忓浘骞惰皟搴﹀浘鍍?瑙嗛浠诲姟
+- 鏀寔澶氬瀵硅瘽銆佸浘鍍忋€佽棰?Provider
+- 绱犳潗鐢诲粖鏀寔缃戞牸/鑷敱甯冨眬锛屽彸閿彍鍗曟搷浣?
+- 瑙嗛鐢熸垚浠诲姟闃熷垪锛屾敮鎸佽繘搴﹁拷韪笌閲嶈瘯
+- 璁剧疆闈㈡澘鎸夎建閬撶嫭绔嬮厤缃?Provider銆丄PI Key銆丅ase URL銆佹ā鍨?
+- 涓€閿繛鎺ユ祴璇曢獙璇?API Key
+- 鐧借壊涓婚锛屾敮鎸佹繁鑹?娴呰壊/璺熼殢绯荤粺
+- NSIS 瀹夎鍖咃紝鏀寔 Windows x64
 
 ---
 
 ## English
+
+#### v2.0.1 (2026-07-01)
+
+**Image API Setup and Relay Demo**
+- Added 鈥淩elay / GPT Image 2鈥?as a first-class image API entry, defaulting to `gpt-image-2` and the OpenAI Images-compatible path
+- Reordered API settings around the Hermes Agent provider-first flow: choose a provider, choose auth mode, enter credentials, then fetch and select models
+- Added a saved model-profile dropdown in API settings so users can switch previous Provider + credential + Base URL + Model combinations directly
+- The Provider dropdown now lists only directly callable API providers; subscription/reference entries remain as cards with purchase or login links so they are not saved as unusable active configs
+- The current Provider config now shows direct API key, console, billing/purchase, and docs links so setup does not require hunting through provider cards
+- Provider cards and the current config now show call/setup modes such as Direct API, Custom API, Subscription info, and Reference, separating callable APIs from account/subscription instructions
+- The current Provider config now includes a readiness checklist for credential, endpoint, and model, plus a one-click recommended Base URL/model fill action
+- Model fetching and connection tests now fall back to the Provider default endpoint when the current Base URL is empty, reducing setup steps after provider selection
+- Simplified image settings around Provider, auth mode, API Key/Session Token, relay Base URL, model, and real image testing; official Provider Base URLs now live under Advanced
+- Added a refresh button in the model field so users can manually refetch models after editing credentials or endpoints
+- Added a real image generation test that returns a thumbnail from a minimal prompt instead of treating model-list fetching as proof of generation support
+- Chat / Image / Video providers now all attempt automatic model-list fetching once configured; Test Connection shows the fetched model result, including custom image/video entries
+- Model-list fetching now reuses each Provider's own Bearer, Header, Query, Session, or no-auth configuration instead of assuming relay/Bearer-key auth
+- Redacted saved credentials, non-Bearer auth, and no-auth Providers now share the same readiness rules across model fetching, connection tests, real generation, and quick model switching
+- Real Provider calls and health checks now honor custom `authType/customAuth` overrides and no-auth Providers, preventing model fetching from succeeding while generation still sends Bearer auth
+- Custom image/video API entries now include Query-key auth and keep the full auth option set in renderer fallback Provider lists
+- Missing-configuration prompts now refer to provider / credentials / model instead of API keys only; the quick model button shows the current model when no saved profile matches instead of implying the first saved profile is active
+- After quick-switching to a saved Provider profile, main-process calls now match the saved profile credentials instead of briefly falling back to the old active Provider; legacy metadata/subscription profiles are hidden from quick switching and saved-profile dropdowns
+- Switching between saved profiles under the same Provider now also matches the saved Base URL/model profile, preventing a brief call through the previous endpoint or model
+- After selecting a saved profile in Settings, model fetching and connection tests now resolve redacted credentials from that profile instead of relying only on the active Provider
+- Chat / Image / Video now show Base URL and model fetching for every executable Provider in the current configuration area, instead of treating relay entries as the only configurable APIs
+- Settings no longer hides non-mainstream registry/fallback APIs behind a Provider allowlist; the curated list is now only used as a sorting weight so newly registered Providers remain selectable
+- Model fetching now recognizes official versioned API bases such as `/v1`, `/v1beta`, and `/api/v3`, preventing providers like Volcengine from being called with duplicated version paths
+- Gemini model fetching now recognizes user-entered `/v1beta` endpoints instead of producing `/v1beta/v1beta/models`
+- Model settings now always keep a manual input alongside fetched/built-in dropdown options, so newly released models can be entered before a Provider model list catches up
+- Automatic/manual model fetching now shows fetched counts, empty-list guidance, or failure feedback instead of silently clearing the model list
+- Settings-initiated model fetching and connection tests now surface redacted Provider errors instead of disguising bad keys, Base URLs, or endpoints as empty model lists
+- Providers without a standard model-list endpoint now fall back to recommended/manual models instead of treating 404/405 responses as credential failures
+- When a Provider has no explicit default model but does have a built-in catalog, selecting it now saves the first recommended model instead of leaving the config empty
+- Legacy configs and saved-profile creation now also fill empty models from Provider recommendations so quick model switching remains available after restart
+- Settings save now normalizes empty active-provider models from Provider recommendations, preventing a visible recommendation from being persisted as a blank model
+- Custom API settings now include a model-list path so automatic model fetching can use non-standard endpoints such as `/api/models` or `/v1/model/list`, while restricting the path to the configured Base URL
+- Custom image/video API advanced settings now expose request methods and JSON body templates for non-standard generation, submit, and poll endpoints without code changes
+- Image/video API Providers without native handlers can now be selected as Custom API setups; configured Advanced paths and templates run through the generic custom pipeline
+- Renderer fallback Provider lists also normalize media API metadata entries into template-based Custom API setups, preventing dropdown capability loss when the main-process list is unavailable
+- Custom image request templates now prefer the Settings-managed `requestBody` field and clear legacy `body/submitBody` aliases while editing, preventing old templates from overriding new input
+- Switching Providers now clears the previous Provider's advanced templates, paths, methods, bodies, polling settings, and model-list path so the new Provider cannot accidentally reuse stale API configuration
+- Saved Provider profile switching and Clear Config now reuse the same cleanup path, preventing quick model/profile switches from retaining stale advanced API fields
+- Legacy profile fields such as `customTemplate`, top-level template fields, and `modelsPath` are normalized into the current `template/modelListPath` shape when switching or saving, preserving custom API setups after upgrades
+- Editing or switching the selected model no longer retriggers automatic model fetching; auto-fetch now responds to Provider, credential, endpoint, and auth-mode changes
+- When users quickly switch Providers, credentials, or endpoints, stale model-fetch responses are ignored instead of overwriting the current Provider's model list
+- Clearing credentials or endpoints now immediately invalidates pending model-fetch writes and clears loading state, preventing stale models from showing under invalid config
+- Connection tests and Test Image now use the currently selected auth mode and custom auth parameters instead of falling back to the Provider default authType
+- Settings now waits for the main process to persist Provider/model changes before closing, preventing immediate generation from racing against stale config
+- While settings are saving, Escape/close actions are disabled and save failures are shown inside the dialog instead of only being logged to the console
+- Provider health checks now restrict custom header names, apply query auth parameters, and test the currently typed endpoint when the user enters fresh plaintext credentials
+- Provider settings now include built-in model catalogs, so the model dropdown still offers recommended models when online fetching fails or the Provider has no standard model endpoint
+- Renderer fallback Provider lists now keep auth modes, model catalogs, call modes, and setup modes so a main-process Provider-list failure does not drop users back to manual setup
+- Malformed model-list responses are safely treated as empty lists so Settings does not crash on non-standard relay/provider responses
+- Empty model-list results no longer mark the API as unusable; users can still enter a model manually and use Test Image to confirm real generation
+- Image-to-video tasks now keep the source image URL on the task and look up assets in the target conversation during execution, preventing source loss across conversation switches or async work
+- Custom Image API now deduplicates `/v1` path segments so relay URLs that already include `/v1` do not produce `/v1/v1/images/generations`
+- Expanded image response parsing for `b64_json`, `url`, `image_url`, `images`, `output`, `result`, and custom response paths; response paths pointing to `b64_json/base64` are converted to data URLs automatically
 
 #### v2.0.0 (2026-07-01)
 
@@ -368,7 +474,7 @@
 **Creative Records & Asset Operations**
 - Creative records now show generation mode directly, making text-to-image, image-to-video, and other generation modes visible
 - Asset details are now creative records with Copy Prompt, Series Variant, Restyle, Regenerate, and Image-to-Video actions
-- Regenerate now preserves the original prompt — bypasses LLM and calls the image API directly
+- Regenerate now preserves the original prompt 鈥?bypasses LLM and calls the image API directly
 - Series Variant and Restyle now create deterministic image tasks instead of depending on the chat model to return a task
 - Asset details and context menus now support Use as Reference, adding the asset to the current input references and focusing the composer
 - Asset details and context menus now support Edit Prompt, loading the original prompt back into the composer for quick edits
@@ -417,7 +523,7 @@
 
 #### v1.8.0 (2026-06-25)
 
-**Provider Profiles — Multi-Configuration Switching**
+**Provider Profiles 鈥?Multi-Configuration Switching**
 - New Provider Profiles system: each track (chat/image/video) can save multiple API Key + model combinations
 - New `ModelSelector` component replaces `ModelBar`: quick-switch saved model configs in the chat panel header
 - Profile API Keys encrypted via `safeStorage`
@@ -449,7 +555,7 @@
 
 **Provider Registry Polish**
 - Volcengine links fully updated to Chinese docs
-- Alibaba Wan integrationStatus promoted from metadata → handler
+- Alibaba Wan integrationStatus promoted from metadata 鈫?handler
 - Chinese display names and domestic-friendly links across providers
 
 #### v1.6.1 (2026-06-23)
@@ -512,7 +618,7 @@
 #### v1.5.0 (2026-06-08)
 
 **Security Hardening**
-- URL redirect safety: blocks HTTPS→HTTP protocol downgrade, limits redirect depth, supports relative redirects
+- URL redirect safety: blocks HTTPS鈫扝TTP protocol downgrade, limits redirect depth, supports relative redirects
 - CSP unification: removed CSP meta tag from index.html, managed exclusively via main process session header
 - API key encryption: Electron safeStorage encrypts API keys at rest; decryption failure clears key to avoid sending garbage
 - Electron navigation boundary: blocks unexpected app navigation and `window.open` child windows; Markdown external links go through main-process HTTPS validation before `shell.openExternal`
@@ -571,7 +677,7 @@
 - Moved from Settings page to chat toolbar for quick access
 
 **Batch Generation**
-- New "Batch" button on task cards — generate 2/3/4 images at once
+- New "Batch" button on task cards 鈥?generate 2/3/4 images at once
 - Real-time batch progress (e.g. 2/4), failed items skipped
 
 **Elapsed Timer**
@@ -580,7 +686,7 @@
 
 **API Reliability Fix**
 - Fixed critical bug: `protocol` field was never saved to config on provider switch, causing image generation to always fail
-- Added dedicated Seedream/即梦 (`ark_image`) image generation endpoint with correct URL path
+- Added dedicated Seedream/鍗虫ⅵ (`ark_image`) image generation endpoint with correct URL path
 - Added auto-retry for image generation (1 retry after 2s delay)
 - Fixed video generation protocol resolution
 
@@ -598,7 +704,7 @@
 - Supports both base64 and URL image download
 
 **Other Fixes**
-- Fixed missing "Text" tool icon in canvas toolbar (TOOL_ICONS key: type→text)
+- Fixed missing "Text" tool icon in canvas toolbar (TOOL_ICONS key: type鈫抰ext)
 - Fixed grid mode only showing one image (layout issue)
 - Added "Auto-save images" and "Enable reference images" toggles in Settings
 
@@ -641,9 +747,9 @@
 #### v1.1.0 (2026-06-03)
 
 **Generation Flow**
-- Image generation now shows prompt for review before execution — confirm to generate
-- Iterative modification via natural language — AI incrementally adjusts prompt, preserves what you like
-- Task cards show real-time status: pending → generating → done/error
+- Image generation now shows prompt for review before execution 鈥?confirm to generate
+- Iterative modification via natural language 鈥?AI incrementally adjusts prompt, preserves what you like
+- Task cards show real-time status: pending 鈫?generating 鈫?done/error
 
 **Multi-Conversation**
 - Parallel conversations with isolated messages and canvas assets
@@ -671,7 +777,7 @@
 - Asset detail panel: save-to-file button, click-to-zoom preview
 - Fixed silent failures on image/video generation errors
 - Fixed accidental image generation on descriptive text
-- Auto-migrate deprecated models (e.g. pollinations → provider default)
+- Auto-migrate deprecated models (e.g. pollinations 鈫?provider default)
 
 #### v1.0.0 (2026-06-03)
 

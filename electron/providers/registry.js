@@ -9,6 +9,55 @@ const IMAGE_RATIOS = ['1:1', '4:3', '3:4', '16:9', '9:16']
 const WIDE_IMAGE_RATIOS = [...IMAGE_RATIOS, '3:2', '2:3']
 const VIDEO_RATIOS = ['16:9', '9:16', '1:1']
 const COMMON_VIDEO_DURATIONS = [5, 10]
+const MODEL_CATALOGS = {
+  chat: {
+    openai: ['gpt-5.1', 'gpt-5.1-mini', 'gpt-4.1', 'gpt-4.1-mini'],
+    anthropic: ['claude-sonnet-4-6', 'claude-haiku-4-5', 'claude-opus-4-1'],
+    google: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash'],
+    deepseek: ['deepseek-chat', 'deepseek-reasoner'],
+    alibaba: ['qwen-plus', 'qwen-max', 'qwen-turbo'],
+    moonshot: ['kimi-k2-0711-preview', 'kimi-latest'],
+    volcengine: ['doubao-pro-32k', 'doubao-seed-1-6'],
+    openrouter: ['openai/gpt-5.1', 'anthropic/claude-sonnet-4.5', 'google/gemini-2.5-pro'],
+    groq: ['llama-3.3-70b-versatile', 'openai/gpt-oss-120b'],
+    together: ['meta-llama/Llama-4-17B-128E-Instruct-FP8', 'Qwen/Qwen2.5-72B-Instruct-Turbo'],
+    xai: ['grok-3', 'grok-3-mini'],
+    perplexity: ['sonar-pro', 'sonar'],
+    siliconflow: ['Qwen/Qwen2.5-72B-Instruct', 'deepseek-ai/DeepSeek-V3']
+  },
+  image: {
+    openai: ['gpt-image-2', 'gpt-image-1'],
+    google: ['gemini-2.5-flash-image', 'gemini-2.0-flash-preview-image-generation'],
+    volcengine: ['doubao-seedream-4-0-250828', 'doubao-seedream-3-0-t2i-250415'],
+    'alibaba-wan': ['wan2.6-t2i', 'wan2.2-t2i-plus', 'wan2.2-t2i-flash'],
+    'baidu-qianfan': ['qwen-image', 'ernie-vilg-v1'],
+    'tencent-tokenhub': ['hunyuan-image'],
+    vidu: ['vidu-q1'],
+    stability: ['stable-image-core', 'stable-image-ultra'],
+    ideogram: ['ideogram-v4', 'ideogram-v3'],
+    runway: ['gen4-image'],
+    fal: ['fal-ai/flux-pro', 'fal-ai/flux/dev', 'fal-ai/imagen4/preview'],
+    replicate: ['black-forest-labs/flux-schnell', 'black-forest-labs/flux-dev'],
+    siliconflow: ['black-forest-labs/FLUX.1-dev', 'black-forest-labs/FLUX.1-schnell'],
+    'custom-image': ['gpt-image-2', 'gpt-image-1'],
+    'custom-image-gemini': ['gemini-2.5-flash-image'],
+    'custom-image-ark': ['doubao-seedream-4-0-250828']
+  },
+  video: {
+    volcengine: ['doubao-seedance-2-0-pro-250528', 'doubao-seedance-1-0-pro-250528'],
+    'alibaba-wan': ['wan2.7-t2v', 'wan2.6-t2v', 'wan2.5-i2v'],
+    runway: ['gen4_turbo', 'gen3a_turbo'],
+    kling: ['kling-v2.6', 'kling-v2.5-turbo', 'kling-v2.1'],
+    luma: ['ray-2', 'ray-flash-2'],
+    minimax: ['MiniMax-Hailuo-2.3', 'MiniMax-Hailuo-02'],
+    pixverse: ['pixverse-v6', 'pixverse-v5'],
+    fal: ['fal-ai/wan/v2.5/t2v', 'fal-ai/minimax/video-01'],
+    replicate: ['wan-video/wan-2.2-t2v-fast', 'minimax/video-01'],
+    'baidu-qianfan': ['qianfan-video-latest'],
+    'tencent-tokenhub': ['hy-video-1.5'],
+    happyhorse: ['happyhorse-1.0/video']
+  }
+}
 
 const OPENAI_COMPATIBLE = {
   auth: ['bearer'],
@@ -45,7 +94,7 @@ function videoConstraints(overrides = {}) {
 
 /**
  * @typedef {Object} AuthType
- * @property {'bearer'|'header'|'query'|'session'} type
+ * @property {'bearer'|'api-key'|'header'|'query'|'session'|'none'} type
  * @property {string} [key]
  * @property {string} [prefix]
  */
@@ -920,7 +969,10 @@ const REGISTRY = [
         sourceImage: { required: true, requiredForModes: ['image_to_video'] }
       })
     },
-    customizable: { video: { auth: ['bearer'], baseUrl: true, model: true, timeout: true, polling: true } },
+    customizable: {
+      image: { auth: ['bearer'], baseUrl: true, model: true, timeout: true },
+      video: { auth: ['bearer'], baseUrl: true, model: true, timeout: true, polling: true }
+    },
     meta: { region: 'global', description: 'Runway image metadata and image-to-video handler.' }
   },
   {
@@ -1190,10 +1242,10 @@ const REGISTRY = [
   },
   {
     id: 'custom-image',
-    name: 'Custom Image API (OpenAI-compatible)',
+    name: 'Relay / GPT Image 2',
     platform: 'Custom',
     image: {
-      defaultModel: '',
+      defaultModel: 'gpt-image-2',
       protocol: 'custom_image_openai',
       format: 'custom',
       sizes: WIDE_IMAGE_RATIOS,
@@ -1221,7 +1273,7 @@ const REGISTRY = [
     },
     customizable: {
       image: {
-        auth: ['bearer', 'api-key', 'header', 'session'],
+        auth: ['bearer', 'api-key', 'header', 'query', 'session'],
         baseUrl: true,
         headerName: true,
         model: true,
@@ -1231,7 +1283,13 @@ const REGISTRY = [
         relayCompatible: true
       }
     },
-    meta: { region: 'both', description: 'Custom image relay entry for OpenAI Images-compatible APIs.' }
+    meta: {
+      region: 'both',
+      nameZh: '中转站 / GPT Image 2',
+      nameEn: 'Relay / GPT Image 2',
+      description: 'Custom OpenAI Images-compatible relay, optimized for GPT Image 2 demos.',
+      descriptionZh: '面向 GPT Image 2 演示的 OpenAI Images 兼容中转站入口。'
+    }
   },
   {
     id: 'custom-image-gemini',
@@ -1266,7 +1324,7 @@ const REGISTRY = [
     },
     customizable: {
       image: {
-        auth: ['bearer', 'api-key', 'header', 'session'],
+        auth: ['bearer', 'api-key', 'header', 'query', 'session'],
         baseUrl: true,
         headerName: true,
         model: true,
@@ -1311,7 +1369,7 @@ const REGISTRY = [
     },
     customizable: {
       image: {
-        auth: ['bearer', 'api-key', 'header', 'session'],
+        auth: ['bearer', 'api-key', 'header', 'query', 'session'],
         baseUrl: true,
         headerName: true,
         model: true,
@@ -1357,7 +1415,7 @@ const REGISTRY = [
     },
     customizable: {
       video: {
-        auth: ['bearer', 'api-key', 'header', 'session'],
+        auth: ['bearer', 'api-key', 'header', 'query', 'session'],
         baseUrl: true,
         headerName: true,
         model: true,
@@ -1442,6 +1500,43 @@ function getDefaultModel(providerId, action) {
   return p[action].defaultModel
 }
 
+function uniqueModelIds(items = []) {
+  return Array.from(new Set(items.map(item => String(item || '').trim()).filter(Boolean)))
+}
+
+function getModelCatalog(providerId, action) {
+  const p = getProvider(providerId)
+  if (!p || !p[action]) return []
+  return uniqueModelIds([
+    p[action].defaultModel,
+    ...(Array.isArray(p[action].models) ? p[action].models : []),
+    ...(Array.isArray(p.modelCatalog?.[action]) ? p.modelCatalog[action] : []),
+    ...(Array.isArray(MODEL_CATALOGS[action]?.[providerId]) ? MODEL_CATALOGS[action][providerId] : [])
+  ])
+}
+
+function getProviderCallMode(providerId, action, executable = false) {
+  const p = getProvider(providerId)
+  if (!p || !p[action]) return 'reference'
+  const caps = p.capabilities?.[action] || p.meta?.capabilities?.[action] || {}
+  if (executable) return p.platform === 'Custom' || p.id?.startsWith('custom-') ? 'custom-api' : 'direct-api'
+  if (caps.webSubscription || caps.codingPlan || p.billing?.mode === 'subscription') return 'subscription-reference'
+  return 'reference'
+}
+
+function getProviderSetupMode(providerId, action, executable = false) {
+  const p = getProvider(providerId)
+  if (!p || !p[action]) return 'reference'
+  const caps = p.capabilities?.[action] || p.meta?.capabilities?.[action] || {}
+  const custom = p.customizable?.[action] || p.meta?.customizable?.[action] || {}
+  const authOptions = Array.isArray(custom.auth) ? custom.auth : []
+  if (!executable) return (caps.webSubscription || caps.codingPlan || p.billing?.mode === 'subscription') ? 'subscription-reference' : 'reference'
+  if (p.platform === 'Custom' || p.id?.startsWith('custom-') || custom.customTemplate || caps.customBaseUrl || caps.customTemplate) return 'custom-api'
+  if (authOptions.includes('session')) return 'api-key-or-session'
+  if (p.authType?.type === 'none') return 'no-auth'
+  return 'api-key'
+}
+
 function getProtocol(providerId, action) {
   const p = getProvider(providerId)
   if (!p || !p[action]) return null
@@ -1460,6 +1555,9 @@ module.exports = {
   getProvidersByAction,
   getProvidersByRegion,
   getDefaultModel,
+  getModelCatalog,
+  getProviderCallMode,
+  getProviderSetupMode,
   getProtocol,
   getConstraints
 }

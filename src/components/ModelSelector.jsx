@@ -1,15 +1,32 @@
 import { useEffect, useRef, useState } from 'react'
 import { t } from '../i18n'
 import { sameProviderId } from '../providers/aliases'
+import { createProviderProfilePatch } from '../utils/providerConfig.js'
 import Ic from './icons'
 
-function hasCredential(profile = {}) {
-  return profile.customAuth?.type === 'session' ? Boolean(profile.sessionToken) : Boolean(profile.apiKey)
+function normalizeAuthType(type) {
+  return String(type || '').toLowerCase().replace(/_/g, '-')
+}
+
+function findProviderDef(track, providerLists = {}, profile = {}) {
+  const providers = providerLists?.[track] || []
+  return providers.find(item => sameProviderId(track, item.id, profile.providerId || profile.id))
+}
+
+function isExecutableProvider(provider = {}) {
+  return Boolean(provider) && provider.executable !== false && provider.integrationStatus !== 'metadata'
+}
+
+function hasCredential(profile = {}, providerDef = {}) {
+  const customType = normalizeAuthType(profile.customAuth?.type)
+  const type = customType || normalizeAuthType(profile.authType?.type || providerDef?.authType?.type)
+  if (type === 'none') return Boolean(profile.providerId || profile.id || providerDef.id)
+  if (type === 'session') return Boolean(profile.sessionToken)
+  return Boolean(profile.apiKey)
 }
 
 function providerName(track, providerLists = {}, profile = {}) {
-  const providers = providerLists?.[track] || []
-  const provider = providers.find(item => sameProviderId(track, item.id, profile.providerId || profile.id))
+  const provider = findProviderDef(track, providerLists, profile)
   return profile.name || provider?.name || profile.providerId || profile.id || t('provider', 'zh')
 }
 
@@ -19,29 +36,11 @@ function sameProfile(track, current = {}, profile = {}) {
     (current?.model || '') === (profile.model || '')
 }
 
-function profileToProviderPatch(profile = {}) {
-  return {
-    id: profile.providerId || profile.id,
-    apiKey: profile.apiKey || '',
-    sessionToken: profile.sessionToken || '',
-    baseUrl: profile.baseUrl || '',
-    model: profile.model || '',
-    protocol: profile.protocol,
-    format: profile.format,
-    customAuth: profile.customAuth || {},
-    template: profile.template,
-    pathPrefix: profile.pathPrefix,
-    timeout: profile.timeout,
-    pollInterval: profile.pollInterval,
-    defaultNegPrompt: profile.defaultNegPrompt,
-    customSystemPrompt: profile.customSystemPrompt
-  }
-}
-
 function ModelPicker({ track, current, profiles, providerLists, onSelect, lang }) {
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
-  const currentProfile = profiles.find(profile => sameProfile(track, current, profile)) || profiles[0]
+  const currentProfile = profiles.find(profile => sameProfile(track, current, profile))
+  const displayModel = currentProfile?.model || current?.model || profiles[0]?.model || t('modelSelector', lang)
 
   useEffect(() => {
     const handler = (event) => {
@@ -52,7 +51,7 @@ function ModelPicker({ track, current, profiles, providerLists, onSelect, lang }
   }, [])
 
   const selectProfile = (profile) => {
-    onSelect(track, profileToProviderPatch(profile))
+    onSelect(track, createProviderProfilePatch(profile))
     setOpen(false)
   }
 
@@ -75,7 +74,7 @@ function ModelPicker({ track, current, profiles, providerLists, onSelect, lang }
         boxShadow: open ? '0 0 0 2px var(--accent-glow)' : 'none'
       }}>
         <span style={{ color: 'var(--accent)', fontWeight: 700, textTransform: 'uppercase' }}>{t(track, lang)}</span>
-        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{currentProfile?.model}</span>
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayModel}</span>
         <Ic n="chevDown" size={10} sw={2} />
       </button>
 
@@ -131,7 +130,10 @@ function ModelPicker({ track, current, profiles, providerLists, onSelect, lang }
 export default function ModelSelector({ config, providerLists, activeModule = 'image', onProviderChange, lang }) {
   const mediaTrack = activeModule === 'video' ? 'video' : 'image'
   const items = ['chat', mediaTrack].map(track => {
-    const profiles = (config?.providerProfiles?.[track] || []).filter(profile => hasCredential(profile) && profile.model)
+    const profiles = (config?.providerProfiles?.[track] || []).filter(profile => {
+      const providerDef = findProviderDef(track, providerLists, profile)
+      return isExecutableProvider(providerDef) && hasCredential(profile, providerDef) && profile.model
+    })
     return profiles.length ? { track, current: config?.providers?.[track], profiles } : null
   }).filter(Boolean)
 

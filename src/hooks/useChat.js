@@ -67,8 +67,16 @@ function precheckGeneration(track, providerDef, task, extra = {}) {
   }
 }
 
-function hasProviderCredential(provider = {}) {
-  return provider.customAuth?.type === 'session' ? Boolean(provider.sessionToken) : Boolean(provider.apiKey)
+function normalizeAuthType(type) {
+  return String(type || '').toLowerCase().replace(/_/g, '-')
+}
+
+function hasProviderCredential(provider = {}, providerDef = {}) {
+  const customType = normalizeAuthType(provider.customAuth?.type)
+  const type = customType || normalizeAuthType(provider.authType?.type || providerDef?.authType?.type)
+  if (type === 'none') return Boolean(provider?.id || providerDef?.id)
+  if (type === 'session') return Boolean(provider.sessionToken)
+  return Boolean(provider.apiKey)
 }
 
 function taskAllowedInMode(task, generationMode) {
@@ -216,6 +224,14 @@ export default function useChat(config, canvas, onVideoTaskCreated, activeConver
     return Boolean(conversationBridge?.removeAsset?.(conversationId, assetId))
   }, [canvas, canWriteToCurrentConversation, conversationBridge])
 
+  const getAssetFromConversation = useCallback((conversationId, assetId) => {
+    if (!assetId) return null
+    if (canWriteToCurrentConversation(conversationId)) {
+      return canvas.getAssetById(assetId) || conversationBridge?.getAsset?.(conversationId, assetId) || null
+    }
+    return conversationBridge?.getAsset?.(conversationId, assetId) || null
+  }, [canvas, canWriteToCurrentConversation, conversationBridge])
+
   const send = useCallback(async (text, references, genSettings) => {
     if (!text.trim() || loadingRef.current) return false
     const originConversationId = genSettings?.conversationId || activeConversationIdRef.current
@@ -234,7 +250,8 @@ export default function useChat(config, canvas, onVideoTaskCreated, activeConver
 
     const provider = config?.providers?.chat
     const lang = config?.general?.language || 'zh'
-    if (!hasProviderCredential(provider)) {
+    const chatProviderDef = findProviderDef('chat', providerLists, provider?.id)
+    if (!hasProviderCredential(provider, chatProviderDef)) {
       appendMessage(originConversationId, { role: 'assistant', content: t('configApiFirst', lang), id: nextId() })
       setLoading(false)
       loadingRef.current = false
@@ -333,23 +350,30 @@ ${modeRule}
       if (allowedTasks.length > 0) {
         const referenceIds = references?.map(r => r.id).filter(Boolean) || []
         const forcedSourceImageId = genSettings?.sourceImageId || null
-        const tasksData = allowedTasks.map(task => ({
-          status: 'pending',
-          type: task.type,
-          label: task.label,
-          prompt: task.prompt,
-          negative_prompt: task.negative_prompt || defaultNegPrompt,
-          ratio: task.ratio || defaultRatio,
-          duration: parseDurationSeconds(task.duration, defaultDuration),
-          source_image_id: task.source_image_id || forcedSourceImageId,
-          intent: parsed.intent,
-          resolution: genSettings?.resolution || '1024',
-          sourceAssetIds: uniqueIds([...idList(task.sourceAssetIds), task.source_image_id, forcedSourceImageId]),
-          promptReferenceAssetIds: referenceIds,
-          parentAssetId: genSettings?.parentAssetId || task.parentAssetId || task.source_image_id || forcedSourceImageId || null,
-          createdFrom: genSettings?.createdFrom || 'chat',
-          styleDirection: genSettings?.styleDirection || ''
-        }))
+        const tasksData = allowedTasks.map(task => {
+          const sourceImageId = task.source_image_id || forcedSourceImageId
+          const sourceAsset = sourceImageId
+            ? sourceAssets.find(asset => asset.id === sourceImageId) || references?.find(asset => asset.id === sourceImageId)
+            : null
+          return {
+            status: 'pending',
+            type: task.type,
+            label: task.label,
+            prompt: task.prompt,
+            negative_prompt: task.negative_prompt || defaultNegPrompt,
+            ratio: task.ratio || defaultRatio,
+            duration: parseDurationSeconds(task.duration, defaultDuration),
+            source_image_id: sourceImageId,
+            sourceImageUrl: task.sourceImageUrl || sourceAsset?.url || '',
+            intent: parsed.intent,
+            resolution: genSettings?.resolution || '1024',
+            sourceAssetIds: uniqueIds([...idList(task.sourceAssetIds), sourceImageId]),
+            promptReferenceAssetIds: referenceIds,
+            parentAssetId: genSettings?.parentAssetId || task.parentAssetId || sourceImageId || null,
+            createdFrom: genSettings?.createdFrom || 'chat',
+            styleDirection: genSettings?.styleDirection || ''
+          }
+        })
         const replyMsg = {
           role: 'assistant',
           content: parsed.reply || replyText,
@@ -371,7 +395,7 @@ ${modeRule}
       if (mountedRef.current) setLoading(false)
     }
     return true
-  }, [config, canvas, appendMessage, canWriteToCurrentConversation, thinking])
+  }, [config, canvas, appendMessage, canWriteToCurrentConversation, thinking, providerLists])
 
   const doGenerate = useCallback(async (msgId, task, lang, placeholderId, taskIndex, originConversationId) => {
     const startTime = Date.now()
@@ -380,8 +404,8 @@ ${modeRule}
 
     if (task.type === 'image') {
       const imgProvider = config?.providers?.image
-      if (!imgProvider?.id || !hasProviderCredential(imgProvider)) throw new Error(t('configImageApi', lang))
       const providerDef = findProviderDef('image', providerLists, imgProvider.id) || IMG_PROVIDERS.find(p => p.id === imgProvider.id)
+      if (!imgProvider?.id || !hasProviderCredential(imgProvider, providerDef)) throw new Error(t('configImageApi', lang))
       const protocol = imgProvider.protocol || providerDef?.protocol || 'openai_image'
       const negativePrompt = task.negative_prompt || imgProvider.defaultNegPrompt || ''
       precheckGeneration('image', providerDef, { ...task, negative_prompt: negativePrompt }, { lang })
@@ -450,11 +474,11 @@ ${modeRule}
     } else if (task.type === 'video') {
       if (config?.general?.enableVideo !== true) throw new Error(t('videoDisabled', lang))
       const vidProvider = config?.providers?.video
-      if (!vidProvider?.id || !hasProviderCredential(vidProvider)) throw new Error(t('configVideoApi', lang))
       const providerDef = findProviderDef('video', providerLists, vidProvider.id) || VID_PROVIDERS.find(p => p.id === vidProvider.id)
+      if (!vidProvider?.id || !hasProviderCredential(vidProvider, providerDef)) throw new Error(t('configVideoApi', lang))
       const protocol = vidProvider.protocol || providerDef?.protocol || 'ark_video_task'
       const provider = { ...vidProvider, protocol }
-      const sourceAsset = task.source_image_id ? canvas.getAssetById(task.source_image_id) : null
+      const sourceAsset = task.source_image_id ? getAssetFromConversation(originConversationId, task.source_image_id) : null
       const sourceImageUrl = task.sourceImageUrl || sourceAsset?.url || ''
       const duration = parseDurationSeconds(task.duration, parseDurationSeconds(config?.general?.defaultDuration, 5))
       precheckGeneration('video', providerDef, { ...task, duration }, { sourceImageUrl, mode: task.intent, lang })
@@ -480,7 +504,7 @@ ${modeRule}
       const videoTask = {
         ...task,
         duration,
-        sourceAssetIds: uniqueIds([...idList(task.sourceAssetIds), sourceAsset?.id]),
+        sourceAssetIds: uniqueIds([...idList(task.sourceAssetIds), task.source_image_id, sourceAsset?.id]),
         parentAssetId: task.parentAssetId || sourceAsset?.id || null,
         taskId: submittedTaskId
       }
@@ -516,7 +540,7 @@ ${modeRule}
       const elapsed = Math.round((Date.now() - startTime) / 1000)
       updateTask({ status, taskId: result.taskId, queueId: queuedTask?.id, elapsed })
     }
-  }, [config, canvas, onVideoTaskCreated, canWriteToConversation, canWriteToCurrentConversation, addAssetToConversation, updateAssetInConversation, patchTask, providerLists])
+  }, [config, canvas, onVideoTaskCreated, canWriteToConversation, canWriteToCurrentConversation, addAssetToConversation, updateAssetInConversation, patchTask, providerLists, getAssetFromConversation])
 
   const regenerateDirectly = useCallback(async (asset, lang, options = {}) => {
     const originConversationId = options.conversationId || activeConversationIdRef.current

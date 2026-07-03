@@ -121,6 +121,10 @@ export default function App() {
       })
       return updated ? item : null
     },
+    getAsset: (id, assetId) => {
+      const conv = conversationsRef.current.find(item => item.id === id)
+      return conv?.assets?.find(asset => asset.id === assetId) || null
+    },
     updateAsset: (id, assetId, patch) => patchStoredConversation(id, conv => updateConversationAsset(conv, assetId, patch)),
     removeAsset: (id, assetId) => patchStoredConversation(id, conv => removeConversationAsset(conv, assetId))
   }), [patchStoredConversation])

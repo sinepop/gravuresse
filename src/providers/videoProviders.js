@@ -1,6 +1,7 @@
 // Fallback provider list for video generation. Runtime provider data normally
 // comes from electron/providers/registry.js.
 export const VID_PROVIDERS = [
+  { id: 'custom-video', name: 'Custom Video API', platform: 'Custom', defaultUrl: '', defaultModel: '', protocol: 'custom_video_task', format: 'custom', polling: true, billing: { mode: 'unknown' }, meta: { region: 'both' }, capabilities: { video: { textToVideo: true, imageToVideo: true, async: true, relay: true, customTemplate: true, integrationStatus: 'handler' } } },
   { id: 'volcengine', name: 'Seedance / 即梦', platform: 'Volcengine', defaultUrl: 'https://ark.cn-beijing.volces.com/api/v3', defaultModel: 'doubao-seedance-2-0-pro-250528', protocol: 'ark_video_task', polling: true, billing: { mode: 'credits' }, meta: { region: 'china' }, capabilities: { video: { textToVideo: true, imageToVideo: true, async: true, modelList: true } } },
   { id: 'alibaba-wan', name: 'Wan / 阿里万相', platform: 'Alibaba Cloud', defaultUrl: 'https://dashscope.aliyuncs.com/api/v1', defaultModel: 'wan2.7-t2v', protocol: 'wan_video_task', polling: true, billing: { mode: 'paygo' }, meta: { region: 'china' }, capabilities: { video: { textToVideo: true, imageToVideo: true, async: true } } },
   { id: 'runway', name: 'Runway', platform: 'Runway', defaultUrl: 'https://api.dev.runwayml.com', defaultModel: 'gen4_turbo', protocol: 'runway_task', polling: true, billing: { mode: 'credits' }, meta: { region: 'global' }, capabilities: { video: { imageToVideo: true, async: true, polling: true } } },

@@ -213,7 +213,7 @@ function substituteString(input, values, extraValues = {}, encode = false) {
     const name = placeholderName(full[0])
     if (!TEMPLATE_KEYS.has(name) && !(name in extraValues)) throw new Error(`Unsupported template variable: ${name}`)
     const value = name in extraValues ? extraValues[name] : values[name]
-    return encode ? encodeURIComponent(String(value ?? '')) : value
+    return encode ? encodeTemplateValue(name, value, encode) : value
   }
 
   return source.replace(re, (_, a, b, c) => {
@@ -221,8 +221,21 @@ function substituteString(input, values, extraValues = {}, encode = false) {
     if (!TEMPLATE_KEYS.has(name) && !(name in extraValues)) throw new Error(`Unsupported template variable: ${name}`)
     const value = name in extraValues ? extraValues[name] : values[name]
     const text = String(value ?? '')
-    return encode ? encodeURIComponent(text) : text
+    return encode ? encodeTemplateValue(name, text, encode) : text
   })
+}
+
+function encodeTemplateValue(name, value, encode) {
+  const text = String(value ?? '')
+  if (typeof encode === 'function') return encode(name, text)
+  return encodeURIComponent(text)
+}
+
+function encodePathTemplateValue(name, value) {
+  if (name === 'model') {
+    return String(value || '').split('/').map(part => encodeURIComponent(part)).join('/')
+  }
+  return encodeURIComponent(String(value ?? ''))
 }
 
 function applyTemplate(value, values, extraValues = {}) {
@@ -255,12 +268,35 @@ function joinTemplatePath(pathPrefix, path, label) {
 
 function buildUrl(baseUrl, pathPrefix, path, values, queryParams, label, extraValues = {}) {
   const rawPath = joinTemplatePath(pathPrefix, path, label)
-  const renderedPath = substituteString(rawPath, values, extraValues, true)
+  const renderedPath = dedupeBasePath(baseUrl, substituteString(rawPath, values, extraValues, encodePathTemplateValue))
   const url = joinApiUrl(baseUrl, renderedPath)
   for (const [key, value] of Object.entries(queryParams || {})) {
     if (value != null && value !== '') url.searchParams.set(key, String(value))
   }
   return url
+}
+
+function dedupeBasePath(baseUrl, path) {
+  let base
+  try {
+    base = new URL(baseUrl)
+  } catch {
+    return path
+  }
+  const baseParts = base.pathname.replace(/\/+$/, '').split('/').filter(Boolean)
+  const pathParts = String(path || '').split('/').filter(Boolean)
+  if (!baseParts.length || !pathParts.length) return path
+
+  let overlap = 0
+  for (let i = Math.min(baseParts.length, pathParts.length); i > 0; i -= 1) {
+    if (baseParts.slice(-i).join('/') === pathParts.slice(0, i).join('/')) {
+      overlap = i
+      break
+    }
+  }
+  if (!overlap) return path
+  const remaining = pathParts.slice(overlap).join('/')
+  return remaining ? `/${remaining}` : '/'
 }
 
 function getSize(ratio, resolution) {
@@ -343,21 +379,47 @@ function normalizeImageValue(value) {
     if (value.b64_json) return `data:image/png;base64,${value.b64_json}`
     if (value.url) return value.url
     if (value.image_url) return typeof value.image_url === 'string' ? value.image_url : value.image_url.url
+    if (value.output_url) return value.output_url
+    if (value.image) return normalizeImageValue(value.image)
+    if (value.images) return normalizeImageValue(value.images)
+    if (value.output) return normalizeImageValue(value.output)
     if (value.data) return normalizeImageValue(value.data)
   }
   return ''
 }
 
+function normalizeImagePathValue(value, path) {
+  const normalized = normalizeImageValue(value)
+  if (!normalized) return ''
+  const pathText = Array.isArray(path) ? path.join('.') : String(path || '')
+  if (
+    typeof value === 'string' &&
+    !normalized.startsWith('data:') &&
+    !/^https?:\/\//i.test(normalized) &&
+    /(b64_json|base64|inlineData\.data|inline_data\.data)$/i.test(pathText)
+  ) {
+    return `data:image/png;base64,${normalized}`
+  }
+  return normalized
+}
+
 function extractImage(json, template = {}) {
-  const fromPath = normalizeImageValue(readPath(json, template.imageUrlPath || template.responsePath))
+  const imagePath = template.imageUrlPath || template.responsePath
+  const fromPath = normalizeImagePathValue(readPath(json, imagePath), imagePath)
   if (fromPath) return fromPath
 
   const common = normalizeImageValue([
     json.data?.[0],
     json.images?.[0],
     json.output?.[0],
+    json.output?.image,
+    json.output?.images,
+    json.result,
+    json.result?.image,
+    json.result?.images,
     json.image,
     json.image_url,
+    json.output_url,
     json.url,
     json.candidates?.[0]?.content?.parts
   ])
@@ -398,12 +460,16 @@ function defaultArkBody(params) {
   return body
 }
 
+function customImageBodyTemplate(template = {}) {
+  return template.requestBody || template.body || template.submitBody
+}
+
 async function handleCustomImage(params, defaults) {
   const template = getTemplate(params)
   const values = templateValues(params)
   const auth = authForRequest(params, template)
   const path = template.path || template.submitPath || defaults.path
-  const bodyTemplate = template.body || template.requestBody || template.submitBody
+  const bodyTemplate = customImageBodyTemplate(template)
   const body = bodyTemplate ? applyTemplate(bodyTemplate, values) : defaults.body(params)
   const url = buildUrl(params.baseUrl, template.pathPrefix, path, values, auth.queryParams, 'Custom image path')
   const json = await requestJson(url, template.method || template.submitMethod || 'POST', {
@@ -555,5 +621,13 @@ module.exports = {
   customOpenAiImageHandler,
   customGeminiImageHandler,
   customArkImageHandler,
-  customVideoTaskHandler
+  customVideoTaskHandler,
+  _test: {
+    applyTemplate,
+    buildUrl,
+    dedupeBasePath,
+    extractImage,
+    getTemplate,
+    customImageBodyTemplate
+  }
 }
