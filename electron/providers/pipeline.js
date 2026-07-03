@@ -31,6 +31,19 @@ function redactSecrets(text) {
   return out
 }
 
+function hasTemplatePath(payload = {}, capKey) {
+  const template = payload.template || payload.customTemplate || {}
+  if (capKey === 'image') return Boolean(template.path || template.submitPath || payload.path || payload.submitPath)
+  if (capKey === 'video') return Boolean(template.submitPath || payload.submitPath)
+  return false
+}
+
+function genericTemplateProtocol(capKey) {
+  if (capKey === 'image') return 'custom_image_openai'
+  if (capKey === 'video') return 'custom_video_task'
+  return ''
+}
+
 /**
  * Execute a provider action through the unified pipeline.
  *
@@ -65,10 +78,16 @@ async function execute(params) {
   const defaultModel = getDefaultModel(providerId, capKey)
 
   // 4. Resolve authentication
-  const auth = resolveAuth(providerDef, credentials || {})
+  const auth = resolveAuth(providerDef, credentials || {}, {
+    authType: payload.authType,
+    customAuth: payload.customAuth
+  })
 
   // 5. Resolve handler module by protocol
-  const handler = resolveHandler(protocol)
+  let handler = resolveHandler(protocol)
+  if (!handler && hasTemplatePath(payload, capKey)) {
+    handler = resolveHandler(genericTemplateProtocol(capKey))
+  }
   if (!handler) {
     return {
       ok: false,

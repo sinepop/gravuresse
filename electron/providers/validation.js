@@ -1,4 +1,5 @@
 const { getProvider, getConstraints } = require('./registry')
+const { resolveHandler } = require('./handler')
 
 const ACTION_TO_TRACK = {
   chat: 'chat',
@@ -10,12 +11,20 @@ const ACTION_TO_TRACK = {
 }
 
 const CUSTOM_TEMPLATE_FIELDS = [
+  'path',
   'pathPrefix',
   'submitPath',
   'pollPath',
   'taskIdPath',
   'statusPath',
-  'videoUrlPath'
+  'videoUrlPath',
+  'progressPath',
+  'errorPath',
+  'imageUrlPath',
+  'responsePath',
+  'method',
+  'submitMethod',
+  'pollMethod'
 ]
 
 const CUSTOM_TEMPLATE_BODY_FIELDS = [
@@ -26,6 +35,7 @@ const CUSTOM_TEMPLATE_BODY_FIELDS = [
 ]
 
 const CUSTOM_TEMPLATE_SUBMIT_FIELDS = [
+  'path',
   'pathPrefix',
   'submitPath',
   'body',
@@ -91,8 +101,8 @@ function validateGenerationRequest(trackOrAction, providerOrId, task = {}) {
     options.async = true
   }
 
-  if (provider.id === 'custom-video' || provider[track]?.protocol === 'custom_video_task') {
-    validateCustomTemplate(customTemplateFromOptions(options), errors)
+  if (shouldValidateCustomTemplate(track, provider, options)) {
+    validateCustomTemplate(customTemplateFromOptions(options), errors, track)
   }
 
   return result(errors, warnings, options)
@@ -311,15 +321,39 @@ function pickCustomTemplateFields(source) {
   return out
 }
 
-function validateCustomTemplate(template, errors) {
+function shouldValidateCustomTemplate(track, provider, options) {
+  const protocol = provider[track]?.protocol
+  if (provider.id === 'custom-video' || protocol === 'custom_video_task') return true
+
+  const template = customTemplateFromOptions(options)
+  if (!hasCustomTemplateFields(template)) return false
+
+  if (provider.id === 'custom-image' || String(protocol || '').startsWith('custom_image_')) return true
+  return !resolveHandler(protocol)
+}
+
+function hasCustomTemplateFields(template) {
+  if (!template || typeof template !== 'object' || Array.isArray(template)) return Boolean(template)
+  return [...CUSTOM_TEMPLATE_FIELDS, ...CUSTOM_TEMPLATE_BODY_FIELDS].some(field => (
+    template[field] !== undefined && template[field] !== null && template[field] !== ''
+  ))
+}
+
+function validateCustomTemplate(template, errors, track = 'video') {
   if (!template || typeof template !== 'object') {
-    errors.push(error('CUSTOM_TEMPLATE_REQUIRED', 'template', 'Custom video API requires a submit/poll template.'))
+    errors.push(error('CUSTOM_TEMPLATE_REQUIRED', 'template', `Custom ${track} API requires a request template.`))
     return
   }
 
-  for (const field of ['submitPath', 'pollPath']) {
-    if (!firstText(template[field]).trim()) {
-      errors.push(error('CUSTOM_TEMPLATE_FIELD_REQUIRED', `template.${field}`, `${field} is required for custom video templates.`))
+  if (track === 'image') {
+    if (!firstText(template.path, template.submitPath).trim()) {
+      errors.push(error('CUSTOM_TEMPLATE_FIELD_REQUIRED', 'template.path', 'path or submitPath is required for custom image templates.'))
+    }
+  } else {
+    for (const field of ['submitPath', 'pollPath']) {
+      if (!firstText(template[field]).trim()) {
+        errors.push(error('CUSTOM_TEMPLATE_FIELD_REQUIRED', `template.${field}`, `${field} is required for custom video templates.`))
+      }
     }
   }
 
@@ -347,14 +381,20 @@ function validateCustomTemplate(template, errors) {
     }
   }
 
-  for (const field of ['taskIdPath', 'statusPath', 'videoUrlPath']) {
+  for (const field of ['pathPrefix', 'path', 'submitPath', 'pollPath']) {
+    if (templateTexts[field] !== undefined) {
+      validateTemplateApiPath(templateTexts[field], `template.${field}`, errors)
+    }
+  }
+
+  for (const field of ['taskIdPath', 'statusPath', 'videoUrlPath', 'progressPath', 'errorPath', 'imageUrlPath', 'responsePath']) {
     const value = template[field]
     if (!value) continue
     if (!isJsonPath(value)) {
       errors.push(error(
         'CUSTOM_TEMPLATE_JSONPATH_INVALID',
         `template.${field}`,
-        `${field} must be a simple JSONPath expression such as $.data.id.`
+        `${field} must be a simple response path such as data.id or $.data.id.`
       ))
     }
   }
@@ -433,6 +473,19 @@ function validateNoExecutableTemplate(value, field, errors) {
   }
 }
 
+function validateTemplateApiPath(value, field, errors) {
+  const text = firstText(value).trim()
+  if (!text) return
+  if (/^[A-Za-z][A-Za-z0-9+.-]*:/.test(text) || text.startsWith('//')) {
+    errors.push(error(
+      'CUSTOM_TEMPLATE_PATH_INVALID',
+      field,
+      `${field} must be a relative API path.`,
+      'Put the host in Base URL and keep template paths relative, for example /v1/images/generations.'
+    ))
+  }
+}
+
 function extractTemplateVariables(value) {
   const variables = []
   const re = /\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}|\$\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}|\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}/g
@@ -442,7 +495,7 @@ function extractTemplateVariables(value) {
 }
 
 function isJsonPath(value) {
-  return /^\$(?:\.[A-Za-z_][A-Za-z0-9_-]*|\[(?:\d+|'[^'\]]+'|"[^"\]]+")\])*$/.test(value)
+  return /^(?:\$\.?)?(?:[A-Za-z_][A-Za-z0-9_-]*|\[(?:\d+|'[^'\]]+'|"[^"\]]+")\])(?:\.[A-Za-z_][A-Za-z0-9_-]*|\[(?:\d+|'[^'\]]+'|"[^"\]]+")\])*$/.test(value)
 }
 
 function nearest(value, allowed) {

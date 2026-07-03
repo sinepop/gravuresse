@@ -12,7 +12,7 @@ const providerPipeline = require('./providers/pipeline')
 // Wire handler side-effects (registerHandler): must be required so the
 // HANDLER_MAP is populated before any provider:call / api:* dispatch.
 require('./providers')
-const { getProvider, getProvidersByAction } = require('./providers/registry')
+const { getProvider, getProvidersByAction, getModelCatalog, getProviderCallMode, getProviderSetupMode } = require('./providers/registry')
 const { resolveHandler } = require('./providers/handler')
 const { validateGenerationRequest } = require('./providers/validation')
 
@@ -40,8 +40,8 @@ const ALLOWED_PROVIDER_PAYLOAD_KEYS = [
   'negativePrompt', 'duration', 'sourceImageUrl', 'taskId', 'mode', 'generationMode'
 ]
 const STORED_PROVIDER_PAYLOAD_KEYS = [
-  'customAuth', 'authConfig', 'template', 'customTemplate', 'generationOptions',
-  'pathPrefix', 'path', 'submitPath', 'pollPath', 'taskIdPath', 'statusPath',
+  'authType', 'customAuth', 'authConfig', 'template', 'customTemplate', 'generationOptions',
+  'pathPrefix', 'modelListPath', 'modelsPath', 'path', 'submitPath', 'pollPath', 'taskIdPath', 'statusPath',
   'videoUrlPath', 'progressPath', 'errorPath', 'imageUrlPath', 'responsePath',
   'body', 'requestBody', 'submitBody', 'pollBody', 'method', 'submitMethod',
   'pollMethod', 'pollInterval'
@@ -51,11 +51,87 @@ function getStoredProvider(track) {
   return config.load().providers?.[track] || {}
 }
 
-function sameProviderEndpoint(track, a = {}, b = {}) {
-  return (
-    resolveProviderIdByTrack(track, a.id) === resolveProviderIdByTrack(track, b.id) &&
-    (a.baseUrl || '') === (b.baseUrl || '')
-  )
+function sameStoredProviderProfile(track, provider = {}, profile = {}) {
+  const providerId = resolveProviderIdByTrack(track, provider.providerId || provider.id)
+  const profileId = resolveProviderIdByTrack(track, profile.providerId || profile.id)
+  if (!providerId || providerId !== profileId) return false
+  if (provider.baseUrl && (provider.baseUrl || '') !== (profile.baseUrl || '')) return false
+  if (provider.model && (provider.model || '') !== (profile.model || '')) return false
+  return true
+}
+
+function findStoredProviderProfile(stored = {}, track, provider = {}) {
+  const profile = (stored.providerProfiles?.[track] || []).find(item => sameStoredProviderProfile(track, provider, item))
+  if (!profile) return null
+  return {
+    ...profile,
+    id: profile.providerId || profile.id,
+    baseUrl: profile.baseUrl || '',
+    model: profile.model || ''
+  }
+}
+
+function storedProviderForRequest(stored = {}, track, provider = {}) {
+  const activeProvider = stored.providers?.[track] || {}
+  const requestedId = resolveProviderIdByTrack(track, provider.providerId || provider.id || activeProvider.id)
+  const activeId = resolveProviderIdByTrack(track, activeProvider.id)
+  const activeMatches =
+    (!requestedId || requestedId === activeId) &&
+    (!provider.baseUrl || (provider.baseUrl || '') === (activeProvider.baseUrl || '')) &&
+    (!provider.model || (provider.model || '') === (activeProvider.model || ''))
+  if (activeMatches) return activeProvider
+  return findStoredProviderProfile(stored, track, { providerId: requestedId, baseUrl: provider.baseUrl, model: provider.model }) || {}
+}
+
+function cleanEndpoint(value) {
+  return String(value || '').trim().replace(/\/+$/, '')
+}
+
+function canUseStoredCredentials(track, candidate = {}, storedProvider = {}) {
+  const candidateId = candidate.id || candidate.providerId || storedProvider.id
+  const canonicalId = resolveProviderIdByTrack(track, candidateId)
+  if (!canonicalId || canonicalId !== resolveProviderIdByTrack(track, storedProvider.id)) return false
+  const candidateUrl = cleanEndpoint(candidate.baseUrl || defaultProviderBaseUrl(canonicalId))
+  const allowedUrl = cleanEndpoint(storedProvider.baseUrl || defaultProviderBaseUrl(canonicalId))
+  return Boolean(candidateUrl && allowedUrl && candidateUrl === allowedUrl)
+}
+
+function applyQueryParams(url, queryParams = {}) {
+  for (const [key, value] of Object.entries(queryParams || {})) {
+    if (value !== undefined && value !== null && value !== '') {
+      url.searchParams.set(key, String(value))
+    }
+  }
+  return url
+}
+
+function normalizeAuthType(type) {
+  return String(type || '').toLowerCase().replace(/_/g, '-')
+}
+
+function providerAuthType(providerDef = {}, current = {}, storedProvider = {}) {
+  const customType = normalizeAuthType(current.customAuth?.type || storedProvider.customAuth?.type)
+  if (customType) return customType
+  return normalizeAuthType(current.authType?.type || storedProvider.authType?.type || providerDef.authType?.type || 'bearer')
+}
+
+function providerRequiresCredential(providerDef = {}, current = {}, storedProvider = {}) {
+  return providerAuthType(providerDef, current, storedProvider) !== 'none'
+}
+
+function hasTemplatePath(providerConfig = {}, track) {
+  const template = providerConfig.template || providerConfig.customTemplate || {}
+  if (track === 'image') return Boolean(template.path || template.submitPath || providerConfig.path || providerConfig.submitPath)
+  if (track === 'video') return Boolean(template.submitPath || providerConfig.submitPath)
+  return false
+}
+
+function isTemplateConfigurableProvider(providerDef = {}, track) {
+  if (!['image', 'video'].includes(track) || !providerDef?.[track]) return false
+  if (resolveHandler(providerDef[track]?.protocol)) return false
+  const custom = providerDef.customizable?.[track] || providerDef.meta?.customizable?.[track] || {}
+  const caps = providerDef.capabilities?.[track] || providerDef.meta?.capabilities?.[track] || {}
+  return Boolean(custom.baseUrl || custom.model || custom.submitPath || caps.customBaseUrl || caps.customTemplate || caps.relay)
 }
 
 function realSecret(value) {
@@ -71,23 +147,33 @@ function credentialsFromProvider(storedProvider = {}, override = {}) {
 
 function getModelFetchProvider(provider = {}) {
   const track = inferProviderTrack(provider)
-  const stored = getStoredProvider(track)
+  const storedConfig = config.load()
+  const stored = storedProviderForRequest(storedConfig, track, provider)
   // SECURITY: never trust a renderer-supplied baseUrl — a compromised renderer
-  // could send a real API key with an attacker-controlled baseUrl and exfiltrate
-  // the credential. Same posture as provider:call: baseUrl always comes from the
-  // stored config (falling back to the provider default), the key is honored
-  // only when it isn't the redacted placeholder.
+  // could pair saved credentials with an attacker-controlled baseUrl and
+  // exfiltrate the credential. Newly typed plaintext credentials may be tested
+  // against the typed endpoint; saved/redacted credentials stay on the stored
+  // endpoint below.
   const providerId = provider.id || stored.id || ''
   const canonicalProviderId = resolveProviderIdByTrack(track, providerId)
-  const sameEndpoint = sameProviderEndpoint(track, { id: providerId, baseUrl: stored.baseUrl || '' }, stored)
-  const baseUrl = sameEndpoint ? stored.baseUrl || '' : defaultProviderBaseUrl(canonicalProviderId)
+  const providerDef = getProvider(canonicalProviderId)
+  const sameEndpoint = canUseStoredCredentials(track, { id: providerId, baseUrl: provider.baseUrl || stored.baseUrl || '' }, stored)
+  const hasRendererCredential = Boolean(realSecret(provider.apiKey) || realSecret(provider.sessionToken))
+  const baseUrl = hasRendererCredential && provider.baseUrl
+    ? provider.baseUrl
+    : sameEndpoint && stored.baseUrl
+      ? stored.baseUrl
+      : defaultProviderBaseUrl(canonicalProviderId)
   const rendererFields = {
     id: provider.id || stored.id,
     model: provider.model || stored.model,
     protocol: provider.protocol || stored.protocol,
-    format: provider.format || stored.format
+    format: provider.format || stored.format,
+    pathPrefix: provider.pathPrefix || stored.pathPrefix || providerDef?.[track]?.pathPrefix || providerDef?.pathPrefix,
+    modelListPath: provider.modelListPath || stored.modelListPath || stored.modelsPath || providerDef?.[track]?.modelListPath || providerDef?.modelListPath || providerDef?.[track]?.modelsPath || providerDef?.modelsPath,
+    authType: provider.authType || stored.authType || providerDef?.authType
   }
-  const credentials = credentialsFromProvider(sameEndpoint ? stored : {}, provider)
+  const credentials = credentialsFromProvider(!hasRendererCredential && sameEndpoint ? stored : {}, provider)
   return {
     ...stored,
     ...rendererFields,
@@ -407,10 +493,10 @@ ipcMain.handle('provider:call', async (_, params = {}) => {
     if (sessionResult) return sessionResult
   }
 
-  const providerConfig = stored.providers?.[track] || {}
+  const activeProviderConfig = stored.providers?.[track] || {}
   const requestedProviderId = resolveProviderIdByTrack(track, providerId)
   if (track === 'video' && action === 'poll') {
-    const storedProviderId = resolveProviderIdByTrack(track, providerConfig.id)
+    const storedProviderId = resolveProviderIdByTrack(track, activeProviderConfig.id)
     if (requestedProviderId && storedProviderId && requestedProviderId !== storedProviderId) {
       return {
         ok: false,
@@ -422,6 +508,25 @@ ipcMain.handle('provider:call', async (_, params = {}) => {
     }
   }
 
+  const activeProviderId = resolveProviderIdByTrack(track, activeProviderConfig.id)
+  const requestTargetsActiveProvider = !requestedProviderId || requestedProviderId === activeProviderId
+  const activeMatchesRequestedProfile = requestTargetsActiveProvider &&
+    (!params.baseUrl || (params.baseUrl || '') === (activeProviderConfig.baseUrl || '')) &&
+    (!params.model || (params.model || '') === (activeProviderConfig.model || ''))
+  const hasProfileSelector = Boolean(requestedProviderId && (params.baseUrl || params.model))
+  const requestedProfile = hasProfileSelector
+    ? findStoredProviderProfile(stored, track, { providerId: requestedProviderId, baseUrl: params.baseUrl, model: params.model })
+    : null
+  if (requestedProviderId && activeProviderId && !activeMatchesRequestedProfile && !requestedProfile) {
+    return {
+      ok: false,
+      error: {
+        code: 'PROVIDER_CONFIG_SYNC_PENDING',
+        message: 'The selected provider profile has not been saved yet. Wait a moment, then try again.'
+      }
+    }
+  }
+  const providerConfig = !activeMatchesRequestedProfile && requestedProfile ? requestedProfile : activeProviderConfig
   const canonicalProviderId = resolveProviderIdByTrack(track, providerConfig.id || providerId)
   const providerDef = getProvider(canonicalProviderId)
   if (!providerDef) {
@@ -430,12 +535,14 @@ ipcMain.handle('provider:call', async (_, params = {}) => {
   if (!providerDef[track]) {
     return { ok: false, error: { code: 'UNSUPPORTED_ACTION', message: `${canonicalProviderId} does not support ${track}` } }
   }
-  if (!resolveHandler(providerDef[track]?.protocol)) {
+  const hasNativeHandler = Boolean(resolveHandler(providerDef[track]?.protocol))
+  const canUseTemplateHandler = !hasNativeHandler && hasTemplatePath(providerConfig, track)
+  if (!hasNativeHandler && !canUseTemplateHandler) {
     return {
       ok: false,
       error: {
         code: 'PROVIDER_NOT_EXECUTABLE',
-        message: `${providerDef.name || canonicalProviderId} is listed for links and setup guidance, but this build does not include a direct ${track} handler yet. Use a Custom API entry for compatible relay endpoints.`
+        message: `${providerDef.name || canonicalProviderId} is listed for links and setup guidance, but this build does not include a direct ${track} handler yet. Configure request paths and JSON templates in Advanced, or use a Custom API entry for compatible relay endpoints.`
       }
     }
   }
@@ -494,24 +601,40 @@ ipcMain.handle('provider:call', async (_, params = {}) => {
 // List providers by action (for settings dropdown)
 ipcMain.handle('provider:list', async (_, action) => {
   const track = action || 'chat'
-  return getProvidersByAction(track).map(p => ({
-    id: p.id,
-    name: p.name,
-    platform: p.platform,
-    meta: p.meta,
-    links: p.links || p.meta?.links || {},
-    billing: p.billing || p.meta?.billing || { mode: 'unknown' },
-    capabilities: p.capabilities || p.meta?.capabilities || {},
-    constraints: p.constraints || p.meta?.constraints || {},
-    customizable: p.customizable || p.meta?.customizable || {},
-    defaultUrl: p.defaults?.baseUrl || '',
-    defaultModel: p[track]?.defaultModel || '',
-    protocol: p[track]?.protocol,
-    format: p[track]?.format,
-    polling: p[track]?.polling === true,
-    integrationStatus: p[track]?.integrationStatus || p.capabilities?.[track]?.integrationStatus || '',
-    executable: Boolean(resolveHandler(p[track]?.protocol))
-  }))
+  return getProvidersByAction(track).map(p => {
+    const nativeExecutable = Boolean(resolveHandler(p[track]?.protocol))
+    const templateExecutable = isTemplateConfigurableProvider(p, track)
+    const executable = nativeExecutable || templateExecutable
+    const integrationStatus = nativeExecutable
+      ? (p[track]?.integrationStatus || p.capabilities?.[track]?.integrationStatus || '')
+      : templateExecutable
+        ? 'custom-template'
+        : (p[track]?.integrationStatus || p.capabilities?.[track]?.integrationStatus || '')
+    return {
+      id: p.id,
+      name: p.name,
+      platform: p.platform,
+      meta: p.meta,
+      links: p.links || p.meta?.links || {},
+      billing: p.billing || p.meta?.billing || { mode: 'unknown' },
+      capabilities: p.capabilities || p.meta?.capabilities || {},
+      constraints: p.constraints || p.meta?.constraints || {},
+      customizable: p.customizable || p.meta?.customizable || {},
+      authType: p.authType || { type: 'bearer' },
+      defaultUrl: p.defaults?.baseUrl || '',
+      defaultModel: p[track]?.defaultModel || '',
+      pathPrefix: p[track]?.pathPrefix || p.pathPrefix || '',
+      modelListPath: p[track]?.modelListPath || p.modelListPath || p[track]?.modelsPath || p.modelsPath || '',
+      modelCatalog: getModelCatalog(p.id, track),
+      protocol: p[track]?.protocol,
+      format: p[track]?.format,
+      polling: p[track]?.polling === true,
+      integrationStatus,
+      executable,
+      callMode: templateExecutable && !nativeExecutable ? 'custom-api' : getProviderCallMode(p.id, track, executable),
+      setupMode: templateExecutable && !nativeExecutable ? 'custom-api' : getProviderSetupMode(p.id, track, executable)
+    }
+  })
 })
 
 // Test provider connection
@@ -519,25 +642,71 @@ ipcMain.handle('provider:test', async (_, params = {}) => {
   try {
     const stored = config.load()
     const track = params.track || inferProviderTrack({ id: params.providerId || params.id, protocol: params.protocol })
-    const storedProvider = stored.providers?.[track] || {}
+    const storedProvider = storedProviderForRequest(stored, track, {
+      providerId: params.providerId || params.id,
+      baseUrl: params.baseUrl,
+      model: params.model
+    })
     const providerId = resolveProviderIdByTrack(track, params.providerId || params.id || storedProvider.id)
     const providerDef = require('./providers/registry').getProvider(providerId)
     if (!providerDef) return { ok: false, message: 'Unknown provider' }
+    if (track === 'image' && params.testMode === 'image') {
+      const baseUrl = params.baseUrl || storedProvider.baseUrl || providerDef.defaults?.baseUrl || ''
+      if (!baseUrl) return { ok: false, message: 'Base URL is required for image testing.' }
+      const sameEndpoint = canUseStoredCredentials(track, { id: params.id || params.providerId || storedProvider.id, baseUrl }, storedProvider)
+      const credentials = credentialsFromProvider(sameEndpoint ? storedProvider : {}, {
+        apiKey: params.apiKey || params.credentials?.apiKey,
+        sessionToken: params.sessionToken || params.credentials?.sessionToken
+      })
+      if (!credentials.apiKey && !credentials.sessionToken) {
+        if (providerRequiresCredential(providerDef, params, storedProvider)) {
+          return { ok: false, message: 'Provider credentials are required for image testing.' }
+        }
+      }
+      const payload = {
+        action: 'generate',
+        providerId,
+        credentials,
+        baseUrl,
+        model: params.model || storedProvider.model || providerDef.image?.defaultModel,
+        prompt: params.prompt || 'A simple red square icon on a clean white background.',
+        ratio: params.ratio || '1:1',
+        resolution: params.resolution || '1024',
+        negative_prompt: params.negative_prompt || params.negativePrompt || '',
+        requestOptions: requestOptionsFromConfig(stored, { ...storedProvider, timeout: params.timeout || storedProvider.timeout })
+      }
+      for (const key of STORED_PROVIDER_PAYLOAD_KEYS) {
+        if (key in storedProvider) payload[key] = storedProvider[key]
+        if (key in params) payload[key] = params[key]
+      }
+      const result = await providerPipeline.execute(payload)
+      if (!result.ok) return { ok: false, message: result.error?.message || 'Image generation test failed' }
+      return { ok: true, message: 'Image generation succeeded', imageUrl: result.data }
+    }
     if (!providerDef.healthCheck) return { ok: true, message: 'No health check available' }
     // Use the user's configured endpoint (if any) so the test exercises the same
     // route real calls take — otherwise the key is sent to the hardcoded default
     // endpoint even on a user-configured proxy/relay, and the test result can
     // diverge from actual call success/failure.
-    const sameEndpoint = sameProviderEndpoint(track, { id: params.id || params.providerId || storedProvider.id, baseUrl: storedProvider.baseUrl || '' }, storedProvider)
-    const testBaseUrl = sameEndpoint ? storedProvider.baseUrl || providerDef.defaults.baseUrl : providerDef.defaults.baseUrl
-    const credentials = credentialsFromProvider(sameEndpoint ? storedProvider : {}, {
+    const requestedBaseUrl = params.baseUrl || storedProvider.baseUrl || providerDef.defaults.baseUrl
+    const sameEndpoint = canUseStoredCredentials(track, { id: params.id || params.providerId || storedProvider.id, baseUrl: requestedBaseUrl }, storedProvider)
+    const hasRendererCredential = Boolean(realSecret(params.apiKey || params.credentials?.apiKey) || realSecret(params.sessionToken || params.credentials?.sessionToken))
+    const testBaseUrl = hasRendererCredential && params.baseUrl
+      ? params.baseUrl
+      : sameEndpoint
+        ? requestedBaseUrl
+        : providerDef.defaults.baseUrl
+    const credentials = credentialsFromProvider(!hasRendererCredential && sameEndpoint ? storedProvider : {}, {
       apiKey: params.apiKey || params.credentials?.apiKey,
       sessionToken: params.sessionToken || params.credentials?.sessionToken
     })
     const { resolveAuth } = require('./providers/auth')
     const { request, joinApiUrl } = require('./api/http')
-    const auth = resolveAuth(providerDef, credentials)
-    const url = joinApiUrl(testBaseUrl, providerDef.healthCheck.url)
+    const auth = resolveAuth(providerDef, credentials, {
+      authType: params.authType || storedProvider.authType,
+      customAuth: params.customAuth || storedProvider.customAuth
+    })
+    const url = applyQueryParams(joinApiUrl(testBaseUrl, providerDef.healthCheck.url), auth.queryParams)
     await request(url, {
       method: providerDef.healthCheck.method,
       headers: { ...auth.headers, 'Content-Type': 'application/json' },
@@ -551,7 +720,11 @@ ipcMain.handle('provider:test', async (_, params = {}) => {
 
 ipcMain.handle('api:models', (_, provider) => {
   const stored = config.load()
-  return modelsApi.fetch({ ...getModelFetchProvider(provider), requestOptions: requestOptionsFromConfig(stored) })
+  return modelsApi.fetch({
+    ...getModelFetchProvider(provider),
+    reportErrors: provider?.reportErrors === true,
+    requestOptions: requestOptionsFromConfig(stored)
+  })
 })
 
 // Map the user-facing stored provider id (e.g. 'claude', 'dalle', 'jimeng_vid')

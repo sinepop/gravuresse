@@ -3,6 +3,7 @@ import { CHAT_PROVIDERS } from '../providers/chatProviders'
 import { IMG_PROVIDERS } from '../providers/imageProviders'
 import { VID_PROVIDERS } from '../providers/videoProviders'
 import { PROVIDER_ID_ALIASES } from '../providers/aliases'
+import { createProviderClearPatch, createProviderProfilePatch, createProviderSelectionPatch, firstProviderModel, providerNeedsTemplatePaths, providerTemplatePathStatus, providerTemplatePresets } from '../utils/providerConfig.js'
 import { t } from '../i18n'
 import Ic from './icons'
 
@@ -36,6 +37,7 @@ const LINK_BUTTONS = [
 ]
 
 const DOMESTIC_PROVIDER_ORDER = [
+  'custom-image',
   'volcengine',
   'alibaba-wan',
   'baidu-qianfan',
@@ -70,6 +72,9 @@ const MAINSTREAM_PROVIDER_IDS = {
     'claude-plans'
   ],
   image: [
+    'custom-image',
+    'custom-image-gemini',
+    'custom-image-ark',
     'openai',
     'google',
     'volcengine',
@@ -82,6 +87,7 @@ const MAINSTREAM_PROVIDER_IDS = {
     'siliconflow'
   ],
   video: [
+    'custom-video',
     'volcengine',
     'alibaba-wan',
     'runway',
@@ -431,8 +437,8 @@ function isExecutableProvider(provider) {
 function providerInfo(provider = {}, track) {
   const base = FALLBACK_PROVIDER_METADATA[provider.id] || {}
   const trackMeta = TRACK_PROVIDER_METADATA[track]?.[provider.id] || {}
-  const capabilities = provider.capabilities?.[track] || provider.meta?.capabilities?.[track] || trackMeta.capabilities?.[track] || {}
-  const customizable = provider.customizable?.[track] || provider.meta?.customizable?.[track] || trackMeta.customizable?.[track] || {}
+  const capabilities = provider.capabilities?.[track] || provider.meta?.capabilities?.[track] || trackMeta.capabilities?.[track] || provider.capabilities || {}
+  const customizable = provider.customizable?.[track] || provider.meta?.customizable?.[track] || trackMeta.customizable?.[track] || provider.customizable || {}
   const billing = provider.billing || provider.meta?.billing || trackMeta.billing || base.billing || { mode: 'unknown' }
   return {
     links: { ...(base.links || {}), ...(trackMeta.links || {}), ...(provider.meta?.links || {}), ...(provider.links || {}) },
@@ -502,13 +508,8 @@ function sortProvidersForWorkbench(providers, track) {
   return sortProvidersForTrack(providers, track)
 }
 
-function filterMainstreamProviders(providers, track, currentId) {
-  const allowed = new Set(MAINSTREAM_PROVIDER_IDS[track] || [])
-  const currentKey = canonicalProviderKey(track, currentId)
-  return providers.filter(provider => {
-    const key = canonicalProviderKey(track, provider.id)
-    return allowed.has(key) || key === currentKey
-  })
+function providerPoolForTrack(providers) {
+  return providers
 }
 
 function providerCategoryRank(provider, track) {
@@ -528,8 +529,8 @@ function sortProvidersForTrack(providers, track, current = {}) {
   const order = MAINSTREAM_PROVIDER_IDS[track] || []
   return [...providers].map((provider, index) => ({ provider, index, info: providerInfo(provider, track) }))
     .sort((a, b) => {
-      const aConfigured = currentMatchesProvider(track, current, a.provider) && hasCredential(current)
-      const bConfigured = currentMatchesProvider(track, current, b.provider) && hasCredential(current)
+      const aConfigured = currentMatchesProvider(track, current, a.provider) && providerCredentialReady(a.provider, current)
+      const bConfigured = currentMatchesProvider(track, current, b.provider) && providerCredentialReady(b.provider, current)
       const aExecutable = isExecutableProvider(a.provider)
       const bExecutable = isExecutableProvider(b.provider)
       const aKey = canonicalProviderKey(track, a.provider.id)
@@ -557,6 +558,29 @@ function billingLabel(mode, lang) {
   if (mode === 'credits') return t('billingCredits', lang)
   if (mode === 'subscription') return t('billingSubscription', lang)
   return t('billingUnknown', lang)
+}
+
+function callModeLabel(mode, lang) {
+  if (mode === 'direct-api') return t('callModeDirectApi', lang)
+  if (mode === 'custom-api') return t('callModeCustomApi', lang)
+  if (mode === 'subscription-reference') return t('callModeSubscriptionReference', lang)
+  return t('callModeReference', lang)
+}
+
+function setupModeLabel(mode, lang) {
+  if (mode === 'api-key') return t('setupModeApiKey', lang)
+  if (mode === 'api-key-or-session') return t('setupModeApiKeyOrSession', lang)
+  if (mode === 'custom-api') return t('setupModeCustomApi', lang)
+  if (mode === 'subscription-reference') return t('setupModeSubscriptionReference', lang)
+  if (mode === 'no-auth') return t('setupModeNoAuth', lang)
+  return t('setupModeReference', lang)
+}
+
+function callModeDescription(provider = {}, lang) {
+  if (provider.callMode === 'direct-api') return t('callModeDirectApiDesc', lang)
+  if (provider.callMode === 'custom-api') return t('callModeCustomApiDesc', lang)
+  if (provider.callMode === 'subscription-reference') return t('callModeSubscriptionReferenceDesc', lang)
+  return t('callModeReferenceDesc', lang)
 }
 
 function capabilityLabels(caps, track, lang) {
@@ -622,8 +646,49 @@ function currentMatchesProvider(track, current = {}, provider) {
   return canonicalProviderKey(track, current.id) === canonicalProviderKey(track, provider.id)
 }
 
-function hasCredential(current = {}) {
-  return current.customAuth?.type === 'session' ? Boolean(current.sessionToken) : Boolean(current.apiKey)
+function normalizeAuthType(type) {
+  return String(type || '').toLowerCase().replace(/_/g, '-')
+}
+
+function providerAuthConfig(provider = {}, current = {}) {
+  const customType = normalizeAuthType(current.customAuth?.type)
+  if (customType) return { ...(current.customAuth || {}), type: customType }
+  const currentType = normalizeAuthType(current.authType?.type)
+  if (currentType) return { ...(current.authType || {}), type: currentType }
+  const providerType = normalizeAuthType(provider?.authType?.type)
+  if (providerType) return { ...(provider.authType || {}), type: providerType }
+  return { type: 'bearer' }
+}
+
+function providerRequiresCredential(provider = {}, current = {}) {
+  return providerAuthConfig(provider, current).type !== 'none'
+}
+
+function providerUsesSession(provider = {}, current = {}) {
+  return providerAuthConfig(provider, current).type === 'session'
+}
+
+function providerCredentialReady(provider = {}, current = {}) {
+  if (!providerRequiresCredential(provider, current)) return Boolean(provider?.id || current?.id)
+  return providerUsesSession(provider, current) ? Boolean(current.sessionToken) : Boolean(current.apiKey)
+}
+
+function authDescription(provider = {}, current = {}, lang) {
+  const auth = providerAuthConfig(provider, current)
+  const name = auth.sessionHeaderName || auth.headerName || auth.paramName || auth.key || ''
+  if (auth.type === 'none') return t('authProviderNone', lang)
+  if (auth.type === 'session') return t('authProviderSession', lang).replace('{name}', name || 'X-Session-Token')
+  if (auth.type === 'query') return t('authProviderQuery', lang).replace('{name}', name || 'key')
+  if (auth.type === 'header' || auth.type === 'api-key' || auth.type === 'apikey') return t('authProviderHeader', lang).replace('{name}', name || 'x-api-key')
+  return t('authProviderBearer', lang)
+}
+
+function isModelEndpointUnsupportedError(error) {
+  const message = String(error?.message || '').toLowerCase()
+  return /\b(404|405|501)\b/.test(message) ||
+    message.includes('not found') ||
+    message.includes('method not allowed') ||
+    message.includes('not supported')
 }
 
 function profileKey(track, profile = {}) {
@@ -640,23 +705,10 @@ function profileMatchesProvider(track, profile = {}, provider) {
   return canonicalProviderKey(track, profile.providerId) === canonicalProviderKey(track, provider.id)
 }
 
-function profileToProviderPatch(profile = {}) {
-  return {
-    id: profile.providerId,
-    apiKey: profile.apiKey || '',
-    sessionToken: profile.sessionToken || '',
-    baseUrl: profile.baseUrl || '',
-    model: profile.model || '',
-    protocol: profile.protocol,
-    format: profile.format,
-    customAuth: profile.customAuth || {},
-    template: profile.template,
-    pathPrefix: profile.pathPrefix || '',
-    timeout: profile.timeout || '',
-    pollInterval: profile.pollInterval || '',
-    defaultNegPrompt: profile.defaultNegPrompt || '',
-    customSystemPrompt: profile.customSystemPrompt || ''
-  }
+function profileDisplayName(track, profile = {}, providers = [], lang) {
+  const provider = providers.find(item => profileMatchesProvider(track, profile, item))
+  const name = provider ? providerDisplayName(provider, lang, track) : profile.name || profile.providerId || profile.id || ''
+  return [name, profile.model].filter(Boolean).join(' · ')
 }
 
 function ProviderCard({ track, provider, selected, onSelect, lang }) {
@@ -688,7 +740,7 @@ function ProviderCard({ track, provider, selected, onSelect, lang }) {
           <div style={{ marginTop: 2, color: 'var(--text-muted)', fontSize: 10 }}>{provider.platform} · {regionLabel(info.region, lang)}</div>
         </div>
         <button
-          onClick={() => onSelect(provider)}
+          onClick={() => { if (executable) onSelect(provider) }}
           title={executable ? t('provider', lang) : t('viewMaterials', lang)}
           style={{
             ...btnS(false),
@@ -704,7 +756,8 @@ function ProviderCard({ track, provider, selected, onSelect, lang }) {
       {description && <div style={{ color: 'var(--text-secondary)', fontSize: 11, lineHeight: 1.45 }}>{description}</div>}
 
       <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-        <span style={chipS(executable ? 'var(--success)' : 'var(--text-muted)')}>{executable ? t('directCallable', lang) : t('metadataOnly', lang)}</span>
+        <span style={chipS(executable ? 'var(--success)' : 'var(--text-muted)')}>{callModeLabel(provider.callMode, lang)}</span>
+        <span style={chipS(executable ? 'var(--accent)' : 'var(--text-muted)')}>{setupModeLabel(provider.setupMode, lang)}</span>
         <span style={billingChipS(info.billing?.mode, track)}>{billingLabel(info.billing?.mode, lang)}</span>
         <span style={chipS(info.relay || templatePreset ? 'var(--success)' : 'var(--text-muted)')}>
           {templatePreset ? t('templatePreset', lang) : info.relay ? t('relaySupported', lang) : t('relayOfficialOnly', lang)}
@@ -766,32 +819,92 @@ function ProviderWorkbench({ track, providers, selectedProviderId, onSelect, lan
   )
 }
 
-function CustomApiFields({ track, provider, current, onChange, lang }) {
+function CustomApiFields({ track, provider, current, onChange, lang, showAuthMode = true }) {
   const info = providerInfo(provider, track)
   const isCustom = provider?.platform === 'Custom' || provider?.id?.startsWith('custom-')
-  if (!isCustom && !info.capabilities?.customTemplate && !info.capabilities?.customBaseUrl) return null
+  const usesTemplateSetup = provider?.setupMode === 'custom-api' || provider?.callMode === 'custom-api' || provider?.integrationStatus === 'custom-template'
+  if (!isCustom && !usesTemplateSetup && !info.capabilities?.customTemplate && !info.capabilities?.customBaseUrl) return null
 
   const customAuth = current.customAuth || {}
   const template = current.template || current.customTemplate || {}
+  const templatePresets = providerTemplatePresets(track, provider)
   const patchAuth = (patch) => onChange(track, { customAuth: { ...customAuth, ...patch } })
   const patchTemplate = (patch) => onChange(track, { template: { ...template, ...patch } })
+  const applyTemplatePreset = (preset) => {
+    onChange(track, { template: { ...template, ...preset.template } })
+  }
+  const templateText = (value) => {
+    if (value == null || value === '') return ''
+    if (typeof value === 'string') return value
+    try { return JSON.stringify(value, null, 2) } catch { return '' }
+  }
+  const bodyAliasPatch = (key, value) => {
+    if (key === 'requestBody') return { requestBody: value, body: '', submitBody: '' }
+    if (key === 'submitBody') return { submitBody: value, body: '', requestBody: '' }
+    return { [key]: value }
+  }
+  const patchJsonTemplate = (key, value) => {
+    const text = String(value || '').trim()
+    if (!text) {
+      patchTemplate(bodyAliasPatch(key, ''))
+      return
+    }
+    try {
+      patchTemplate(bodyAliasPatch(key, JSON.parse(text)))
+    } catch {
+      patchTemplate(bodyAliasPatch(key, value))
+    }
+  }
+  const methodSelect = (value, onSelect) => (
+    <select value={value || ''} onChange={e => onSelect(e.target.value)} style={selectS()}>
+      <option value="">{t('defaultValue', lang)}</option>
+      <option value="GET">GET</option>
+      <option value="POST">POST</option>
+      <option value="PUT">PUT</option>
+      <option value="PATCH">PATCH</option>
+    </select>
+  )
+  const patchRequestMethod = (value) => patchTemplate({ method: value, submitMethod: '' })
+  const patchSubmitMethod = (value) => patchTemplate({ submitMethod: value, method: '' })
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <label style={labelS()}>
-        {t('authMode', lang)}
-        <select value={customAuth.type || ''} onChange={e => patchAuth(e.target.value ? { type: e.target.value } : { type: '' })} style={selectS()}>
-          <option value="">{t('authBearer', lang)}</option>
-          <option value="bearer">{t('authBearer', lang)}</option>
-          <option value="api-key">{t('authApiKey', lang)}</option>
-          <option value="header">{t('authHeader', lang)}</option>
-          <option value="session">{t('authSession', lang)}</option>
-        </select>
-      </label>
+      {templatePresets.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div style={{ color: 'var(--text-muted)', fontSize: 11 }}>{t('templatePresets', lang)}</div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {templatePresets.map(preset => (
+              <button key={preset.id} onClick={() => applyTemplatePreset(preset)} style={{ ...btnS(false), padding: '6px 9px', fontSize: 11 }}>
+                {t(preset.labelKey, lang)}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      {showAuthMode && (
+        <label style={labelS()}>
+          {t('authMode', lang)}
+          <select value={customAuth.type || ''} onChange={e => patchAuth(e.target.value ? { type: e.target.value } : { type: '' })} style={selectS()}>
+            <option value="">{t('authBearer', lang)}</option>
+            <option value="bearer">{t('authBearer', lang)}</option>
+            <option value="api-key">{t('authApiKey', lang)}</option>
+            <option value="header">{t('authHeader', lang)}</option>
+            <option value="query">{t('authQuery', lang)}</option>
+            <option value="session">{t('authSession', lang)}</option>
+            <option value="none">{t('authNone', lang)}</option>
+          </select>
+        </label>
+      )}
       {(customAuth.type === 'api-key' || customAuth.type === 'header') && (
         <label style={labelS()}>
           {t('headerName', lang)}
           <input type="text" value={customAuth.headerName || customAuth.key || ''} placeholder="x-api-key" onChange={e => patchAuth({ headerName: e.target.value })} style={inputS()} />
+        </label>
+      )}
+      {customAuth.type === 'query' && (
+        <label style={labelS()}>
+          {t('queryName', lang)}
+          <input type="text" value={customAuth.paramName || customAuth.key || ''} placeholder="key" onChange={e => patchAuth({ paramName: e.target.value })} style={inputS()} />
         </label>
       )}
       {customAuth.type === 'session' && (
@@ -800,10 +913,26 @@ function CustomApiFields({ track, provider, current, onChange, lang }) {
           <input type="text" value={customAuth.sessionHeaderName || customAuth.headerName || customAuth.key || ''} placeholder="X-Session-Token" onChange={e => patchAuth({ sessionHeaderName: e.target.value })} style={inputS()} />
         </label>
       )}
-      <label style={labelS()}>
-        {t('pathPrefix', lang)}
-        <input type="text" value={current.pathPrefix || ''} placeholder="/v1" onChange={e => onChange(track, { pathPrefix: e.target.value })} style={inputS()} />
-      </label>
+      {track === 'image' && (
+        <>
+          <label style={labelS()}>
+            {t('requestMethod', lang)}
+            {methodSelect(template.method || template.submitMethod, patchRequestMethod)}
+          </label>
+          <label style={labelS()}>
+            {t('imageSubmitPath', lang)}
+            <input type="text" value={template.path || template.submitPath || ''} placeholder="/v1/images/generations" onChange={e => patchTemplate({ path: e.target.value })} style={inputS()} />
+          </label>
+          <label style={labelS()}>
+            {t('requestBody', lang)}
+            <textarea value={templateText(template.requestBody || template.body || template.submitBody)} placeholder='{"model":"{model}","prompt":"{prompt}"}' onChange={e => patchJsonTemplate('requestBody', e.target.value)} style={{ ...inputS(), minHeight: 92, resize: 'vertical', fontFamily: 'var(--font-mono)', fontSize: 11 }} />
+          </label>
+          <label style={labelS()}>
+            {t('imageResponsePath', lang)}
+            <input type="text" value={template.imageUrlPath || template.responsePath || ''} placeholder="data[0].b64_json / data[0].url" onChange={e => patchTemplate({ imageUrlPath: e.target.value })} style={inputS()} />
+          </label>
+        </>
+      )}
       <label style={labelS()}>
         {t('requestTimeout', lang)}
         <input type="number" min="1000" step="1000" value={current.timeout || ''} placeholder="60000" onChange={e => onChange(track, { timeout: e.target.value ? Number(e.target.value) : '' })} style={inputS()} />
@@ -819,8 +948,24 @@ function CustomApiFields({ track, provider, current, onChange, lang }) {
             <input type="text" value={template.submitPath || ''} placeholder="/v1/videos" onChange={e => patchTemplate({ submitPath: e.target.value })} style={inputS()} />
           </label>
           <label style={labelS()}>
+            {t('submitMethod', lang)}
+            {methodSelect(template.submitMethod || template.method, patchSubmitMethod)}
+          </label>
+          <label style={labelS()}>
+            {t('submitBody', lang)}
+            <textarea value={templateText(template.submitBody || template.body || template.requestBody)} placeholder='{"model":"{model}","prompt":"{prompt}","image_url":"{sourceImageUrl}"}' onChange={e => patchJsonTemplate('submitBody', e.target.value)} style={{ ...inputS(), minHeight: 92, resize: 'vertical', fontFamily: 'var(--font-mono)', fontSize: 11 }} />
+          </label>
+          <label style={labelS()}>
             {t('pollPath', lang)}
             <input type="text" value={template.pollPath || ''} placeholder="/v1/videos/{taskId}" onChange={e => patchTemplate({ pollPath: e.target.value })} style={inputS()} />
+          </label>
+          <label style={labelS()}>
+            {t('pollMethod', lang)}
+            {methodSelect(template.pollMethod, value => patchTemplate({ pollMethod: value }))}
+          </label>
+          <label style={labelS()}>
+            {t('pollBody', lang)}
+            <textarea value={templateText(template.pollBody)} placeholder='{"task_id":"{taskId}"}' onChange={e => patchJsonTemplate('pollBody', e.target.value)} style={{ ...inputS(), minHeight: 78, resize: 'vertical', fontFamily: 'var(--font-mono)', fontSize: 11 }} />
           </label>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <label style={labelS()}>
@@ -845,7 +990,7 @@ function CustomApiFields({ track, provider, current, onChange, lang }) {
 /* ── ProviderTab ── */
 function TrackStatusPanel({ track, provider, current, lang }) {
   const info = providerInfo(provider, track)
-  const configured = hasCredential(current)
+  const configured = providerCredentialReady(provider, current)
   const model = current.model || provider?.defaultModel || t('noConfig', lang)
   return (
     <div style={{
@@ -868,6 +1013,7 @@ function TrackStatusPanel({ track, provider, current, lang }) {
       </div>
       <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start' }}>
         <span style={chipS(configured ? 'var(--success)' : 'var(--text-muted)')}>{configured ? t('configured', lang) : t('notConfigured', lang)}</span>
+        <span style={chipS(provider?.executable === false || provider?.integrationStatus === 'metadata' ? 'var(--text-muted)' : 'var(--success)')}>{callModeLabel(provider?.callMode, lang)}</span>
         <span style={billingChipS(info.billing?.mode, track)}>{billingLabel(info.billing?.mode, lang)}</span>
         <div style={{ maxWidth: '100%', color: 'var(--text-muted)', fontSize: 10, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{model}</div>
       </div>
@@ -921,6 +1067,13 @@ function NonExecutableInfoCard({ provider, track, lang }) {
           {localizedDescription(info, lang)}
         </div>
       )}
+      <div style={{ color: 'var(--text-secondary)', fontSize: 11, lineHeight: 1.5 }}>
+        {callModeDescription(provider, lang)}
+      </div>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        <span style={chipS('var(--text-muted)')}>{callModeLabel(provider.callMode, lang)}</span>
+        <span style={chipS('var(--text-muted)')}>{setupModeLabel(provider.setupMode, lang)}</span>
+      </div>
       {linkButtons.length > 0 && (
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           {linkButtons.map(button => (
@@ -940,9 +1093,82 @@ function NonExecutableInfoCard({ provider, track, lang }) {
   )
 }
 
+function CurrentProviderLinks({ provider, track, lang }) {
+  const info = providerInfo(provider, track)
+  const priorityKeys = ['apiKey', 'console', 'purchase', 'docs']
+  const links = priorityKeys
+    .map(key => LINK_BUTTONS.find(button => button.key === key))
+    .filter(button => button && info.links?.[button.key])
+  if (links.length === 0) return null
+  return (
+    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+      {links.map(button => (
+        <button key={button.key} onClick={() => openExternal(info.links[button.key])}
+          style={{ ...btnS(false), padding: '6px 9px', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+          <Ic n={button.icon} size={11} />{t(button.labelKey, lang)}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function ReadinessItem({ ready, label, detail }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 7, minWidth: 0 }}>
+      <span style={{
+        width: 16, height: 16, flex: '0 0 16px', borderRadius: '50%',
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+        background: ready ? 'var(--success-soft)' : 'var(--bg-surface)',
+        color: ready ? 'var(--success)' : 'var(--text-muted)',
+        border: `1px solid ${ready ? 'var(--success-soft)' : 'var(--border-subtle)'}`,
+        fontSize: 10, lineHeight: 1
+      }}>{ready ? '✓' : '!'}</span>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ color: 'var(--text-primary)', fontSize: 11, fontWeight: 600 }}>{label}</div>
+        <div style={{ color: 'var(--text-muted)', fontSize: 10, lineHeight: 1.4, overflow: 'hidden', textOverflow: 'ellipsis' }}>{detail}</div>
+      </div>
+    </div>
+  )
+}
+
+function ProviderReadiness({ items, onApplyRecommended, canApplyRecommended, lang }) {
+  return (
+    <div style={{
+      border: '1px solid var(--border-subtle)',
+      borderRadius: 'var(--radius-sm)',
+      background: 'var(--bg-elevated)',
+      padding: 10,
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 9
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ color: 'var(--text-primary)', fontSize: 12, fontWeight: 700 }}>{t('setupChecklist', lang)}</div>
+          <div style={{ color: 'var(--text-muted)', fontSize: 10, marginTop: 2 }}>{t('setupChecklistHint', lang)}</div>
+        </div>
+        {canApplyRecommended && (
+          <button onClick={onApplyRecommended} style={{ ...btnS(false), padding: '6px 9px', fontSize: 11 }}>
+            {t('applyRecommendedConfig', lang)}
+          </button>
+        )}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 9 }}>
+        {items.map(item => <ReadinessItem key={item.key} ready={item.ready} label={item.label} detail={item.detail} />)}
+      </div>
+    </div>
+  )
+}
+
 function ProviderTab({ track, providers, config, onChange, lang }) {
   const current = config?.providers?.[track] || {}
-  const allVisibleProviders = sortProvidersForTrack(filterMainstreamProviders(providers, track, current.id), track, current)
+  const allVisibleProviders = sortProvidersForTrack(providerPoolForTrack(providers), track, current)
+  const savedProfiles = (config?.providerProfiles?.[track] || [])
+    .filter(profile => {
+      const profileProvider = providers.find(item => profileMatchesProvider(track, profile, item))
+      return isExecutableProvider(profileProvider) && providerCredentialReady(profileProvider, profile) && profile.model
+    })
+    .filter(profile => allVisibleProviders.some(provider => profileMatchesProvider(track, profile, provider)))
   const currentProvider = allVisibleProviders.find(p => currentMatchesProvider(track, current, p))
   const currentBillingGroup = currentProvider ? billingGroup(currentProvider, track) : 'usage'
   const [billingView, setBillingView] = useState(currentBillingGroup)
@@ -953,81 +1179,239 @@ function ProviderTab({ track, providers, config, onChange, lang }) {
     usage: allVisibleProviders.filter(p => billingGroup(p, track) === 'usage').length,
     subscription: allVisibleProviders.filter(p => billingGroup(p, track) === 'subscription').length
   }
+  const providerSelectOptions = allVisibleProviders.filter(isExecutableProvider)
   const visibleProviders = allVisibleProviders.filter(p => billingGroup(p, track) === billingView)
   const selectableProviders = visibleProviders.filter(isExecutableProvider)
   const selectable = selectableProviders.length ? selectableProviders : visibleProviders
   const selectedProviderId = resolveProviderId(track, current.id, selectable)
   const provider = visibleProviders.find(p => p.id === selectedProviderId) || selectable[0] || allVisibleProviders[0]
+  const info = providerInfo(provider, track)
+  const authOptions = Array.isArray(info.customizable?.auth) ? info.customizable.auth : []
+  const showMainAuthMode = provider?.platform === 'Custom' || authOptions.length > 1 || Boolean(current.customAuth?.type)
   const apiKeyRedacted = current.apiKey === REDACTED_API_KEY
   const apiKeyValue = apiKeyRedacted ? '' : current.apiKey || ''
-  const usesSessionAuth = current.customAuth?.type === 'session'
+  const usesSessionAuth = providerUsesSession(provider, current)
   const sessionTokenRedacted = current.sessionToken === REDACTED_API_KEY
   const sessionTokenValue = sessionTokenRedacted ? '' : current.sessionToken || ''
-  const hasCredential = usesSessionAuth ? Boolean(current.sessionToken) : Boolean(current.apiKey)
+  const currentProviderId = current.id || ''
+  const currentApiKey = current.apiKey || ''
+  const currentSessionToken = current.sessionToken || ''
+  const currentModel = current.model || ''
+  const currentCustomAuth = current.customAuth || {}
+  const currentAuthType = current.authType || provider?.authType || {}
+  const currentCustomAuthSignature = JSON.stringify(currentCustomAuth)
+  const currentAuthTypeSignature = JSON.stringify(currentAuthType)
+  const credentialRequired = providerRequiresCredential(provider, current)
+  const credentialReady = providerCredentialReady(provider, current)
+  const authHint = authDescription(provider, current, lang)
+  const credentialLabel = t('credential', lang)
   const [testing, setTesting] = useState(false)
+  const [imageTesting, setImageTesting] = useState(false)
   const [testResult, setTestResult] = useState(null)
   const [models, setModels] = useState([])
   const [loadingModels, setLoadingModels] = useState(false)
+  const [modelFetchResult, setModelFetchResult] = useState(null)
   const [showAdvanced, setShowAdvanced] = useState(false)
   const fetchTimeout = useRef(null)
+  const modelFetchSeq = useRef(0)
+  const isCustomImageRelay = track === 'image' && provider?.id === 'custom-image'
+  const showMainBaseUrl = true
+  const modelOptions = useMemo(() => {
+    const items = [
+      current.model,
+      provider?.defaultModel,
+      ...(Array.isArray(provider?.modelCatalog) ? provider.modelCatalog : []),
+      ...(isCustomImageRelay ? ['gpt-image-2'] : []),
+      ...(Array.isArray(models) ? models.map(item => item?.id) : [])
+    ].filter(Boolean)
+    return Array.from(new Set(items))
+  }, [current.model, provider?.defaultModel, provider?.modelCatalog, isCustomImageRelay, models])
+  const recommendedModel = firstProviderModel(provider) || current.model || ''
+  const effectiveBaseUrl = current.baseUrl || provider?.defaultUrl || ''
+  const effectivePathPrefix = current.pathPrefix || provider?.pathPrefix || ''
+  const effectiveModelListPath = current.modelListPath || provider?.modelListPath || provider?.modelsPath || ''
+  const endpointReady = Boolean(effectiveBaseUrl)
+  const modelReady = Boolean(current.model || recommendedModel)
+  const templatePathsRequired = providerNeedsTemplatePaths(track, provider)
+  const templatePathStatus = providerTemplatePathStatus(track, current)
+  const canApplyRecommended = Boolean((provider?.defaultUrl && current.baseUrl !== provider.defaultUrl) || (recommendedModel && current.model !== recommendedModel))
+  const readinessItems = [
+    {
+      key: 'credential',
+      ready: credentialReady,
+      label: t('setupCredential', lang),
+      detail: credentialRequired ? authHint : t('authProviderNone', lang)
+    },
+    {
+      key: 'endpoint',
+      ready: endpointReady,
+      label: t('setupEndpoint', lang),
+      detail: effectiveBaseUrl || t('missingBaseUrl', lang)
+    },
+    {
+      key: 'model',
+      ready: modelReady,
+      label: t('setupModel', lang),
+      detail: current.model || recommendedModel || t('missingModel', lang)
+    }
+  ].concat(templatePathsRequired ? [{
+    key: 'templatePaths',
+    ready: templatePathStatus.ready,
+    label: t('setupTemplatePaths', lang),
+    detail: templatePathStatus.detail || t(track === 'image' ? 'missingImagePath' : 'missingVideoPaths', lang)
+  }] : [])
+
+  useEffect(() => {
+    if (templatePathsRequired && !templatePathStatus.ready) setShowAdvanced(true)
+  }, [currentProviderId, templatePathsRequired, templatePathStatus.ready])
 
   const fetchModelList = useCallback(async () => {
-    if (!hasCredential || !current.baseUrl) { setModels([]); return }
+    const requestId = ++modelFetchSeq.current
+    if (!credentialReady || !effectiveBaseUrl) { setModels([]); setModelFetchResult(null); return }
     setLoadingModels(true)
+    setModelFetchResult(null)
     try {
       const list = await window.electronAPI.fetchModels({
-        ...current,
+        apiKey: currentApiKey,
+        sessionToken: currentSessionToken,
+        customAuth: currentCustomAuth,
+        baseUrl: effectiveBaseUrl,
         id: selectedProviderId,
         track,
         format: provider?.format,
         protocol: provider?.protocol,
-        model: current.model || provider?.defaultModel
+        authType: currentAuthType,
+        pathPrefix: effectivePathPrefix,
+        modelListPath: effectiveModelListPath,
+        model: currentModel || recommendedModel,
+        reportErrors: true
       })
-      setModels(list || [])
-      if (list?.length > 0 && !current.model) {
-        onChange(track, { model: list[0].id })
+      if (requestId !== modelFetchSeq.current) return
+      const nextModels = Array.isArray(list) ? list : []
+      setModels(nextModels)
+      setModelFetchResult({
+        ok: nextModels.length > 0,
+        warning: nextModels.length === 0,
+        msg: nextModels.length > 0 ? `${t('modelFetchSuccess', lang)} ${nextModels.length}` : t('modelListEmpty', lang)
+      })
+      if (nextModels.length > 0 && !currentModel) {
+        onChange(track, { model: nextModels[0].id })
       }
-    } catch { setModels([]) }
-    finally { setLoadingModels(false) }
-  }, [current, hasCredential, provider?.defaultModel, provider?.format, provider?.protocol, selectedProviderId, onChange, track])
+    } catch (error) {
+      if (requestId !== modelFetchSeq.current) return
+      setModels([])
+      if (isModelEndpointUnsupportedError(error) && modelOptions.length > 0) {
+        if (!currentModel && recommendedModel) onChange(track, { model: recommendedModel })
+        setModelFetchResult({ ok: false, warning: true, msg: t('modelFetchUnsupported', lang) })
+        return
+      }
+      setModelFetchResult({ ok: false, msg: error.message ? `${t('modelFetchFailed', lang)}: ${error.message}` : t('modelFetchFailed', lang) })
+    } finally {
+      if (requestId === modelFetchSeq.current) setLoadingModels(false)
+    }
+  }, [currentApiKey, currentSessionToken, currentCustomAuth, currentAuthType, currentModel, currentProviderId, effectivePathPrefix, effectiveModelListPath, credentialReady, effectiveBaseUrl, modelOptions, recommendedModel, provider?.defaultModel, provider?.format, provider?.protocol, selectedProviderId, onChange, track, lang])
 
   useEffect(() => {
-    if (hasCredential && current.baseUrl) {
-      clearTimeout(fetchTimeout.current)
+    clearTimeout(fetchTimeout.current)
+    if (credentialReady && effectiveBaseUrl) {
       fetchTimeout.current = setTimeout(fetchModelList, 600)
+    } else {
+      modelFetchSeq.current += 1
+      setLoadingModels(false)
+      setModels([])
+      setModelFetchResult(null)
     }
     return () => clearTimeout(fetchTimeout.current)
-  }, [current.id, current.apiKey, current.sessionToken, current.baseUrl, hasCredential, fetchModelList])
+  }, [currentProviderId, currentApiKey, currentSessionToken, currentCustomAuthSignature, currentAuthTypeSignature, effectivePathPrefix, effectiveModelListPath, selectedProviderId, effectiveBaseUrl, credentialReady])
 
   const handleTest = async () => {
     setTesting(true); setTestResult(null)
     try {
       const params = {
         ...current,
+        baseUrl: effectiveBaseUrl,
         id: selectedProviderId,
         providerId: selectedProviderId,
         track,
         format: provider?.format,
         protocol: provider?.protocol,
-        model: current.model || provider?.defaultModel
+        authType: currentAuthType,
+        customAuth: currentCustomAuth,
+        pathPrefix: effectivePathPrefix,
+        modelListPath: effectiveModelListPath,
+        model: current.model || recommendedModel,
+        reportErrors: true
       }
       const test = await window.electronAPI.providerAPI?.test?.(params)
       if (test && test.ok === false) {
         setTestResult({ ok: false, msg: test.message || t('testFail', lang) })
         return
       }
+      modelFetchSeq.current += 1
       const list = await window.electronAPI.fetchModels(params)
-      setModels(list || [])
-      setTestResult({ ok: true, count: list?.length || 0 })
-    } catch (e) { setTestResult({ ok: false, msg: e.message }) }
+      const nextModels = Array.isArray(list) ? list : []
+      setModels(nextModels)
+      setModelFetchResult({
+        ok: nextModels.length > 0,
+        warning: nextModels.length === 0,
+        msg: nextModels.length > 0 ? `${t('modelFetchSuccess', lang)} ${nextModels.length}` : t('modelListEmpty', lang)
+      })
+      setTestResult({
+        ok: true,
+        warning: nextModels.length === 0,
+        msg: nextModels.length > 0 ? `${t('testSuccess', lang)} ${nextModels.length} ${t('models', lang)}` : t('modelListEmpty', lang)
+      })
+    } catch (e) {
+      const fallbackAvailable = isModelEndpointUnsupportedError(e) && modelOptions.length > 0
+      const msg = fallbackAvailable
+        ? t('modelFetchUnsupported', lang)
+        : e.message ? `${t('modelFetchFailed', lang)}: ${e.message}` : t('modelFetchFailed', lang)
+      if (fallbackAvailable && !currentModel && recommendedModel) onChange(track, { model: recommendedModel })
+      setModels([])
+      setModelFetchResult({ ok: false, warning: fallbackAvailable, msg })
+      setTestResult({ ok: fallbackAvailable, warning: fallbackAvailable, msg })
+    }
     finally { setTesting(false) }
+  }
+
+  const handleImageTest = async () => {
+    setImageTesting(true); setTestResult(null)
+    try {
+      const params = {
+        ...current,
+        baseUrl: effectiveBaseUrl,
+        id: selectedProviderId,
+        providerId: selectedProviderId,
+        track,
+        testMode: 'image',
+        format: provider?.format,
+        protocol: provider?.protocol,
+        authType: currentAuthType,
+        customAuth: currentCustomAuth,
+        pathPrefix: effectivePathPrefix,
+        modelListPath: effectiveModelListPath,
+        model: current.model || recommendedModel,
+        prompt: 'A simple red square icon on a clean white background.',
+        ratio: '1:1',
+        resolution: '1024'
+      }
+      const test = await window.electronAPI.providerAPI?.test?.(params)
+      if (!test || test.ok === false) {
+        setTestResult({ ok: false, msg: test?.message || t('testFail', lang) })
+        return
+      }
+      setTestResult({ ok: true, msg: t('imageTestSuccess', lang), imageUrl: test.imageUrl })
+    } catch (e) { setTestResult({ ok: false, msg: e.message }) }
+    finally { setImageTesting(false) }
   }
 
   const handleClear = () => {
     if (window.confirm(t('clearConfirm', lang))) {
-      onChange(track, { apiKey: '', sessionToken: '', customAuth: {}, baseUrl: '', model: '' })
+      onChange(track, createProviderClearPatch())
+      modelFetchSeq.current += 1
       setModels([])
       setTestResult(null)
+      setModelFetchResult(null)
     }
   }
 
@@ -1035,10 +1419,29 @@ function ProviderTab({ track, providers, config, onChange, lang }) {
     if (provider?.defaultUrl) onChange(track, { baseUrl: provider.defaultUrl })
   }
 
+  const handleApplyRecommended = () => {
+    const patch = {}
+    if (provider?.defaultUrl) patch.baseUrl = provider.defaultUrl
+    if (recommendedModel) patch.model = recommendedModel
+    if (Object.keys(patch).length > 0) onChange(track, patch)
+  }
+
   const selectProvider = (p) => {
-    onChange(track, { id: p.id, apiKey: '', sessionToken: '', customAuth: {}, baseUrl: p.defaultUrl || '', model: p.defaultModel || '', protocol: p.protocol, format: p.format })
+    onChange(track, createProviderSelectionPatch(p, track))
+    modelFetchSeq.current += 1
     setModels([])
     setTestResult(null)
+    setModelFetchResult(null)
+  }
+
+  const selectProfile = (profile) => {
+    const providerForProfile = allVisibleProviders.find(item => profileMatchesProvider(track, profile, item))
+    if (providerForProfile) setBillingView(billingGroup(providerForProfile, track))
+    onChange(track, createProviderProfilePatch(profile))
+    modelFetchSeq.current += 1
+    setModels([])
+    setTestResult(null)
+    setModelFetchResult(null)
   }
 
   return (
@@ -1048,6 +1451,49 @@ function ProviderTab({ track, providers, config, onChange, lang }) {
       {/* ── Provider Selection ── */}
       <SectionHeading labelKey="switchProvider" lang={lang} />
       <div style={{ color: 'var(--text-muted)', fontSize: 11, lineHeight: 1.5 }}>{t('switchProviderHint', lang)}</div>
+      {savedProfiles.length > 0 && (
+        <label style={labelS()}>
+          {t('savedProfiles', lang)}
+          <select
+            value=""
+            onChange={e => {
+              const profile = savedProfiles.find(item => (item.profileId || profileKey(track, item)) === e.target.value)
+              if (profile) selectProfile(profile)
+            }}
+            style={selectS()}
+          >
+            <option value="">{t('selectSavedProfile', lang)}</option>
+            {savedProfiles.map(profile => {
+              const key = profile.profileId || profileKey(track, profile)
+              return <option key={key} value={key}>{profileDisplayName(track, profile, allVisibleProviders, lang)}</option>
+            })}
+          </select>
+        </label>
+      )}
+      <label style={labelS()}>
+        {t('provider', lang)}
+        <select
+          value={isExecutableProvider(provider) ? selectedProviderId || '' : ''}
+          onChange={e => {
+            const nextProvider = allVisibleProviders.find(p => p.id === e.target.value)
+            if (!nextProvider) return
+            setBillingView(billingGroup(nextProvider, track))
+            selectProvider(nextProvider)
+          }}
+          style={selectS()}
+          disabled={providerSelectOptions.length === 0}
+        >
+          <option value="">{t('selectProvider', lang)}</option>
+          {providerSelectOptions.map(p => {
+            const info = providerInfo(p, track)
+            return (
+              <option key={p.id} value={p.id}>
+                {providerDisplayName(p, lang, track)} · {p.platform} · {billingLabel(info.billing?.mode, lang)}
+              </option>
+            )
+          })}
+        </select>
+      </label>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         {['usage', 'subscription'].map(mode => {
           const active = billingView === mode
@@ -1069,47 +1515,128 @@ function ProviderTab({ track, providers, config, onChange, lang }) {
       ) : (
         <>
           <SectionHeading labelKey="currentProviderConfig" lang={lang} />
-          <label style={labelS()}>
-            {t('apiKey', lang)}
-            <input type="password" value={apiKeyValue} placeholder={apiKeyRedacted ? t('configuredPlaceholder', lang) : 'sk-...'} onChange={e => onChange(track, { apiKey: e.target.value })} style={inputS()} />
-          </label>
-          {usesSessionAuth && (
+          <CurrentProviderLinks provider={provider} track={track} lang={lang} />
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            <span style={chipS('var(--success)')}>{callModeLabel(provider.callMode, lang)}</span>
+            <span style={chipS('var(--accent)')}>{setupModeLabel(provider.setupMode, lang)}</span>
+          </div>
+          <div style={{ color: 'var(--text-muted)', fontSize: 11, lineHeight: 1.5 }}>
+            {callModeDescription(provider, lang)}
+          </div>
+          <ProviderReadiness
+            items={readinessItems}
+            onApplyRecommended={handleApplyRecommended}
+            canApplyRecommended={canApplyRecommended}
+            lang={lang}
+          />
+          {showMainAuthMode && (
+            <label style={labelS()}>
+              {t('authMode', lang)}
+              <select
+                value={current.customAuth?.type || ''}
+                onChange={e => onChange(track, { customAuth: { ...(current.customAuth || {}), type: e.target.value } })}
+                style={selectS()}
+              >
+                <option value="">{t('authBearer', lang)}</option>
+                <option value="bearer">{t('authBearer', lang)}</option>
+                <option value="api-key">{t('authApiKey', lang)}</option>
+                <option value="header">{t('authHeader', lang)}</option>
+                <option value="query">{t('authQuery', lang)}</option>
+                <option value="session">{t('authSession', lang)}</option>
+                <option value="none">{t('authNone', lang)}</option>
+              </select>
+            </label>
+          )}
+          {!credentialRequired && (
+            <div style={{ color: 'var(--text-muted)', fontSize: 11, lineHeight: 1.5 }}>
+              {authHint}
+            </div>
+          )}
+          {!usesSessionAuth && credentialRequired && (
+            <label style={labelS()}>
+              {credentialLabel}
+              <input type="password" value={apiKeyValue} placeholder={apiKeyRedacted ? t('configuredPlaceholder', lang) : t('credentialPlaceholder', lang)} onChange={e => onChange(track, { apiKey: e.target.value })} style={inputS()} />
+              <span style={{ color: 'var(--text-muted)', fontSize: 11, lineHeight: 1.4 }}>{authHint}</span>
+            </label>
+          )}
+          {usesSessionAuth && credentialRequired && (
             <label style={labelS()}>
               {t('sessionToken', lang)}
               <input type="password" value={sessionTokenValue} placeholder={sessionTokenRedacted ? t('configuredPlaceholder', lang) : 'sess-...'} onChange={e => onChange(track, { sessionToken: e.target.value })} style={inputS()} />
+              <span style={{ color: 'var(--text-muted)', fontSize: 11, lineHeight: 1.4 }}>{authHint}</span>
+            </label>
+          )}
+          {showMainBaseUrl && (
+            <label style={labelS()}>
+              <span>{t('baseUrl', lang)}<PresetBadge show={current.baseUrl === provider?.defaultUrl && Boolean(provider?.defaultUrl)} lang={lang} /></span>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <input type="text" value={current.baseUrl || ''} placeholder={provider?.defaultUrl || 'https://api.example.com'} onChange={e => onChange(track, { baseUrl: e.target.value })} style={{ ...inputS(), flex: 1 }} />
+                <button onClick={handleRestoreUrl} title={t('restoreDefault', lang)} style={{ padding: '7px 10px', background: 'var(--bg-surface)', border: '1px solid var(--border-default)', borderRadius: 'var(--radius-sm)', color: 'var(--text-muted)', fontSize: 11, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'var(--font-body)' }}>
+                  <Ic n="refresh" size={12} />
+                </button>
+              </div>
             </label>
           )}
           <label style={labelS()}>
-            <span>{t('baseUrl', lang)} <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>({t('optional', lang)})</span><PresetBadge show={current.baseUrl === provider?.defaultUrl && Boolean(provider?.defaultUrl)} lang={lang} /></span>
-            <div style={{ display: 'flex', gap: 6 }}>
-              <input type="text" value={current.baseUrl || ''} placeholder={provider?.defaultUrl || ''} onChange={e => onChange(track, { baseUrl: e.target.value })} style={{ ...inputS(), flex: 1 }} />
-              <button onClick={handleRestoreUrl} title={t('restoreDefault', lang)} style={{ padding: '7px 10px', background: 'var(--bg-surface)', border: '1px solid var(--border-default)', borderRadius: 'var(--radius-sm)', color: 'var(--text-muted)', fontSize: 11, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'var(--font-body)' }}>
-                <Ic n="refresh" size={12} />
-              </button>
-            </div>
-          </label>
-          <label style={labelS()}>
             <span>{t('model', lang)}<PresetBadge show={current.model === provider?.defaultModel && Boolean(provider?.defaultModel)} lang={lang} /></span>
-            {models.length > 0 ? (
-              <select value={current.model || ''} onChange={e => onChange(track, { model: e.target.value })} style={selectS()}>
-                {models.map(m => <option key={m.id} value={m.id}>{m.id}</option>)}
-              </select>
-            ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                <input type="text" value={current.model || ''} placeholder={provider?.defaultModel || ''} onChange={e => onChange(track, { model: e.target.value })} style={{ ...inputS(), flex: 1 }} />
-                {loadingModels && <span style={{ fontSize: 11, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>...</span>}
+                {modelOptions.length > 0 ? (
+                  <select value={current.model || recommendedModel || ''} onChange={e => onChange(track, { model: e.target.value })} style={{ ...selectS(), flex: 1 }}>
+                    {modelOptions.map(model => <option key={model} value={model}>{model}</option>)}
+                  </select>
+                ) : (
+                  <input type="text" value={current.model || ''} placeholder={provider?.defaultModel || ''} onChange={e => onChange(track, { model: e.target.value })} style={{ ...inputS(), flex: 1 }} />
+                )}
+                <button
+                  onClick={fetchModelList}
+                  disabled={loadingModels || !credentialReady || !effectiveBaseUrl}
+                  title={t('refreshModels', lang)}
+                  style={{ ...btnS(false), padding: '8px 10px', opacity: loadingModels || !credentialReady || !effectiveBaseUrl ? 0.45 : 1 }}
+                >
+                  {loadingModels ? '...' : <Ic n="refresh" size={12} />}
+                </button>
               </div>
+              {modelOptions.length > 0 && (
+                <input
+                  type="text"
+                  value={current.model || ''}
+                  placeholder={`${t('manualModel', lang)}: ${provider?.defaultModel || ''}`}
+                  onChange={e => onChange(track, { model: e.target.value })}
+                  style={inputS()}
+                />
+              )}
+            </div>
+            <span style={{ color: 'var(--text-muted)', fontSize: 11, lineHeight: 1.4 }}>{t('modelCatalogHint', lang)}</span>
+            {modelFetchResult && (
+              <span style={{ color: modelFetchResult.ok ? 'var(--success)' : modelFetchResult.warning ? 'var(--text-muted)' : 'var(--danger)', fontSize: 11, lineHeight: 1.4 }}>
+                {modelFetchResult.ok ? '✓ ' : modelFetchResult.warning ? '! ' : '✗ '}{modelFetchResult.msg}
+              </span>
             )}
           </label>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <button onClick={handleTest} disabled={testing || !hasCredential} style={{ ...btnS(false), opacity: !hasCredential ? 0.4 : 1 }}>
+            <button onClick={handleTest} disabled={testing || !credentialReady} style={{ ...btnS(false), opacity: !credentialReady ? 0.4 : 1 }}>
               {testing ? t('testing', lang) : t('connectTest', lang)}
             </button>
+            {track === 'image' && (
+              <button onClick={handleImageTest} disabled={imageTesting || !credentialReady} style={{ ...btnS(false), opacity: !credentialReady ? 0.4 : 1 }}>
+                {imageTesting ? t('testing', lang) : t('imageGenTest', lang)}
+              </button>
+            )}
             <button onClick={handleClear} style={{ ...btnS(false), color: 'var(--danger)' }}>
               {t('clearConfig', lang)}
             </button>
           </div>
-          {testResult && <div style={{ fontSize: 12, color: testResult.ok ? 'var(--success)' : 'var(--danger)', fontFamily: 'var(--font-body)' }}>{testResult.ok ? `✓ ${t('testSuccess', lang)} ${testResult.count} ${t('models', lang)}` : `✗ ${testResult.msg}`}</div>}
+          {testResult && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ fontSize: 12, color: testResult.ok ? (testResult.warning ? 'var(--text-muted)' : 'var(--success)') : 'var(--danger)', fontFamily: 'var(--font-body)' }}>
+                {testResult.ok ? `${testResult.warning ? '!' : '✓'} ${testResult.msg || t('connectionReady', lang)}` : `✗ ${testResult.msg}`}
+              </div>
+              {testResult.imageUrl && (
+                <img src={testResult.imageUrl} alt="" style={{ width: 96, height: 96, objectFit: 'cover', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-default)' }} />
+              )}
+            </div>
+          )}
         </>
       )}
 
@@ -1118,6 +1645,17 @@ function ProviderTab({ track, providers, config, onChange, lang }) {
         <details open={showAdvanced} onToggle={e => setShowAdvanced(e.target.open)}>
           <summary style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', cursor: 'pointer', fontFamily: 'var(--font-body)', userSelect: 'none' }}>{t('advanced', lang)}</summary>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginTop: 10, borderLeft: '2px solid var(--border-subtle)', marginLeft: 4, paddingLeft: 12 }}>
+            {!showMainBaseUrl && (
+              <label style={labelS()}>
+                <span>{t('baseUrl', lang)} <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>({t('optional', lang)})</span><PresetBadge show={current.baseUrl === provider?.defaultUrl && Boolean(provider?.defaultUrl)} lang={lang} /></span>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <input type="text" value={current.baseUrl || ''} placeholder={provider?.defaultUrl || ''} onChange={e => onChange(track, { baseUrl: e.target.value })} style={{ ...inputS(), flex: 1 }} />
+                  <button onClick={handleRestoreUrl} title={t('restoreDefault', lang)} style={{ padding: '7px 10px', background: 'var(--bg-surface)', border: '1px solid var(--border-default)', borderRadius: 'var(--radius-sm)', color: 'var(--text-muted)', fontSize: 11, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'var(--font-body)' }}>
+                    <Ic n="refresh" size={12} />
+                  </button>
+                </div>
+              </label>
+            )}
             {track === 'chat' && (
               <label style={labelS()}>
                 {t('customSystemPrompt', lang)}
@@ -1130,7 +1668,15 @@ function ProviderTab({ track, providers, config, onChange, lang }) {
                 <input type="text" value={current.defaultNegPrompt || ''} placeholder={t('defaultNegPromptPh', lang)} onChange={e => onChange(track, { defaultNegPrompt: e.target.value })} style={inputS()} />
               </label>
             )}
-            <CustomApiFields track={track} provider={provider} current={current} onChange={onChange} lang={lang} />
+            <label style={labelS()}>
+              {t('pathPrefix', lang)}
+              <input type="text" value={current.pathPrefix || ''} placeholder={provider?.pathPrefix || '/v1'} onChange={e => onChange(track, { pathPrefix: e.target.value })} style={inputS()} />
+            </label>
+            <label style={labelS()}>
+              {t('modelListPath', lang)}
+              <input type="text" value={current.modelListPath || ''} placeholder={provider?.modelListPath || provider?.modelsPath || '/models'} onChange={e => onChange(track, { modelListPath: e.target.value })} style={inputS()} />
+            </label>
+            <CustomApiFields track={track} provider={provider} current={current} onChange={onChange} lang={lang} showAuthMode={!showMainAuthMode} />
           </div>
         </details>
       )}
@@ -1255,6 +1801,8 @@ export default function Settings({ config, providerLists, onSave, onClose, initi
   const [page, setPage] = useState(() => normalizeSettingsPage(initialPage, config?.general?.enableVideo === true))
   const [local, setLocal] = useState(config)
   const [expanded, setExpanded] = useState({ general: true, api: true })
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
   useEffect(() => { if (config) setLocal(config) }, [config])
   useEffect(() => {
     if (initialPage) setPage(normalizeSettingsPage(initialPage, local?.general?.enableVideo === true))
@@ -1266,10 +1814,10 @@ export default function Settings({ config, providerLists, onSave, onClose, initi
 
   // Escape key to close
   useEffect(() => {
-    const handler = (e) => { if (e.key === 'Escape') onClose() }
+    const handler = (e) => { if (e.key === 'Escape' && !saving) onClose() }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [onClose])
+  }, [onClose, saving])
 
   const lang = local?.general?.language || 'zh'
   const providers = {
@@ -1280,27 +1828,39 @@ export default function Settings({ config, providerLists, onSave, onClose, initi
 
   const handleChange = (track, patch) => {
     if (!local) return
+    if (saveError) setSaveError('')
     if (track === 'general') setLocal(prev => ({ ...prev, general: { ...prev.general, ...patch } }))
     else if (track === 'providerProfiles') setLocal(prev => ({ ...prev, providerProfiles: { ...prev.providerProfiles, ...patch } }))
     else if (track === '_deletedProfileKeys') setLocal(prev => ({ ...prev, _deletedProfileKeys: patch }))
     else setLocal(prev => ({ ...prev, providers: { ...prev.providers, [track]: { ...prev.providers[track], ...patch } } }))
   }
 
-  const handleSave = () => { if (local) { onSave(local); onClose() } }
+  const handleSave = async () => {
+    if (!local || saving) return
+    setSaving(true)
+    try {
+      await onSave(local)
+      onClose()
+    } catch (err) {
+      console.error('Failed to save settings:', err)
+      setSaveError(t('saveFailed', lang))
+      setSaving(false)
+    }
+  }
 
   if (!local) return null
   const videoApiEnabled = local?.general?.enableVideo === true
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--overlay-dark)', backdropFilter: 'blur(4px)' }} onClick={onClose}>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--overlay-dark)', backdropFilter: 'blur(4px)' }} onClick={() => { if (!saving) onClose() }}>
       <div onClick={e => e.stopPropagation()} style={{ width: 860, maxWidth: '92vw', maxHeight: '84vh', background: 'var(--bg-primary)', border: '1px solid var(--border-default)', borderRadius: 'var(--radius-lg)', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: 'var(--shadow-lg)', fontFamily: 'var(--font-body)', animation: 'scaleIn 0.2s ease' }}>
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid var(--border-subtle)' }}>
           <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)' }}>{t('settings', lang)}</span>
-          <button onClick={onClose} style={{
+          <button onClick={() => { if (!saving) onClose() }} disabled={saving} style={{
             background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer',
             padding: 6, display: 'flex', alignItems: 'center', justifyContent: 'center',
-            borderRadius: 'var(--radius-sm)', transition: 'all 0.15s ease'
+            borderRadius: 'var(--radius-sm)', transition: 'all 0.15s ease', opacity: saving ? 0.5 : 1
           }}
           onMouseEnter={e => { e.currentTarget.style.background = 'var(--danger-soft)'; e.currentTarget.style.color = 'var(--danger)' }}
           onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--text-muted)' }}
@@ -1337,15 +1897,20 @@ export default function Settings({ config, providerLists, onSave, onClose, initi
           </div>
         </div>
         {/* Footer */}
-        <div style={{ padding: '14px 20px', borderTop: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-          <button onClick={onClose} style={btnS(false)}
+        <div style={{ padding: '14px 20px', borderTop: '1px solid var(--border-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+          <div style={{ flex: 1, color: 'var(--danger)', fontSize: 12, minHeight: 18 }}>
+            {saveError}
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+          <button onClick={() => { if (!saving) onClose() }} disabled={saving} style={{ ...btnS(false), opacity: saving ? 0.5 : 1 }}
           onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg-hover)'; e.currentTarget.style.borderColor = 'var(--border-accent)' }}
           onMouseLeave={e => { e.currentTarget.style.background = 'var(--bg-surface)'; e.currentTarget.style.borderColor = 'var(--border-default)' }}
           >{t('cancel', lang)}</button>
-          <button onClick={handleSave} style={btnS(true)}
+          <button onClick={handleSave} disabled={saving} style={{ ...btnS(true), opacity: saving ? 0.7 : 1 }}
           onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = 'var(--shadow-accent), inset 0 1px 0 rgba(255,255,255,0.2)' }}
           onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = btnS(true).boxShadow }}
-          >{t('save', lang)}</button>
+          >{saving ? t('saving', lang) : t('save', lang)}</button>
+          </div>
         </div>
       </div>
     </div>
