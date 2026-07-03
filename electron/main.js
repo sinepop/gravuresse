@@ -11,6 +11,8 @@ const { assertHttpsUrl, downloadToFile } = require('./api/http')
 const providerPipeline = require('./providers/pipeline')
 const { buildProviderImageTestPayload } = require('./providers/image-test')
 const { sanitizeConversationImportPayload } = require('./security/sanitize')
+const { registerWindowIpc } = require('./ipc/window')
+const { registerConfigIpc } = require('./ipc/config')
 // Wire handler side-effects (registerHandler): must be required so the
 // HANDLER_MAP is populated before any provider:call / api:* dispatch.
 require('./providers')
@@ -48,10 +50,6 @@ const STORED_PROVIDER_PAYLOAD_KEYS = [
   'body', 'requestBody', 'submitBody', 'pollBody', 'method', 'submitMethod',
   'pollMethod', 'pollInterval'
 ]
-
-function getStoredProvider(track) {
-  return config.load().providers?.[track] || {}
-}
 
 function sameStoredProviderProfile(track, provider = {}, profile = {}) {
   const providerId = resolveProviderIdByTrack(track, provider.providerId || provider.id)
@@ -151,7 +149,7 @@ function getModelFetchProvider(provider = {}) {
   const track = inferProviderTrack(provider)
   const storedConfig = config.load()
   const stored = storedProviderForRequest(storedConfig, track, provider)
-  // SECURITY: never trust a renderer-supplied baseUrl — a compromised renderer
+  // SECURITY: never trust a renderer-supplied baseUrl; a compromised renderer
   // could pair saved credentials with an attacker-controlled baseUrl and
   // exfiltrate the credential. Newly typed plaintext credentials may be tested
   // against the typed endpoint; saved/redacted credentials stay on the stored
@@ -375,23 +373,8 @@ function isAppUrl(url) {
   }
 }
 
-ipcMain.on('window-minimize', () => mainWindow?.minimize())
-ipcMain.on('window-maximize', () => {
-  if (!mainWindow) return
-  mainWindow.isMaximized() ? mainWindow.unmaximize() : mainWindow.maximize()
-})
-ipcMain.on('window-close', () => mainWindow?.close())
-ipcMain.handle('window-is-maximized', () => mainWindow?.isMaximized() ?? false)
-
-ipcMain.handle('config:get', () => config.redactApiKeys(config.load()))
-ipcMain.handle('config:save', async (_, cfg) => {
-  const allowedKeys = Object.keys(config.DEFAULT_CONFIG)
-  const filtered = {}
-  for (const key of allowedKeys) {
-    if (key in cfg) filtered[key] = cfg[key]
-  }
-  await config.save(config.mergeRedactedApiKeys(filtered, config.load()))
-})
+registerWindowIpc({ ipcMain, getMainWindow: () => mainWindow })
+registerConfigIpc({ ipcMain, config })
 
 ipcMain.handle('history:get', () => store.loadAll())
 ipcMain.handle('history:save', (_, records) => store.saveAllQueued(records))
@@ -484,8 +467,7 @@ ipcMain.handle('conv:import', async () => {
   return { canceled: false, data }
 })
 
-// Unified provider call
-ipcMain.handle('provider:call', async (_, params = {}) => {
+async function executeProviderCall(params = {}) {
   const stored = config.load()
   const { providerId, action } = params
   const track = action === 'chat' ? 'chat' : action === 'generate' ? 'image' : 'video'
@@ -552,7 +534,7 @@ ipcMain.handle('provider:call', async (_, params = {}) => {
   if (!baseUrl) {
     return { ok: false, error: { code: 'PRECHECK_FAILED', message: 'Base URL is required for this provider.' } }
   }
-  // SECURITY: never trust a renderer-supplied baseUrl — a compromised renderer
+  // SECURITY: never trust a renderer-supplied baseUrl; a compromised renderer
   // could redirect credentials to an attacker host. Source baseUrl only from the
   // stored config (which holds the user's legitimate custom/proxy endpoint).
   const credentials = credentialsFromProvider(providerConfig)
@@ -598,7 +580,10 @@ ipcMain.handle('provider:call', async (_, params = {}) => {
     })
   }
   return result
-})
+}
+
+// Unified provider call
+ipcMain.handle('provider:call', async (_, params = {}) => executeProviderCall(params))
 
 // List providers by action (for settings dropdown)
 ipcMain.handle('provider:list', async (_, action) => {
@@ -661,7 +646,7 @@ ipcMain.handle('provider:test', async (_, params = {}) => {
     }
     if (!providerDef.healthCheck) return { ok: true, message: 'No health check available' }
     // Use the user's configured endpoint (if any) so the test exercises the same
-    // route real calls take — otherwise the key is sent to the hardcoded default
+    // route real calls take; otherwise the key is sent to the hardcoded default
     // endpoint even on a user-configured proxy/relay, and the test result can
     // diverge from actual call success/failure.
     const requestedBaseUrl = params.baseUrl || storedProvider.baseUrl || providerDef.defaults.baseUrl
@@ -707,7 +692,7 @@ ipcMain.handle('api:models', (_, provider) => {
 // to the canonical registry id (e.g. 'anthropic', 'openai', 'volcengine').
 // Mirrors PROVIDER_ID_ALIASES used on the renderer side so legacy direct-API
 // channels receive a providerId the pipeline can resolve.
-// Reuses the canonical aliases from config.js — single source of truth on the
+// Reuses the canonical aliases from config.js as the single source of truth on the
 // main-process side.
 const { PROVIDER_ID_ALIASES } = config
 function resolveProviderIdByTrack(track, id) {
@@ -772,118 +757,59 @@ async function pollVideoWithSession(taskId, override = {}) {
   return result
 }
 
-// Convenience credentials pulled from stored config for a track.
-function trackCredentials(track, override = {}) {
-  const stored = config.load().providers?.[track] || {}
-  return credentialsFromProvider(stored, override)
-}
-
-// SECURITY: baseUrl for a track always comes from the user's stored config, never
-// from the renderer payload — otherwise a compromised renderer could redirect the
-// API key to an attacker host (SSRF/credential exfil). Falls back to the
-// provider's default when the user has not configured a custom endpoint.
-function storedBaseUrl(track, providerId) {
-  const stored = config.load().providers?.[track] || {}
-  if (stored.baseUrl) return stored.baseUrl
-  const def = require('./providers/registry').getProvider(providerId)
-  return def?.defaults?.baseUrl || ''
-}
-
-// Legacy direct API channels — kept functional by routing them through the
+// Legacy direct API channels, kept functional by routing them through the
 // unified pipeline. The renderer reaches these only through the preload helpers
 // (chat/generateImage/generateVideo/pollVideoTask); the new pipeline path
 // (provider:call) is preferred, but these must not be left without handlers or
 // ipcRenderer.invoke would hang forever.
 ipcMain.handle('api:chat', async (_, messages, provider) => {
-  const track = 'chat'
-  const providerId = resolveProviderIdByTrack(track, provider?.id)
-  const result = await providerPipeline.execute({
-    action: 'chat', providerId,
-    credentials: trackCredentials(track, provider),
+  const result = await executeProviderCall({
+    action: 'chat',
+    providerId: provider?.id,
     messages: (messages?.history || messages || []).map(m => ({ role: m.role, content: m.content })),
     system: messages?.system || provider?.system || '',
     thinking: messages?.thinking || provider?.thinking || false,
     model: provider?.model,
-    baseUrl: storedBaseUrl(track, providerId),
-    requestOptions: requestOptionsFromConfig()
+    baseUrl: provider?.baseUrl
   })
   if (!result.ok) throw new Error(result.error?.message || 'Chat failed')
   return result.data
 })
 
 ipcMain.handle('api:image', async (_, params) => {
-  const track = 'image'
-  const providerId = resolveProviderIdByTrack(track, params?.id)
-  const result = await providerPipeline.execute({
-    action: 'generate', providerId,
-    credentials: trackCredentials(track, params),
+  const result = await executeProviderCall({
+    action: 'generate',
+    providerId: params?.id,
     prompt: params?.prompt, ratio: params?.ratio, resolution: params?.resolution,
     negative_prompt: params?.negative_prompt,
     model: params?.model,
-    baseUrl: storedBaseUrl(track, providerId),
-    requestOptions: requestOptionsFromConfig()
+    baseUrl: params?.baseUrl
   })
   if (!result.ok) throw new Error(result.error?.message || 'Image generation failed')
   return result.data // url string
 })
 
 ipcMain.handle('api:video', async (_, params) => {
-  const track = 'video'
-  const stored = config.load()
-  const providerConfig = stored.providers?.[track] || {}
-  const providerId = resolveProviderIdByTrack(track, params?.id)
-  const payload = {
-    action: 'submit', providerId,
-    credentials: trackCredentials(track, params),
+  const result = await executeProviderCall({
+    action: 'submit',
+    providerId: params?.id,
     prompt: params?.prompt, ratio: params?.ratio, duration: params?.duration,
     sourceImageUrl: params?.sourceImageUrl,
     model: params?.model,
-    baseUrl: storedBaseUrl(track, providerId),
-    requestOptions: requestOptionsFromConfig(stored, providerConfig)
-  }
-  for (const key of STORED_PROVIDER_PAYLOAD_KEYS) {
-    if (key in providerConfig) payload[key] = providerConfig[key]
-  }
-  const result = await providerPipeline.execute(payload)
+    baseUrl: params?.baseUrl
+  })
   if (!result.ok) throw new Error(result.error?.message || 'Video submit failed')
-  if (result.data?.taskId) {
-    storeVideoPollSession(result.data.taskId, {
-      providerId,
-      credentials: payload.credentials,
-      baseUrl: payload.baseUrl,
-      requestOptions: payload.requestOptions,
-      payload
-    })
-  }
   return result.data
 })
 
 ipcMain.handle('api:video:poll', async (_, taskId, provider) => {
-  const track = 'video'
-  const sessionResult = await pollVideoWithSession(taskId, { model: provider?.model })
-  if (sessionResult) {
-    if (!sessionResult.ok) throw new Error(sessionResult.error?.message || 'Video poll failed')
-    return sessionResult.data
-  }
-  const stored = config.load()
-  const storedProvider = stored.providers?.[track] || {}
-  const providerId = resolveProviderIdByTrack(track, provider?.id)
-  const storedProviderId = resolveProviderIdByTrack(track, storedProvider.id)
-  if (providerId && storedProviderId && providerId !== storedProviderId) {
-    throw new Error('Video polling session is no longer available for this task. Switch back to the original video provider or submit the task again.')
-  }
-  const payload = {
-    action: 'poll', providerId,
-    credentials: trackCredentials(track, provider),
+  const result = await executeProviderCall({
+    action: 'poll',
+    providerId: provider?.id,
     taskId,
     model: provider?.model,
-    baseUrl: storedBaseUrl(track, providerId),
-    requestOptions: requestOptionsFromConfig(stored, storedProvider)
-  }
-  for (const key of STORED_PROVIDER_PAYLOAD_KEYS) {
-    if (key in storedProvider) payload[key] = storedProvider[key]
-  }
-  const result = await providerPipeline.execute(payload)
+    baseUrl: provider?.baseUrl
+  })
   if (!result.ok) throw new Error(result.error?.message || 'Video poll failed')
   return result.data
 })

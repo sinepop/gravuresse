@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
+import { assetUrlCases } from './core-tests/asset-url-fixtures.mjs'
+import { runHttpCoreTests } from './core-tests/http.mjs'
 import { createAsset, createGeneration, mergeAsset } from '../src/utils/assetFactory.js'
 import { sanitizeAssetUrl } from '../src/utils/mediaSecurity.js'
 import { formatErrorAlert, getConversationTitle, normalizeConversationRecord, normalizeImportedConversations } from '../src/utils/conversationImport.js'
@@ -21,6 +23,8 @@ const providerRegistry = require('../electron/providers/registry.js')
 const { validateGenerationRequest } = require('../electron/providers/validation.js')
 const { buildProviderImageTestPayload } = require('../electron/providers/image-test.js')
 const mainSanitize = require('../electron/security/sanitize.js')
+
+await runHttpCoreTests()
 
 assert.deepEqual(
   modelsApi.buildModelAuth({ authType: { type: 'header', key: 'API-KEY' }, apiKey: 'pix-key' }).headers,
@@ -590,6 +594,11 @@ assert.equal(unsafeUrlImport[0].assets[4].url, 'data:image/png;base64,AAAA')
 assert.equal(unsafeUrlImport[0].assets[5].url, '')
 assert.equal(unsafeUrlImport[0].assets[6].url, 'data:video/mp4;base64,AAAA')
 assert.equal(unsafeUrlImport[0].assets[7].url, '')
+
+for (const item of assetUrlCases) {
+  assert.equal(sanitizeAssetUrl(item.url, item.type), item.expected, `renderer sanitizer mismatch for ${item.url}`)
+  assert.equal(mainSanitize.sanitizeAssetUrl(item.url, item.type), item.expected, `main sanitizer mismatch for ${item.url}`)
+}
 
 const dirtyMessageImport = normalizeImportedConversations({
   conversation: {
