@@ -2,6 +2,8 @@
 // bridge (createStoredAsset) construct assets with the same fields, so assets
 // round-trip faithfully between the canvas and stored conversations.
 
+import { sanitizeAssetUrl } from './mediaSecurity.js'
+
 let _counter = 0
 function makeAssetId() {
   return `asset_${Date.now()}_${Math.random().toString(36).slice(2, 6)}_${(++_counter) % 1000}`
@@ -94,7 +96,7 @@ export function createAsset(asset = {}) {
     label: asset.label || '未命名',
     prompt: asset.prompt || '',
     negativePrompt: asset.negativePrompt || '',
-    url: asset.url || '',
+    url: sanitizeAssetUrl(asset.url, type),
     model: asset.model || '',
     ratio: asset.ratio || '1:1',
     style: asset.style || '',
@@ -106,7 +108,7 @@ export function createAsset(asset = {}) {
     label: asset.label || '未命名',
     prompt: asset.prompt || '',
     negativePrompt: asset.negativePrompt || '',
-    url: asset.url || '',
+    url: sanitizeAssetUrl(asset.url, type),
     model: asset.model || '',
     ratio: asset.ratio || '1:1',
     style: asset.style || '',

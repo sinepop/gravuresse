@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
 import { createAsset, createGeneration, mergeAsset } from '../src/utils/assetFactory.js'
+import { sanitizeAssetUrl } from '../src/utils/mediaSecurity.js'
 import { formatErrorAlert, getConversationTitle, normalizeConversationRecord, normalizeImportedConversations } from '../src/utils/conversationImport.js'
 import {
   addAssetToConversationRecord,
@@ -18,6 +19,8 @@ const modelsApi = require('../electron/api/models.js')._test
 const { resolveAuth } = require('../electron/providers/auth.js')
 const providerRegistry = require('../electron/providers/registry.js')
 const { validateGenerationRequest } = require('../electron/providers/validation.js')
+const { buildProviderImageTestPayload } = require('../electron/providers/image-test.js')
+const mainSanitize = require('../electron/security/sanitize.js')
 
 assert.deepEqual(
   modelsApi.buildModelAuth({ authType: { type: 'header', key: 'API-KEY' }, apiKey: 'pix-key' }).headers,
@@ -104,6 +107,96 @@ assert.equal(providerRegistry.getProviderCallMode('custom-image', 'image', true)
 assert.equal(providerRegistry.getProviderSetupMode('custom-image', 'image', true), 'custom-api')
 assert.equal(providerRegistry.getProviderCallMode('chatgpt-plans', 'chat', false), 'subscription-reference')
 assert.equal(providerRegistry.getProviderSetupMode('chatgpt-plans', 'chat', false), 'subscription-reference')
+
+assert.equal(sanitizeAssetUrl('https://cdn.example.com/a.png', 'image'), 'https://cdn.example.com/a.png')
+assert.equal(sanitizeAssetUrl(' http://example.com/a.png ', 'image'), '')
+assert.equal(sanitizeAssetUrl('file:///C:/x.png', 'image'), '')
+assert.equal(sanitizeAssetUrl('https://localhost/a.png', 'image'), '')
+assert.equal(sanitizeAssetUrl('https://user:pass@example.com/a.png', 'image'), '')
+assert.equal(sanitizeAssetUrl('https://[::ffff:127.0.0.1]/a.png', 'image'), '')
+assert.equal(sanitizeAssetUrl('https://[::ffff:7f00:1]/a.png', 'image'), '')
+assert.equal(sanitizeAssetUrl('data:image/png;base64,AAAA', 'image'), 'data:image/png;base64,AAAA')
+assert.equal(sanitizeAssetUrl('data:video/mp4;base64,AAAA', 'image'), '')
+assert.equal(sanitizeAssetUrl('data:image/png;base64,AAAA', 'video'), '')
+assert.equal(sanitizeAssetUrl('data:video/mp4;base64,AAAA', 'video'), 'data:video/mp4;base64,AAAA')
+assert.equal(mainSanitize.sanitizeAssetUrl('https://127.0.0.1/a.png', 'image'), '')
+assert.equal(mainSanitize.sanitizeAssetUrl('https://[::ffff:192.168.0.1]/a.png', 'image'), '')
+
+const storedImageTestConfig = {
+  providers: {
+    image: {
+      id: 'custom-image',
+      apiKey: 'stored-key',
+      sessionToken: '',
+      baseUrl: 'https://relay.example.com',
+      model: 'gpt-image-2',
+      template: {
+        path: '/stored-images',
+        requestBody: { prompt: '{prompt}', model: '{model}' },
+        imageUrlPath: 'data[0].url'
+      }
+    }
+  },
+  providerProfiles: { image: [] },
+  general: { apiTimeout: 60000 }
+}
+const savedCredentialImageTest = buildProviderImageTestPayload({
+  id: 'custom-image',
+  baseUrl: 'https://relay.example.com',
+  apiKey: '********',
+  prompt: 'draw a cube',
+  ratio: '1:1',
+  resolution: '1024',
+  template: {
+    path: '/renderer-images',
+    requestBody: { prompt: '{prompt}' },
+    imageUrlPath: 'output.url'
+  }
+}, storedImageTestConfig)
+assert.equal(savedCredentialImageTest.ok, true)
+assert.equal(savedCredentialImageTest.payload.credentials.apiKey, 'stored-key')
+assert.equal(savedCredentialImageTest.payload.template.path, '/stored-images')
+
+const typedCredentialImageTest = buildProviderImageTestPayload({
+  id: 'custom-image',
+  baseUrl: 'https://relay.example.com',
+  apiKey: 'typed-key',
+  prompt: 'draw a cube',
+  ratio: '1:1',
+  resolution: '1024',
+  template: {
+    path: '/renderer-images',
+    requestBody: { prompt: '{prompt}' },
+    imageUrlPath: 'output.url'
+  }
+}, storedImageTestConfig)
+assert.equal(typedCredentialImageTest.ok, true)
+assert.equal(typedCredentialImageTest.payload.credentials.apiKey, 'typed-key')
+assert.equal(typedCredentialImageTest.payload.template.path, '/renderer-images')
+
+const mainSanitizedImport = mainSanitize.sanitizeConversationImportPayload({
+  conversation: {
+    title: 'legacy lineage',
+    assets: [{
+      id: 'legacy-asset',
+      providerId: 'provider-a',
+      model: 'model-a',
+      prompt: 'legacy prompt',
+      parentAssetId: 'parent-a',
+      sourceAssetIds: ['source-a'],
+      promptReferenceAssetIds: ['prompt-ref-a'],
+      taskId: 'task-a'
+    }]
+  }
+})
+assert.equal(mainSanitizedImport.conversation.assets[0].generation.providerId, 'provider-a')
+assert.equal(mainSanitizedImport.conversation.assets[0].generation.model, 'model-a')
+assert.equal(mainSanitizedImport.conversation.assets[0].generation.prompt, 'legacy prompt')
+assert.equal(mainSanitizedImport.conversation.assets[0].generation.parentAssetId, 'parent-a')
+assert.deepEqual(mainSanitizedImport.conversation.assets[0].generation.sourceAssetIds, ['source-a'])
+assert.deepEqual(mainSanitizedImport.conversation.assets[0].generation.promptReferenceAssetIds, ['prompt-ref-a'])
+assert.equal(mainSanitizedImport.conversation.assets[0].generation.taskId, 'task-a')
+
 const stabilityProvider = providerRegistry.getProvider('stability')
 const stabilityUiProvider = { id: 'stability', integrationStatus: 'custom-template' }
 assert.equal(providerNeedsTemplatePaths('image', stabilityUiProvider), true)
@@ -472,6 +565,31 @@ assert.equal(imported[0].title, 'hello project')
 assert.equal(imported[0].assets.length, 1)
 assert.ok(imported[0].assets[0].id)
 assert.deepEqual(imported[0].assets[0].generation.sourceAssetIds, ['source-b'])
+
+const unsafeUrlImport = normalizeImportedConversations({
+  conversation: {
+    title: 'unsafe urls',
+    assets: [
+      { id: 'file-url', type: 'image', url: 'file:///C:/x.png' },
+      { id: 'http-url', type: 'image', url: 'http://example.com/a.png' },
+      { id: 'localhost-url', type: 'image', url: 'https://localhost/a.png' },
+      { id: 'https-url', type: 'image', url: 'https://cdn.example.com/a.png' },
+      { id: 'data-image', type: 'image', url: 'data:image/png;base64,AAAA' },
+      { id: 'wrong-data-image', type: 'image', url: 'data:video/mp4;base64,AAAA' },
+      { id: 'data-video', type: 'video', url: 'data:video/mp4;base64,AAAA' },
+      { id: 'wrong-data-video', type: 'video', url: 'data:image/png;base64,AAAA' }
+    ]
+  }
+})
+assert.equal(unsafeUrlImport[0].assets.length, 8)
+assert.equal(unsafeUrlImport[0].assets[0].url, '')
+assert.equal(unsafeUrlImport[0].assets[1].url, '')
+assert.equal(unsafeUrlImport[0].assets[2].url, '')
+assert.equal(unsafeUrlImport[0].assets[3].url, 'https://cdn.example.com/a.png')
+assert.equal(unsafeUrlImport[0].assets[4].url, 'data:image/png;base64,AAAA')
+assert.equal(unsafeUrlImport[0].assets[5].url, '')
+assert.equal(unsafeUrlImport[0].assets[6].url, 'data:video/mp4;base64,AAAA')
+assert.equal(unsafeUrlImport[0].assets[7].url, '')
 
 const dirtyMessageImport = normalizeImportedConversations({
   conversation: {
