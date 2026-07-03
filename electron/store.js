@@ -1,6 +1,7 @@
 const { app } = require('electron')
 const fs = require('fs')
 const path = require('path')
+const { sanitizeStorePayload } = require('./security/sanitize')
 
 const CONFIG_DIR = path.join(app.getPath('userData'), 'Gravuresse')
 const STORE_FILE = path.join(CONFIG_DIR, 'conversations.json')
@@ -42,11 +43,12 @@ function loadAll() {
     const raw = JSON.parse(fs.readFileSync(STORE_FILE, 'utf-8'))
     const deletedIds = Array.isArray(raw.deletedIds) ? raw.deletedIds.map(String).filter(Boolean) : []
     const deleted = new Set(deletedIds)
-    const conversations = (Array.isArray(raw.conversations) ? raw.conversations : [])
+    const sanitized = sanitizeStorePayload(raw)
+    const conversations = (Array.isArray(sanitized.conversations) ? sanitized.conversations : [])
       .filter(c => c && typeof c === 'object' && (typeof c.id === 'string' || typeof c.id === 'number'))
       .map(c => ({ ...c, id: String(c.id) }))
       .filter(c => !deleted.has(c.id))
-    const requestedActiveId = raw.activeId ? String(raw.activeId) : null
+    const requestedActiveId = sanitized.activeId ? String(sanitized.activeId) : null
     const activeId = requestedActiveId && !deleted.has(requestedActiveId) && conversations.some(c => c.id === requestedActiveId)
       ? requestedActiveId
       : conversations[0]?.id || null
@@ -67,7 +69,7 @@ function loadAll() {
 
 function saveAll(data) {
   ensureDir()
-  const payload = { schemaVersion: SCHEMA_VERSION, ...data }
+  const payload = sanitizeStorePayload({ schemaVersion: SCHEMA_VERSION, ...data })
   // 原子写入：先写临时文件再 rename
   const tmpFile = STORE_FILE + '.tmp'
   fs.writeFileSync(tmpFile, JSON.stringify(payload, null, 2), 'utf-8')

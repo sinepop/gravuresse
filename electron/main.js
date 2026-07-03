@@ -9,6 +9,8 @@ const store = require('./store')
 const modelsApi = require('./api/models')
 const { assertHttpsUrl, downloadToFile } = require('./api/http')
 const providerPipeline = require('./providers/pipeline')
+const { buildProviderImageTestPayload } = require('./providers/image-test')
+const { sanitizeConversationImportPayload } = require('./security/sanitize')
 // Wire handler side-effects (registerHandler): must be required so the
 // HANDLER_MAP is populated before any provider:call / api:* dispatch.
 require('./providers')
@@ -475,7 +477,7 @@ ipcMain.handle('conv:import', async () => {
   if (stat.size > MAX_PROJECT_EXPORT_BYTES) {
     throw new Error('Conversation import is too large')
   }
-  const data = JSON.parse(fs.readFileSync(filePath, 'utf8'))
+  const data = sanitizeConversationImportPayload(JSON.parse(fs.readFileSync(filePath, 'utf8')))
   if (!data || (typeof data !== 'object' && !Array.isArray(data))) {
     throw new Error('Invalid Gravuresse import file')
   }
@@ -651,35 +653,9 @@ ipcMain.handle('provider:test', async (_, params = {}) => {
     const providerDef = require('./providers/registry').getProvider(providerId)
     if (!providerDef) return { ok: false, message: 'Unknown provider' }
     if (track === 'image' && params.testMode === 'image') {
-      const baseUrl = params.baseUrl || storedProvider.baseUrl || providerDef.defaults?.baseUrl || ''
-      if (!baseUrl) return { ok: false, message: 'Base URL is required for image testing.' }
-      const sameEndpoint = canUseStoredCredentials(track, { id: params.id || params.providerId || storedProvider.id, baseUrl }, storedProvider)
-      const credentials = credentialsFromProvider(sameEndpoint ? storedProvider : {}, {
-        apiKey: params.apiKey || params.credentials?.apiKey,
-        sessionToken: params.sessionToken || params.credentials?.sessionToken
-      })
-      if (!credentials.apiKey && !credentials.sessionToken) {
-        if (providerRequiresCredential(providerDef, params, storedProvider)) {
-          return { ok: false, message: 'Provider credentials are required for image testing.' }
-        }
-      }
-      const payload = {
-        action: 'generate',
-        providerId,
-        credentials,
-        baseUrl,
-        model: params.model || storedProvider.model || providerDef.image?.defaultModel,
-        prompt: params.prompt || 'A simple red square icon on a clean white background.',
-        ratio: params.ratio || '1:1',
-        resolution: params.resolution || '1024',
-        negative_prompt: params.negative_prompt || params.negativePrompt || '',
-        requestOptions: requestOptionsFromConfig(stored, { ...storedProvider, timeout: params.timeout || storedProvider.timeout })
-      }
-      for (const key of STORED_PROVIDER_PAYLOAD_KEYS) {
-        if (key in storedProvider) payload[key] = storedProvider[key]
-        if (key in params) payload[key] = params[key]
-      }
-      const result = await providerPipeline.execute(payload)
+      const built = buildProviderImageTestPayload(params, stored)
+      if (!built.ok) return { ok: false, message: built.message, code: built.code, details: built.details, warnings: built.warnings }
+      const result = await providerPipeline.execute(built.payload)
       if (!result.ok) return { ok: false, message: result.error?.message || 'Image generation test failed' }
       return { ok: true, message: 'Image generation succeeded', imageUrl: result.data }
     }
@@ -949,9 +925,9 @@ function createWindow() {
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     const devCsp = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' https: data: blob:; media-src 'self' https: data: blob:; connect-src 'self' https: ws:; font-src 'self' data: https://fonts.gstatic.com; child-src 'self'"
     // Prod: allow Google Fonts CDN (style-src / font-src) so the @import in
-    // global.css can load Inter/JetBrains/Outfit in the packaged app; the rest
-    // stays locked down (default-src 'self' file:).
-    const prodCsp = "default-src 'self' file:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' https: data: blob: file:; media-src 'self' https: data: blob:; connect-src 'self' https:; font-src 'self' data: https://fonts.gstatic.com; child-src 'self'"
+    // global.css can load Inter/JetBrains/Outfit in the packaged app; scripts
+    // and navigational surfaces stay locked down.
+    const prodCsp = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' https: data: blob:; media-src 'self' https: data: blob:; connect-src 'self' https:; font-src 'self' data: https://fonts.gstatic.com; child-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
     callback({
       responseHeaders: {
         ...details.responseHeaders,

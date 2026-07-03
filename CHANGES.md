@@ -2,6 +2,14 @@
 
 ## 涓枃
 
+#### v2.1.1 (2026-07-03)
+
+**Security hardening and release refresh**
+- Hardened imported project media URLs so unsafe `file:`, `http:`, localhost, private-address, and mismatched data URLs are cleared while keeping asset records.
+- Tightened image provider testing so saved credentials only use saved endpoint/template configuration; temporary renderer templates require freshly typed credentials.
+- Strengthened production CSP, enabled release signing when certificate environment variables are available, and updated the title-bar version to `v2.1.1`.
+- Rebuilt the Windows package and added regression tests for URL sanitization, legacy asset lineage preservation, and provider test credential handling.
+
 #### v2.1.0 (2026-07-03)
 
 **Provider API setup and release cleanup**
@@ -387,6 +395,14 @@
 ---
 
 ## English
+
+#### v2.1.1 (2026-07-03)
+
+**Security hardening and release refresh**
+- Hardened imported project media URLs so unsafe `file:`, `http:`, localhost, private-address, and mismatched data URLs are cleared while keeping asset records.
+- Tightened image provider testing so saved credentials only use saved endpoint/template configuration; temporary renderer templates require freshly typed credentials.
+- Strengthened production CSP, enabled release signing when certificate environment variables are available, and updated the title-bar version to `v2.1.1`.
+- Rebuilt the Windows package and added regression tests for URL sanitization, legacy asset lineage preservation, and provider test credential handling.
 
 #### v2.0.1 (2026-07-01)
 
