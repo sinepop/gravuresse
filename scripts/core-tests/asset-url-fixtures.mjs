@@ -1,0 +1,21 @@
+export const assetUrlCases = [
+  { url: '', type: 'image', expected: '' },
+  { url: 'https://cdn.example.com/a.png', type: 'image', expected: 'https://cdn.example.com/a.png' },
+  { url: 'data:image/png;base64,AAAA', type: 'image', expected: 'data:image/png;base64,AAAA' },
+  { url: 'data:image/jpeg;base64,AAAA', type: 'image', expected: 'data:image/jpeg;base64,AAAA' },
+  { url: 'data:image/webp;base64,AAAA', type: 'image', expected: 'data:image/webp;base64,AAAA' },
+  { url: 'data:video/mp4;base64,AAAA', type: 'video', expected: 'data:video/mp4;base64,AAAA' },
+  { url: 'file:///C:/x.png', type: 'image', expected: '' },
+  { url: 'http://example.com/a.png', type: 'image', expected: '' },
+  { url: 'javascript:alert(1)', type: 'image', expected: '' },
+  { url: 'https://user:pass@example.com/a.png', type: 'image', expected: '' },
+  { url: 'https://localhost/a.png', type: 'image', expected: '' },
+  { url: 'https://127.0.0.1/a.png', type: 'image', expected: '' },
+  { url: 'https://10.0.0.2/a.png', type: 'image', expected: '' },
+  { url: 'https://169.254.169.254/latest/meta-data', type: 'image', expected: '' },
+  { url: 'https://[::1]/a.png', type: 'image', expected: '' },
+  { url: 'https://[::ffff:127.0.0.1]/a.png', type: 'image', expected: '' },
+  { url: 'data:video/mp4;base64,AAAA', type: 'image', expected: '' },
+  { url: 'data:image/png;base64,AAAA', type: 'video', expected: '' },
+  { url: `https://example.com/${'a'.repeat(4100)}`, type: 'image', expected: '' }
+]

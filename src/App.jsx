@@ -10,7 +10,7 @@ import useConfig from './hooks/useConfig'
 import useChat from './hooks/useChat'
 import useCanvas from './hooks/useCanvas'
 import useTaskQueue from './hooks/useTaskQueue'
-import { formatErrorAlert, getConversationTitle, normalizeConversationRecord, normalizeImportedConversations } from './utils/conversationImport'
+import { formatErrorAlert, getConversationTitle, normalizeImportedConversations } from './utils/conversationImport'
 import {
   addAssetToConversationRecord,
   appendMessageToConversation,
@@ -18,6 +18,7 @@ import {
   updateConversationAsset,
   updateConversationTask
 } from './utils/conversationStore'
+import { loadConversationsOnce, normalizeStoredConversations } from './utils/conversationList'
 import { t } from './i18n'
 import './styles/global.css'
 
@@ -26,28 +27,6 @@ const MODULES = [
   { id: 'image', icon: 'image', labels: { zh: '生图', en: 'Image' } },
   { id: 'video', icon: 'film', labels: { zh: '视频', en: 'Video' } }
 ]
-let conversationsLoadPromise = null
-
-function loadConversationsOnce() {
-  if (!conversationsLoadPromise) {
-    conversationsLoadPromise = window.electronAPI?.loadConversations?.() || Promise.resolve(null)
-  }
-  return conversationsLoadPromise
-}
-
-function normalizeStoredConversations(conversations = []) {
-  const seenIds = new Set()
-  return (Array.isArray(conversations) ? conversations : [])
-    .map(normalizeConversationRecord)
-    .filter(Boolean)
-    .map(conv => ({ ...conv, id: typeof conv.id === 'string' || typeof conv.id === 'number' ? String(conv.id) : '' }))
-    .filter(conv => {
-      if (!conv.id || seenIds.has(conv.id)) return false
-      seenIds.add(conv.id)
-      return true
-    })
-}
-
 // Stored assets use the same shape as canvas assets (see assetFactory), so the
 // conversation bridge and the live canvas stay structurally identical.
 

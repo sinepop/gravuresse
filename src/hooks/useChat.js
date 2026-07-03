@@ -4,6 +4,7 @@ import { VID_PROVIDERS } from '../providers/videoProviders'
 import { resolveProviderId } from '../providers/aliases'
 import { t } from '../i18n'
 import { createGeneration } from '../utils/assetFactory'
+import { callChatProvider, generateImageProvider, submitVideoProvider } from '../utils/providerClient'
 
 let _msgIdCounter = 0
 function nextId() { return Date.now() * 1000 + (++_msgIdCounter % 1000) }
@@ -12,16 +13,6 @@ function parseDurationSeconds(value, fallback = 5) {
   const match = String(value ?? '').trim().match(/^(\d+(?:\.\d+)?)\s*s?$/i)
   const parsed = match ? Number(match[1]) : Number(value)
   return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : fallback
-}
-
-async function callProvider(params, fallback) {
-  if (!window.electronAPI?.providerAPI?.call) return fallback()
-  const result = await window.electronAPI.providerAPI.call(params)
-  if (!result?.ok) {
-    if (['UNKNOWN_PROVIDER', 'UNSUPPORTED_ACTION', 'NO_HANDLER'].includes(result?.error?.code)) return fallback()
-    throw new Error(result?.error?.message || 'Provider call failed')
-  }
-  return result.data
 }
 
 function findProviderDef(track, providerLists = {}, id) {
@@ -327,7 +318,7 @@ ${modeRule}
 10. modify_image 时，新 prompt 必须基于上次 prompt 做增量修改，保留用户没提到的部分。`
 
       const system = customSystemPrompt ? `${baseSystem}\n\n## Custom System Prompt\n${customSystemPrompt}` : baseSystem
-      const result = await callProvider({
+      const result = await callChatProvider({
         action: 'chat',
         providerId: resolveProviderId('chat', provider.id),
         messages: history,
@@ -335,7 +326,7 @@ ${modeRule}
         thinking,
         model: provider.model,
         baseUrl: provider.baseUrl
-      }, () => window.electronAPI.chat({ history, system, thinking }, provider))
+      }, { history, system, thinking, provider })
 
       let replyText = result.text
       const thinkingText = result.thinking || ''
@@ -414,7 +405,7 @@ ${modeRule}
         negative_prompt: negativePrompt,
         ...imgProvider, protocol
       }
-      const url = await callProvider({
+      const url = await generateImageProvider({
         action: 'generate',
         providerId: resolveProviderId('image', imgProvider.id),
         prompt: imageParams.prompt,
@@ -423,7 +414,7 @@ ${modeRule}
         negative_prompt: imageParams.negative_prompt,
         model: imageParams.model,
         baseUrl: imageParams.baseUrl
-      }, () => window.electronAPI.generateImage(imageParams))
+      }, imageParams)
       const elapsed = Math.round((Date.now() - startTime) / 1000)
       if (!canWriteToConversation(originConversationId)) return
       const providerForGeneration = { ...imgProvider, id: resolveProviderId('image', imgProvider.id) }
@@ -487,7 +478,7 @@ ${modeRule}
         sourceImageUrl,
         ...provider
       }
-      const result = await callProvider({
+      const result = await submitVideoProvider({
         action: 'submit',
         providerId: resolveProviderId('video', provider.id),
         prompt: videoParams.prompt,
@@ -496,7 +487,7 @@ ${modeRule}
         sourceImageUrl: videoParams.sourceImageUrl,
         model: videoParams.model,
         baseUrl: videoParams.baseUrl
-      }, () => window.electronAPI.generateVideo(videoParams))
+      }, videoParams)
       if (!result?.taskId) throw new Error(result?.error || 'Video task was not created')
       if (!canWriteToConversation(originConversationId)) return
       const status = result.status === 'running' ? 'running' : 'queued'

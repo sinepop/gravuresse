@@ -2,6 +2,14 @@
 
 ## 涓枃
 
+#### v2.1.2 (2026-07-03)
+
+**Security and architecture cleanup**
+- Fixed provider HTTP redirect handling so API credentials are never replayed to cross-origin redirect targets, and cross-origin redirects are rejected before DNS lookup.
+- Consolidated provider calls through the unified pipeline while keeping legacy IPC channels functional as compatibility wrappers.
+- Added shared media URL sanitizer fixtures for main and renderer, expanded redirect regression tests, and split low-risk IPC/provider/conversation helper modules.
+- Rebuilt the Windows package and updated the title-bar version to `v2.1.2`.
+
 #### v2.1.1 (2026-07-03)
 
 **Security hardening and release refresh**

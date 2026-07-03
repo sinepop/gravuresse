@@ -110,6 +110,12 @@ function joinApiUrl(baseUrl, path) {
   return new URL(`${base.href.replace(/\/$/, '')}${path}`)
 }
 
+function assertSameOriginRedirect(currentUrl, nextUrl) {
+  if (currentUrl.origin !== nextUrl.origin) {
+    throw new Error('Redirects to a different origin are not allowed')
+  }
+}
+
 async function downloadToFile(url, filePath, options = {}, depth = 0) {
   if (depth > MAX_REDIRECTS) throw new Error('Too many redirects')
   const parsed = await assertSafeHttpsUrl(url)
@@ -193,7 +199,8 @@ async function downloadToFile(url, filePath, options = {}, depth = 0) {
   })
 }
 
-async function httpRequest(url, options = {}, body = null) {
+async function httpRequest(url, options = {}, body = null, depth = 0) {
+  if (depth > MAX_REDIRECTS) throw new Error('Too many redirects')
   const timeout = options.timeout || DEFAULT_TIMEOUT
   const maxResponseBytes = options.maxResponseBytes || DEFAULT_MAX_RESPONSE_BYTES
   const { maxResponseBytes: _unusedMaxResponseBytes, ...requestOptions } = options
@@ -217,13 +224,17 @@ async function httpRequest(url, options = {}, body = null) {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
         let nextUrl
         try {
-          nextUrl = new URL(res.headers.location, parsedUrl).href
+          nextUrl = new URL(res.headers.location, parsedUrl)
+          assertSameOriginRedirect(parsedUrl, nextUrl)
         } catch {
           res.resume()
-          reject(new Error('Invalid URL'))
+          reject(nextUrl ? new Error('Redirects to a different origin are not allowed') : new Error('Invalid URL'))
           return
         }
-        assertSafeHttpsUrl(nextUrl).then(collectResponse, (err) => {
+        assertSafeHttpsUrl(nextUrl).then((safeNextUrl) => {
+          res.resume()
+          httpRequest(safeNextUrl, options, body, depth + 1).then(resolve, reject)
+        }, (err) => {
           res.resume()
           reject(err)
         })
