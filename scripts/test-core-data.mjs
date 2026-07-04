@@ -2,9 +2,18 @@ import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
 import { assetUrlCases } from './core-tests/asset-url-fixtures.mjs'
 import { runHttpCoreTests } from './core-tests/http.mjs'
+import { runIpcCoreTests } from './core-tests/ipc.mjs'
 import { createAsset, createGeneration, mergeAsset } from '../src/utils/assetFactory.js'
 import { sanitizeAssetUrl } from '../src/utils/mediaSecurity.js'
 import { formatErrorAlert, getConversationTitle, normalizeConversationRecord, normalizeImportedConversations } from '../src/utils/conversationImport.js'
+import { buildGenerationMeta, parseDurationSeconds } from '../src/utils/generationTasks.js'
+import {
+  canonicalProviderKey,
+  isModelEndpointUnsupportedError,
+  profileKey,
+  providerAuthConfig,
+  providerCredentialReady
+} from '../src/utils/settingsProviderHelpers.js'
 import {
   addAssetToConversationRecord,
   appendMessageToConversation,
@@ -20,11 +29,40 @@ const customImage = require('../electron/providers/handlers/custom.js')._test
 const modelsApi = require('../electron/api/models.js')._test
 const { resolveAuth } = require('../electron/providers/auth.js')
 const providerRegistry = require('../electron/providers/registry.js')
+const registryUtils = require('../electron/providers/registry-utils.js')
 const { validateGenerationRequest } = require('../electron/providers/validation.js')
 const { buildProviderImageTestPayload } = require('../electron/providers/image-test.js')
 const mainSanitize = require('../electron/security/sanitize.js')
 
 await runHttpCoreTests()
+await runIpcCoreTests()
+
+assert.equal(parseDurationSeconds('8s', 5), 8)
+assert.equal(parseDurationSeconds('bad', 5), 5)
+assert.deepEqual(
+  buildGenerationMeta({
+    task: { prompt: 'p', negative_prompt: 'n', sourceAssetIds: ['a', 'a'], promptReferenceAssetIds: ['r'], duration: 5 },
+    provider: { id: 'openai', model: 'gpt-image-2' },
+    mode: 'generate_image',
+    taskId: 'task-1'
+  }).sourceAssetIds,
+  ['a']
+)
+assert.equal(canonicalProviderKey('image', 'dalle'), 'openai')
+assert.deepEqual(providerAuthConfig({ authType: { type: 'api_key', key: 'x-api-key' } }, {}), { type: 'api-key', key: 'x-api-key' })
+assert.equal(providerCredentialReady({ id: 'local', authType: { type: 'none' } }, {}), true)
+assert.equal(isModelEndpointUnsupportedError(new Error('HTTP 404 Not Found')), true)
+assert.equal(profileKey('image', { providerId: 'dalle', baseUrl: 'https://api.example.com', model: 'm' }), 'image|openai|https://api.example.com|m')
+assert.deepEqual(
+  registryUtils.normalizeProviderMeta({ links: { docs: 'https://example.com' }, capabilities: { image: true } }),
+  {
+    links: { docs: 'https://example.com' },
+    billing: { mode: 'unknown', note: '' },
+    capabilities: { image: true },
+    constraints: {},
+    customizable: {}
+  }
+)
 
 assert.deepEqual(
   modelsApi.buildModelAuth({ authType: { type: 'header', key: 'API-KEY' }, apiKey: 'pix-key' }).headers,
