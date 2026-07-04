@@ -5,6 +5,8 @@
  * redacted form, while the main process still owns the real API keys.
  */
 
+const { attachProviderMeta, uniqueModelIds } = require('./registry-utils')
+
 const IMAGE_RATIOS = ['1:1', '4:3', '3:4', '16:9', '9:16']
 const WIDE_IMAGE_RATIOS = [...IMAGE_RATIOS, '3:2', '2:3']
 const VIDEO_RATIOS = ['16:9', '9:16', '1:1']
@@ -1471,16 +1473,7 @@ const REGISTRY = [
   }
 ]
 
-for (const provider of REGISTRY) {
-  provider.meta = {
-    ...(provider.meta || {}),
-    links: provider.links || {},
-    billing: provider.billing || { mode: 'unknown', note: '' },
-    capabilities: provider.capabilities || {},
-    constraints: provider.constraints || {},
-    customizable: provider.customizable || {}
-  }
-}
+for (const provider of REGISTRY) attachProviderMeta(provider)
 
 function getProvider(id) {
   return REGISTRY.find(p => p.id === id) || null
@@ -1498,10 +1491,6 @@ function getDefaultModel(providerId, action) {
   const p = getProvider(providerId)
   if (!p || !p[action]) return null
   return p[action].defaultModel
-}
-
-function uniqueModelIds(items = []) {
-  return Array.from(new Set(items.map(item => String(item || '').trim()).filter(Boolean)))
 }
 
 function getModelCatalog(providerId, action) {

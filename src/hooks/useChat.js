@@ -3,17 +3,11 @@ import { IMG_PROVIDERS } from '../providers/imageProviders'
 import { VID_PROVIDERS } from '../providers/videoProviders'
 import { resolveProviderId } from '../providers/aliases'
 import { t } from '../i18n'
-import { createGeneration } from '../utils/assetFactory'
 import { callChatProvider, generateImageProvider, submitVideoProvider } from '../utils/providerClient'
+import { buildGenerationMeta, parseDurationSeconds } from '../utils/generationTasks'
 
 let _msgIdCounter = 0
 function nextId() { return Date.now() * 1000 + (++_msgIdCounter % 1000) }
-
-function parseDurationSeconds(value, fallback = 5) {
-  const match = String(value ?? '').trim().match(/^(\d+(?:\.\d+)?)\s*s?$/i)
-  const parsed = match ? Number(match[1]) : Number(value)
-  return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : fallback
-}
 
 function findProviderDef(track, providerLists = {}, id) {
   const providers = providerLists?.[track] || []
@@ -75,44 +69,6 @@ function taskAllowedInMode(task, generationMode) {
   if (generationMode === 'image') return task?.type === 'image'
   if (generationMode === 'video') return task?.type === 'video'
   return true
-}
-
-function idList(value) {
-  const list = Array.isArray(value) ? value : value ? [value] : []
-  return list
-    .filter(item => typeof item === 'string' || typeof item === 'number')
-    .map(item => String(item))
-    .filter(Boolean)
-}
-
-function uniqueIds(ids = []) {
-  return Array.from(new Set(idList(ids)))
-}
-
-function getTaskSourceIds(task = {}) {
-  return uniqueIds([...idList(task.sourceAssetIds), task.source_image_id])
-}
-
-function getTaskPromptReferenceIds(task = {}) {
-  return uniqueIds(task.promptReferenceAssetIds || [])
-}
-
-function buildGenerationMeta({ task, provider, mode, createdFrom, parentAssetId, taskId }) {
-  return createGeneration({
-    providerId: provider?.id || '',
-    model: provider?.model || '',
-    mode,
-    createdFrom: createdFrom || task.createdFrom || 'chat',
-    prompt: task.prompt || '',
-    negativePrompt: task.negative_prompt || task.negativePrompt || '',
-    ratio: task.ratio || '',
-    resolution: task.resolution || '',
-    duration: task.duration ?? null,
-    parentAssetId: parentAssetId || task.parentAssetId || task.source_image_id || null,
-    sourceAssetIds: getTaskSourceIds(task),
-    promptReferenceAssetIds: getTaskPromptReferenceIds(task),
-    taskId: taskId || task.taskId || null
-  })
 }
 
 export default function useChat(config, canvas, onVideoTaskCreated, activeConversationId, isActiveConversation, conversationBridge, providerLists) {

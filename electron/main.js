@@ -10,9 +10,11 @@ const modelsApi = require('./api/models')
 const { assertHttpsUrl, downloadToFile } = require('./api/http')
 const providerPipeline = require('./providers/pipeline')
 const { buildProviderImageTestPayload } = require('./providers/image-test')
-const { sanitizeConversationImportPayload } = require('./security/sanitize')
 const { registerWindowIpc } = require('./ipc/window')
 const { registerConfigIpc } = require('./ipc/config')
+const { registerConversationIpc } = require('./ipc/conversation')
+const { registerAssetIpc } = require('./ipc/assets')
+const { registerProviderIpc } = require('./ipc/provider')
 // Wire handler side-effects (registerHandler): must be required so the
 // HANDLER_MAP is populated before any provider:call / api:* dispatch.
 require('./providers')
@@ -375,96 +377,17 @@ function isAppUrl(url) {
 
 registerWindowIpc({ ipcMain, getMainWindow: () => mainWindow })
 registerConfigIpc({ ipcMain, config })
-
-ipcMain.handle('history:get', () => store.loadAll())
-ipcMain.handle('history:save', (_, records) => store.saveAllQueued(records))
-ipcMain.handle('conv:loadAll', () => store.loadAll())
-ipcMain.handle('conv:save', (_, id, data) => store.saveConversation(id, data))
-ipcMain.handle('conv:delete', (_, id) => store.deleteConversation(id))
-ipcMain.handle('conv:setActive', (_, id) => store.setActiveId(id))
-ipcMain.handle('conv:export', async (_, conversation = {}) => {
-  const title = normalizeAssetLabel(conversation.title || 'conversation')
-  const result = await dialog.showSaveDialog(mainWindow, {
-    defaultPath: `${title}.gravuresse.json`,
-    filters: [{ name: 'Gravuresse JSON', extensions: ['json'] }]
-  })
-  if (result.canceled || !result.filePath) return { canceled: true }
-
-  const exportAssets = Array.isArray(conversation.assets) ? conversation.assets : []
-  const media = await inlineExportAssets(exportAssets)
-  const buildPayload = (assets, mediaMeta) => ({
-    schemaVersion: 1,
-    app: 'Gravuresse',
-    exportedAt: new Date().toISOString(),
-    media: mediaMeta,
-    conversation: {
-      title: conversation.title || '',
-      messages: Array.isArray(conversation.messages) ? conversation.messages : [],
-      assets
-    }
-  })
-  let payload = buildPayload(media.assets, { inlined: media.inlined, skipped: media.skipped, fallback: false })
-  let text = JSON.stringify(payload, null, 2)
-  if (Buffer.byteLength(text, 'utf8') > MAX_PROJECT_EXPORT_BYTES && media.inlined > 0) {
-    payload = buildPayload(exportAssets, { inlined: 0, skipped: remoteExportAssetCount(exportAssets), fallback: true })
-    text = JSON.stringify(payload, null, 2)
-  }
-  if (Buffer.byteLength(text, 'utf8') > MAX_PROJECT_EXPORT_BYTES) {
-    throw new Error('Conversation export is too large')
-  }
-  writeTextAtomic(text, path.resolve(result.filePath))
-  return { canceled: false, filePath: path.resolve(result.filePath), media: payload.media }
-})
-ipcMain.handle('conv:exportProject', async (_, conversations = []) => {
-  const result = await dialog.showSaveDialog(mainWindow, {
-    defaultPath: `gravuresse-project-${new Date().toISOString().slice(0, 10)}.gravuresse.json`,
-    filters: [{ name: 'Gravuresse JSON', extensions: ['json'] }]
-  })
-  if (result.canceled || !result.filePath) return { canceled: true }
-
-  const sourceConversations = Array.isArray(conversations) ? conversations : []
-  const media = await inlineExportConversations(sourceConversations)
-  const buildPayload = (items, mediaMeta) => ({
-    schemaVersion: 1,
-    app: 'Gravuresse',
-    kind: 'project',
-    exportedAt: new Date().toISOString(),
-    media: mediaMeta,
-    conversations: items
-  })
-  let payload = buildPayload(media.conversations, { inlined: media.inlined, skipped: media.skipped, fallback: false })
-  let text = JSON.stringify(payload, null, 2)
-  if (Buffer.byteLength(text, 'utf8') > MAX_PROJECT_EXPORT_BYTES && media.inlined > 0) {
-    payload = buildPayload(sourceConversations.map(conversation => ({
-      title: conversation.title || '',
-      messages: Array.isArray(conversation.messages) ? conversation.messages : [],
-      assets: Array.isArray(conversation.assets) ? conversation.assets : []
-    })), { inlined: 0, skipped: remoteExportConversationAssetCount(sourceConversations), fallback: true })
-    text = JSON.stringify(payload, null, 2)
-  }
-  if (Buffer.byteLength(text, 'utf8') > MAX_PROJECT_EXPORT_BYTES) {
-    throw new Error('Project export is too large')
-  }
-  writeTextAtomic(text, path.resolve(result.filePath))
-  return { canceled: false, filePath: path.resolve(result.filePath), media: payload.media, count: sourceConversations.length }
-})
-ipcMain.handle('conv:import', async () => {
-  const result = await dialog.showOpenDialog(mainWindow, {
-    properties: ['openFile'],
-    filters: [{ name: 'Gravuresse JSON', extensions: ['json'] }]
-  })
-  if (result.canceled || !result.filePaths?.[0]) return { canceled: true }
-
-  const filePath = path.resolve(result.filePaths[0])
-  const stat = fs.statSync(filePath)
-  if (stat.size > MAX_PROJECT_EXPORT_BYTES) {
-    throw new Error('Conversation import is too large')
-  }
-  const data = sanitizeConversationImportPayload(JSON.parse(fs.readFileSync(filePath, 'utf8')))
-  if (!data || (typeof data !== 'object' && !Array.isArray(data))) {
-    throw new Error('Invalid Gravuresse import file')
-  }
-  return { canceled: false, data }
+registerConversationIpc({
+  ipcMain,
+  store,
+  getMainWindow: () => mainWindow,
+  normalizeAssetLabel,
+  inlineExportAssets,
+  inlineExportConversations,
+  remoteExportAssetCount,
+  remoteExportConversationAssetCount,
+  writeTextAtomic,
+  maxProjectExportBytes: MAX_PROJECT_EXPORT_BYTES
 })
 
 async function executeProviderCall(params = {}) {
@@ -582,110 +505,28 @@ async function executeProviderCall(params = {}) {
   return result
 }
 
-// Unified provider call
-ipcMain.handle('provider:call', async (_, params = {}) => executeProviderCall(params))
-
-// List providers by action (for settings dropdown)
-ipcMain.handle('provider:list', async (_, action) => {
-  const track = action || 'chat'
-  return getProvidersByAction(track).map(p => {
-    const nativeExecutable = Boolean(resolveHandler(p[track]?.protocol))
-    const templateExecutable = isTemplateConfigurableProvider(p, track)
-    const executable = nativeExecutable || templateExecutable
-    const integrationStatus = nativeExecutable
-      ? (p[track]?.integrationStatus || p.capabilities?.[track]?.integrationStatus || '')
-      : templateExecutable
-        ? 'custom-template'
-        : (p[track]?.integrationStatus || p.capabilities?.[track]?.integrationStatus || '')
-    return {
-      id: p.id,
-      name: p.name,
-      platform: p.platform,
-      meta: p.meta,
-      links: p.links || p.meta?.links || {},
-      billing: p.billing || p.meta?.billing || { mode: 'unknown' },
-      capabilities: p.capabilities || p.meta?.capabilities || {},
-      constraints: p.constraints || p.meta?.constraints || {},
-      customizable: p.customizable || p.meta?.customizable || {},
-      authType: p.authType || { type: 'bearer' },
-      defaultUrl: p.defaults?.baseUrl || '',
-      defaultModel: p[track]?.defaultModel || '',
-      pathPrefix: p[track]?.pathPrefix || p.pathPrefix || '',
-      modelListPath: p[track]?.modelListPath || p.modelListPath || p[track]?.modelsPath || p.modelsPath || '',
-      modelCatalog: getModelCatalog(p.id, track),
-      protocol: p[track]?.protocol,
-      format: p[track]?.format,
-      polling: p[track]?.polling === true,
-      integrationStatus,
-      executable,
-      callMode: templateExecutable && !nativeExecutable ? 'custom-api' : getProviderCallMode(p.id, track, executable),
-      setupMode: templateExecutable && !nativeExecutable ? 'custom-api' : getProviderSetupMode(p.id, track, executable)
-    }
-  })
-})
-
-// Test provider connection
-ipcMain.handle('provider:test', async (_, params = {}) => {
-  try {
-    const stored = config.load()
-    const track = params.track || inferProviderTrack({ id: params.providerId || params.id, protocol: params.protocol })
-    const storedProvider = storedProviderForRequest(stored, track, {
-      providerId: params.providerId || params.id,
-      baseUrl: params.baseUrl,
-      model: params.model
-    })
-    const providerId = resolveProviderIdByTrack(track, params.providerId || params.id || storedProvider.id)
-    const providerDef = require('./providers/registry').getProvider(providerId)
-    if (!providerDef) return { ok: false, message: 'Unknown provider' }
-    if (track === 'image' && params.testMode === 'image') {
-      const built = buildProviderImageTestPayload(params, stored)
-      if (!built.ok) return { ok: false, message: built.message, code: built.code, details: built.details, warnings: built.warnings }
-      const result = await providerPipeline.execute(built.payload)
-      if (!result.ok) return { ok: false, message: result.error?.message || 'Image generation test failed' }
-      return { ok: true, message: 'Image generation succeeded', imageUrl: result.data }
-    }
-    if (!providerDef.healthCheck) return { ok: true, message: 'No health check available' }
-    // Use the user's configured endpoint (if any) so the test exercises the same
-    // route real calls take; otherwise the key is sent to the hardcoded default
-    // endpoint even on a user-configured proxy/relay, and the test result can
-    // diverge from actual call success/failure.
-    const requestedBaseUrl = params.baseUrl || storedProvider.baseUrl || providerDef.defaults.baseUrl
-    const sameEndpoint = canUseStoredCredentials(track, { id: params.id || params.providerId || storedProvider.id, baseUrl: requestedBaseUrl }, storedProvider)
-    const hasRendererCredential = Boolean(realSecret(params.apiKey || params.credentials?.apiKey) || realSecret(params.sessionToken || params.credentials?.sessionToken))
-    const testBaseUrl = hasRendererCredential && params.baseUrl
-      ? params.baseUrl
-      : sameEndpoint
-        ? requestedBaseUrl
-        : providerDef.defaults.baseUrl
-    const credentials = credentialsFromProvider(!hasRendererCredential && sameEndpoint ? storedProvider : {}, {
-      apiKey: params.apiKey || params.credentials?.apiKey,
-      sessionToken: params.sessionToken || params.credentials?.sessionToken
-    })
-    const { resolveAuth } = require('./providers/auth')
-    const { request, joinApiUrl } = require('./api/http')
-    const auth = resolveAuth(providerDef, credentials, {
-      authType: params.authType || storedProvider.authType,
-      customAuth: params.customAuth || storedProvider.customAuth
-    })
-    const url = applyQueryParams(joinApiUrl(testBaseUrl, providerDef.healthCheck.url), auth.queryParams)
-    await request(url, {
-      method: providerDef.healthCheck.method,
-      headers: { ...auth.headers, 'Content-Type': 'application/json' },
-      ...requestOptionsFromConfig(stored)
-    }, providerDef.healthCheck.body)
-    return { ok: true, message: 'Connection successful' }
-  } catch (err) {
-    return { ok: false, message: require('./providers/pipeline').redactSecrets(err?.message || 'Test failed') }
-  }
-})
-
-ipcMain.handle('api:models', (_, provider) => {
-  const stored = config.load()
-  return modelsApi.fetch({
-    ...getModelFetchProvider(provider),
-    reportErrors: provider?.reportErrors === true,
-    requestOptions: requestOptionsFromConfig(stored)
-  })
+registerProviderIpc({
+  ipcMain,
+  config,
+  modelsApi,
+  providerPipeline,
+  buildProviderImageTestPayload,
+  executeProviderCall,
+  getProvidersByAction,
+  getModelCatalog,
+  getProviderCallMode,
+  getProviderSetupMode,
+  resolveHandler,
+  isTemplateConfigurableProvider,
+  storedProviderForRequest,
+  inferProviderTrack,
+  resolveProviderIdByTrack,
+  canUseStoredCredentials,
+  realSecret,
+  credentialsFromProvider,
+  applyQueryParams,
+  requestOptionsFromConfig,
+  getModelFetchProvider
 })
 
 // Map the user-facing stored provider id (e.g. 'claude', 'dalle', 'jimeng_vid')
@@ -757,84 +598,14 @@ async function pollVideoWithSession(taskId, override = {}) {
   return result
 }
 
-// Legacy direct API channels, kept functional by routing them through the
-// unified pipeline. The renderer reaches these only through the preload helpers
-// (chat/generateImage/generateVideo/pollVideoTask); the new pipeline path
-// (provider:call) is preferred, but these must not be left without handlers or
-// ipcRenderer.invoke would hang forever.
-ipcMain.handle('api:chat', async (_, messages, provider) => {
-  const result = await executeProviderCall({
-    action: 'chat',
-    providerId: provider?.id,
-    messages: (messages?.history || messages || []).map(m => ({ role: m.role, content: m.content })),
-    system: messages?.system || provider?.system || '',
-    thinking: messages?.thinking || provider?.thinking || false,
-    model: provider?.model,
-    baseUrl: provider?.baseUrl
-  })
-  if (!result.ok) throw new Error(result.error?.message || 'Chat failed')
-  return result.data
+registerAssetIpc({
+  ipcMain,
+  getMainWindow: () => mainWindow,
+  saveDir: SAVE_DIR,
+  normalizeAssetLabel,
+  writeAssetUrl,
+  openExternalSafe
 })
-
-ipcMain.handle('api:image', async (_, params) => {
-  const result = await executeProviderCall({
-    action: 'generate',
-    providerId: params?.id,
-    prompt: params?.prompt, ratio: params?.ratio, resolution: params?.resolution,
-    negative_prompt: params?.negative_prompt,
-    model: params?.model,
-    baseUrl: params?.baseUrl
-  })
-  if (!result.ok) throw new Error(result.error?.message || 'Image generation failed')
-  return result.data // url string
-})
-
-ipcMain.handle('api:video', async (_, params) => {
-  const result = await executeProviderCall({
-    action: 'submit',
-    providerId: params?.id,
-    prompt: params?.prompt, ratio: params?.ratio, duration: params?.duration,
-    sourceImageUrl: params?.sourceImageUrl,
-    model: params?.model,
-    baseUrl: params?.baseUrl
-  })
-  if (!result.ok) throw new Error(result.error?.message || 'Video submit failed')
-  return result.data
-})
-
-ipcMain.handle('api:video:poll', async (_, taskId, provider) => {
-  const result = await executeProviderCall({
-    action: 'poll',
-    providerId: provider?.id,
-    taskId,
-    model: provider?.model,
-    baseUrl: provider?.baseUrl
-  })
-  if (!result.ok) throw new Error(result.error?.message || 'Video poll failed')
-  return result.data
-})
-
-ipcMain.handle('api:saveAsset', async (_, { url, label, type }) => {
-  if (!fs.existsSync(SAVE_DIR)) fs.mkdirSync(SAVE_DIR, { recursive: true })
-  const filePath = path.join(SAVE_DIR, `${normalizeAssetLabel(label)}_${Date.now()}`)
-  return await writeAssetUrl(url, filePath, type)
-})
-
-ipcMain.handle('api:getSaveDir', () => SAVE_DIR)
-
-ipcMain.handle('api:saveAssetWithDialog', async (_, { url, label, type }) => {
-  const extensions = type === 'video' ? ['mp4'] : ['png', 'jpg', 'webp']
-  const ext = extensions[0]
-  const result = await dialog.showSaveDialog(mainWindow, {
-    defaultPath: `${normalizeAssetLabel(label)}.${ext}`,
-    filters: [{ name: type === 'video' ? 'MP4' : 'Images', extensions }]
-  })
-  if (result.canceled || !result.filePath) return { canceled: true }
-  const resolved = await writeAssetUrl(url, path.resolve(result.filePath), type)
-  return { canceled: false, filePath: resolved }
-})
-
-ipcMain.handle('shell:open-external', (_, url) => openExternalSafe(url))
 
 function createWindow() {
   mainWindow = new BrowserWindow({

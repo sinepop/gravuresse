@@ -2,6 +2,14 @@
 
 ## 涓枃
 
+#### v2.1.3 (2026-07-04)
+
+**TypeScript boundary and IPC cleanup**
+- Added a gradual TypeScript baseline with shared domain and renderer Electron API types.
+- Split conversation, provider, asset, and shell IPC registration out of the main process entry while preserving channel names and behavior.
+- Tightened provider and asset IPC shape checks so invalid renderer payloads fail with controlled errors instead of TypeError paths.
+- Added IPC registration regression tests, expanded typecheck coverage for the current migration chain, rebuilt the Windows package, and updated the title-bar version to `v2.1.3`.
+
 #### v2.1.2 (2026-07-03)
 
 **Security and architecture cleanup**

@@ -2,8 +2,18 @@
 import { CHAT_PROVIDERS } from '../providers/chatProviders'
 import { IMG_PROVIDERS } from '../providers/imageProviders'
 import { VID_PROVIDERS } from '../providers/videoProviders'
-import { PROVIDER_ID_ALIASES } from '../providers/aliases'
 import { createProviderClearPatch, createProviderProfilePatch, createProviderSelectionPatch, firstProviderModel, providerNeedsTemplatePaths, providerTemplatePathStatus, providerTemplatePresets } from '../utils/providerConfig.js'
+import {
+  canonicalProviderKey,
+  currentMatchesProvider,
+  isModelEndpointUnsupportedError,
+  profileKey,
+  profileMatchesProvider,
+  providerAuthConfig,
+  providerCredentialReady,
+  providerRequiresCredential,
+  providerUsesSession
+} from '../utils/settingsProviderHelpers.js'
 import { t } from '../i18n'
 import Ic from './icons'
 
@@ -637,42 +647,6 @@ const btnS = (primary) => ({ padding: '8px 22px', background: primary ? 'var(--a
 
 const TRACKS = ['chat', 'image', 'video']
 
-function canonicalProviderKey(track, id) {
-  return PROVIDER_ID_ALIASES[track]?.[id] || id || ''
-}
-
-function currentMatchesProvider(track, current = {}, provider) {
-  if (!provider || !current?.id) return false
-  return canonicalProviderKey(track, current.id) === canonicalProviderKey(track, provider.id)
-}
-
-function normalizeAuthType(type) {
-  return String(type || '').toLowerCase().replace(/_/g, '-')
-}
-
-function providerAuthConfig(provider = {}, current = {}) {
-  const customType = normalizeAuthType(current.customAuth?.type)
-  if (customType) return { ...(current.customAuth || {}), type: customType }
-  const currentType = normalizeAuthType(current.authType?.type)
-  if (currentType) return { ...(current.authType || {}), type: currentType }
-  const providerType = normalizeAuthType(provider?.authType?.type)
-  if (providerType) return { ...(provider.authType || {}), type: providerType }
-  return { type: 'bearer' }
-}
-
-function providerRequiresCredential(provider = {}, current = {}) {
-  return providerAuthConfig(provider, current).type !== 'none'
-}
-
-function providerUsesSession(provider = {}, current = {}) {
-  return providerAuthConfig(provider, current).type === 'session'
-}
-
-function providerCredentialReady(provider = {}, current = {}) {
-  if (!providerRequiresCredential(provider, current)) return Boolean(provider?.id || current?.id)
-  return providerUsesSession(provider, current) ? Boolean(current.sessionToken) : Boolean(current.apiKey)
-}
-
 function authDescription(provider = {}, current = {}, lang) {
   const auth = providerAuthConfig(provider, current)
   const name = auth.sessionHeaderName || auth.headerName || auth.paramName || auth.key || ''
@@ -681,28 +655,6 @@ function authDescription(provider = {}, current = {}, lang) {
   if (auth.type === 'query') return t('authProviderQuery', lang).replace('{name}', name || 'key')
   if (auth.type === 'header' || auth.type === 'api-key' || auth.type === 'apikey') return t('authProviderHeader', lang).replace('{name}', name || 'x-api-key')
   return t('authProviderBearer', lang)
-}
-
-function isModelEndpointUnsupportedError(error) {
-  const message = String(error?.message || '').toLowerCase()
-  return /\b(404|405|501)\b/.test(message) ||
-    message.includes('not found') ||
-    message.includes('method not allowed') ||
-    message.includes('not supported')
-}
-
-function profileKey(track, profile = {}) {
-  return [
-    track,
-    canonicalProviderKey(track, profile.providerId || profile.id),
-    profile.baseUrl || '',
-    profile.model || ''
-  ].join('|')
-}
-
-function profileMatchesProvider(track, profile = {}, provider) {
-  if (!provider || !profile?.providerId) return false
-  return canonicalProviderKey(track, profile.providerId) === canonicalProviderKey(track, provider.id)
 }
 
 function profileDisplayName(track, profile = {}, providers = [], lang) {
