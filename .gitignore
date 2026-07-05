@@ -37,4 +37,17 @@ core.*
 *.pem
 *.key
 *.cert
+*.crt
+*.cer
+*.p12
+*.pfx
+*.jks
+*.keystore
 credentials.json
+auth.json
+cookies.json
+tokens.json
+secrets.json
+*.sqlite
+*.sqlite3
+*.db
