@@ -15,6 +15,7 @@ import { buildGenerationMeta, parseDurationSeconds } from '../src/utils/generati
 import {
   canonicalProviderKey,
   isModelEndpointUnsupportedError,
+  isProviderNetworkError,
   profileKey,
   providerAuthConfig,
   providerCredentialReady
@@ -90,6 +91,9 @@ assert.equal(canonicalProviderKey('image', 'dalle'), 'openai')
 assert.deepEqual(providerAuthConfig({ authType: { type: 'api_key', key: 'x-api-key' } }, {}), { type: 'api-key', key: 'x-api-key' })
 assert.equal(providerCredentialReady({ id: 'local', authType: { type: 'none' } }, {}), true)
 assert.equal(isModelEndpointUnsupportedError(new Error('HTTP 404 Not Found')), true)
+assert.equal(isProviderNetworkError(new Error("Error invoking remote method 'api:models': Error: connect ETIMEDOUT 184.173.136.86:443")), true)
+assert.equal(isProviderNetworkError(new Error('getaddrinfo ENOTFOUND api.openai.com')), true)
+assert.equal(isProviderNetworkError(new Error('HTTP 401: bad key')), false)
 assert.equal(profileKey('image', { providerId: 'dalle', baseUrl: 'https://api.example.com', model: 'm' }), 'image|openai|https://api.example.com|m')
 assert.deepEqual(
   registryUtils.normalizeProviderMeta({ links: { docs: 'https://example.com' }, capabilities: { image: true } }),

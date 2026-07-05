@@ -44,6 +44,12 @@ export function isModelEndpointUnsupportedError(error) {
     message.includes('not supported')
 }
 
+export function isProviderNetworkError(error) {
+  const message = String(error?.message || error || '')
+  return /\b(ETIMEDOUT|ECONNRESET|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ENETUNREACH|EHOSTUNREACH)\b/i.test(message) ||
+    /request timed out|connect timed out|socket hang up/i.test(message)
+}
+
 export function profileKey(track, profile = {}) {
   return [
     track,
