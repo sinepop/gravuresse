@@ -7,6 +7,7 @@ import {
   canonicalProviderKey,
   currentMatchesProvider,
   isModelEndpointUnsupportedError,
+  isProviderNetworkError,
   profileKey,
   profileMatchesProvider,
   providerAuthConfig,
@@ -120,6 +121,16 @@ const MAINSTREAM_PROVIDER_IDS = {
 }
 
 const AGGREGATOR_PROVIDER_IDS = ['openrouter', 'together', 'fal', 'replicate']
+
+function providerErrorMessage(error, lang) {
+  if (isProviderNetworkError(error)) return t('networkEndpointUnreachable', lang)
+  return error?.message || ''
+}
+
+function modelFetchFailureMessage(error, lang) {
+  const detail = providerErrorMessage(error, lang)
+  return detail ? `${t('modelFetchFailed', lang)}: ${detail}` : t('modelFetchFailed', lang)
+}
 
 const FALLBACK_PROVIDER_METADATA = {
   openai: {
@@ -1264,7 +1275,7 @@ function ProviderTab({ track, providers, config, onChange, lang }) {
         setModelFetchResult({ ok: false, warning: true, msg: t('modelFetchUnsupported', lang) })
         return
       }
-      setModelFetchResult({ ok: false, msg: error.message ? `${t('modelFetchFailed', lang)}: ${error.message}` : t('modelFetchFailed', lang) })
+      setModelFetchResult({ ok: false, msg: modelFetchFailureMessage(error, lang) })
     } finally {
       if (requestId === modelFetchSeq.current) setLoadingModels(false)
     }
@@ -1303,7 +1314,7 @@ function ProviderTab({ track, providers, config, onChange, lang }) {
       }
       const test = await window.electronAPI.providerAPI?.test?.(params)
       if (test && test.ok === false) {
-        setTestResult({ ok: false, msg: test.message || t('testFail', lang) })
+        setTestResult({ ok: false, msg: providerErrorMessage(test.message, lang) || t('testFail', lang) })
         return
       }
       modelFetchSeq.current += 1
@@ -1324,7 +1335,7 @@ function ProviderTab({ track, providers, config, onChange, lang }) {
       const fallbackAvailable = isModelEndpointUnsupportedError(e) && modelOptions.length > 0
       const msg = fallbackAvailable
         ? t('modelFetchUnsupported', lang)
-        : e.message ? `${t('modelFetchFailed', lang)}: ${e.message}` : t('modelFetchFailed', lang)
+        : modelFetchFailureMessage(e, lang)
       if (fallbackAvailable && !currentModel && recommendedModel) onChange(track, { model: recommendedModel })
       setModels([])
       setModelFetchResult({ ok: false, warning: fallbackAvailable, msg })
