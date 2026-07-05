@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, session } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog, shell, session, protocol } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const crypto = require('crypto')
@@ -15,6 +15,7 @@ const { registerConfigIpc } = require('./ipc/config')
 const { registerConversationIpc } = require('./ipc/conversation')
 const { registerAssetIpc } = require('./ipc/assets')
 const { registerProviderIpc } = require('./ipc/provider')
+const { MEDIA_CACHE_SCHEME, cacheAssetPreview, mediaCacheMime, parseMediaCacheUrl } = require('./media-cache')
 // Wire handler side-effects (registerHandler): must be required so the
 // HANDLER_MAP is populated before any provider:call / api:* dispatch.
 require('./providers')
@@ -25,7 +26,13 @@ const { validateGenerationRequest } = require('./providers/validation')
 let mainWindow = null
 let crashCount = 0
 
+protocol.registerSchemesAsPrivileged([{
+  scheme: MEDIA_CACHE_SCHEME,
+  privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true }
+}])
+
 const SAVE_DIR = path.join(app.getPath('pictures'), 'Gravuresse')
+const MEDIA_CACHE_DIR = path.join(app.getPath('userData'), 'Gravuresse', 'media-cache')
 const MAX_ASSET_BYTES = 100 * 1024 * 1024
 const MAX_PROJECT_EXPORT_BYTES = 100 * 1024 * 1024
 const ASSET_MIME_EXTENSIONS = {
@@ -357,6 +364,20 @@ function openExternalSafe(url) {
   return shell.openExternal(parsed.href)
 }
 
+function registerMediaCacheProtocol() {
+  protocol.handle(MEDIA_CACHE_SCHEME, async (request) => {
+    const filePath = parseMediaCacheUrl(request.url, MEDIA_CACHE_DIR)
+    const fileName = path.basename(filePath)
+    if (!fs.existsSync(filePath)) return new Response('Not found', { status: 404 })
+    return new Response(fs.readFileSync(filePath), {
+      headers: {
+        'Content-Type': mediaCacheMime(fileName),
+        'Cache-Control': 'public, max-age=31536000, immutable'
+      }
+    })
+  })
+}
+
 function isAppUrl(url) {
   let parsed
   try { parsed = new URL(url) } catch { return false }
@@ -467,10 +488,10 @@ async function executeProviderCall(params = {}) {
   // request behaviour. Keep this list in sync with the handler signatures.
   const safePayload = { providerId: canonicalProviderId, action }
   for (const key of STORED_PROVIDER_PAYLOAD_KEYS) {
-    if (key in providerConfig) safePayload[key] = providerConfig[key]
+    if (Object.hasOwn(providerConfig || {}, key)) safePayload[key] = providerConfig[key]
   }
   for (const key of ALLOWED_PROVIDER_PAYLOAD_KEYS) {
-    if (key in params) safePayload[key] = params[key]
+    if (Object.hasOwn(params || {}, key)) safePayload[key] = params[key]
   }
   if (track !== 'chat' && action !== 'poll') {
     const validation = validateGenerationRequest(track, providerDef, safePayload)
@@ -604,6 +625,11 @@ registerAssetIpc({
   saveDir: SAVE_DIR,
   normalizeAssetLabel,
   writeAssetUrl,
+  cacheAssetPreview: (params) => cacheAssetPreview(params, {
+    cacheDir: MEDIA_CACHE_DIR,
+    downloadToFile,
+    validateAssetBytes
+  }),
   openExternalSafe
 })
 
@@ -620,11 +646,11 @@ function createWindow() {
   })
 
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
-    const devCsp = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' https: data: blob:; media-src 'self' https: data: blob:; connect-src 'self' https: ws:; font-src 'self' data: https://fonts.gstatic.com; child-src 'self'"
+    const devCsp = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' gravuresse-media: data: blob:; media-src 'self' gravuresse-media: data: blob:; connect-src 'self' https: ws:; font-src 'self' data: https://fonts.gstatic.com; child-src 'self'"
     // Prod: allow Google Fonts CDN (style-src / font-src) so the @import in
     // global.css can load Inter/JetBrains/Outfit in the packaged app; scripts
     // and navigational surfaces stay locked down.
-    const prodCsp = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' https: data: blob:; media-src 'self' https: data: blob:; connect-src 'self' https:; font-src 'self' data: https://fonts.gstatic.com; child-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    const prodCsp = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' gravuresse-media: data: blob:; media-src 'self' gravuresse-media: data: blob:; connect-src 'self' https:; font-src 'self' data: https://fonts.gstatic.com; child-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
     callback({
       responseHeaders: {
         ...details.responseHeaders,
@@ -705,6 +731,7 @@ function createWindow() {
 app.whenReady().then(() => {
   electronApp.setAppUserModelId('com.gravuresse')
   app.on('browser-window-created', (_, window) => optimizer.watchWindowShortcuts(window))
+  registerMediaCacheProtocol()
   createWindow()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

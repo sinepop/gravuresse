@@ -1,6 +1,6 @@
 {
   "name": "gravuresse",
-  "version": "2.1.3",
+  "version": "2.1.4",
   "description": "Gravuresse - AI Creative Design Desktop App",
   "author": "Gravuresse",
   "license": "MIT",
@@ -14,7 +14,8 @@
     "test:core": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-core-data.mjs",
     "typecheck": "tsc --noEmit",
     "preview": "electron-vite preview --config electron.vite.config.mjs",
-    "package": "electron-vite build --config electron.vite.config.mjs && electron-builder --win",
+    "release:checksums": "node scripts/release-checksums.mjs",
+    "package": "electron-vite build --config electron.vite.config.mjs && electron-builder --win && npm run release:checksums",
     "package:dir": "electron-vite build --config electron.vite.config.mjs && electron-builder --win dir --publish=never"
   },
   "dependencies": {

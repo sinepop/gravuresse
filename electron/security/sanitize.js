@@ -22,6 +22,29 @@ function cleanIdList(value) {
   return list.map(cleanOptionalId).filter(Boolean).slice(0, 100)
 }
 
+function hasConversationShape(value) {
+  return Boolean(
+    isPlainObject(value) &&
+    (
+      Array.isArray(value.messages) ||
+      Array.isArray(value.assets) ||
+      typeof value.title === 'string' ||
+      typeof value.id === 'string' ||
+      typeof value.id === 'number'
+    )
+  )
+}
+
+function cleanMediaSummary(value = {}) {
+  if (!isPlainObject(value)) return undefined
+  const out = {}
+  for (const key of ['inlined', 'skipped']) {
+    if (Number.isFinite(Number(value[key]))) out[key] = Number(value[key])
+  }
+  if (value.fallback === true) out.fallback = true
+  return Object.keys(out).length ? out : undefined
+}
+
 function sanitizeGeneration(generation = {}, assetType = 'image') {
   if (!isPlainObject(generation)) generation = {}
   return {
@@ -97,9 +120,15 @@ function sanitizeTask(task = {}) {
     status,
     label: cleanText(task.label, 120),
     prompt: cleanText(task.prompt, 50000),
+    review_text: cleanText(task.review_text, 50000),
     negative_prompt: cleanText(task.negative_prompt, 50000),
     ratio: cleanText(task.ratio, 50),
+    resolution: cleanText(task.resolution, 50),
     source_image_id: cleanOptionalId(task.source_image_id),
+    sourceImageUrl: sanitizeAssetUrl(task.sourceImageUrl, 'image'),
+    intent: cleanText(task.intent, 100),
+    createdFrom: cleanText(task.createdFrom, 100),
+    styleDirection: cleanText(task.styleDirection, 500),
     sourceAssetIds: cleanIdList(task.sourceAssetIds),
     promptReferenceAssetIds: cleanIdList(task.promptReferenceAssetIds),
     parentAssetId: cleanOptionalId(task.parentAssetId),
@@ -135,6 +164,9 @@ function sanitizeMessage(message = {}) {
 
 function sanitizeConversationForStorage(conversation = {}) {
   if (!isPlainObject(conversation)) return null
+  const id = cleanOptionalId(conversation.id)
+  const createdAt = cleanText(conversation.createdAt, 100)
+  const updatedAt = cleanText(conversation.updatedAt, 100)
   const messages = (Array.isArray(conversation.messages) ? conversation.messages : [])
     .slice(0, MAX_MESSAGES_PER_CONVERSATION)
     .map(sanitizeMessage)
@@ -144,8 +176,10 @@ function sanitizeConversationForStorage(conversation = {}) {
     .map(sanitizeAssetForStorage)
     .filter(Boolean)
   return {
-    ...conversation,
+    ...(id ? { id } : {}),
     title: cleanText(conversation.title, 80),
+    ...(createdAt ? { createdAt } : {}),
+    ...(updatedAt ? { updatedAt } : {}),
     messages,
     assets
   }
@@ -157,18 +191,25 @@ function sanitizeConversationImportPayload(payload) {
   }
   if (!isPlainObject(payload)) return payload
   if (Array.isArray(payload.conversations)) {
+    const media = cleanMediaSummary(payload.media)
     return {
-      ...payload,
+      schemaVersion: Number.isFinite(Number(payload.schemaVersion)) ? Number(payload.schemaVersion) : 1,
+      app: cleanText(payload.app, 80),
+      kind: cleanText(payload.kind, 40),
+      ...(media ? { media } : {}),
       conversations: payload.conversations.map(sanitizeConversationForStorage).filter(Boolean)
     }
   }
   if (isPlainObject(payload.conversation)) {
+    const media = cleanMediaSummary(payload.media)
     return {
-      ...payload,
+      schemaVersion: Number.isFinite(Number(payload.schemaVersion)) ? Number(payload.schemaVersion) : 1,
+      app: cleanText(payload.app, 80),
+      ...(media ? { media } : {}),
       conversation: sanitizeConversationForStorage(payload.conversation)
     }
   }
-  return sanitizeConversationForStorage(payload) || payload
+  return hasConversationShape(payload) ? sanitizeConversationForStorage(payload) : payload
 }
 
 function sanitizeStorePayload(data = {}) {
@@ -176,7 +217,7 @@ function sanitizeStorePayload(data = {}) {
     .map(sanitizeConversationForStorage)
     .filter(Boolean)
   return {
-    ...data,
+    schemaVersion: Number.isFinite(Number(data.schemaVersion)) ? Number(data.schemaVersion) : 1,
     conversations,
     deletedIds: (Array.isArray(data.deletedIds) ? data.deletedIds : []).map(String).filter(Boolean),
     activeId: data.activeId ? String(data.activeId) : null

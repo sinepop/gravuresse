@@ -16,6 +16,7 @@ import {
 } from '../utils/settingsProviderHelpers.js'
 import { t } from '../i18n'
 import Ic from './icons'
+import useSafeMediaUrl from '../hooks/useSafeMediaUrl'
 
 const NAV_SECTIONS = [
   { id: 'api', labelKey: 'apiConfig', icon: 'link', children: [
@@ -29,6 +30,12 @@ const NAV_SECTIONS = [
     { id: 'other', labelKey: 'other' },
   ]},
 ]
+
+function SafeImagePreview({ url }) {
+  const { src } = useSafeMediaUrl(url, 'image')
+  if (!src) return null
+  return <img src={src} alt="" style={{ width: 96, height: 96, objectFit: 'cover', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-default)' }} />
+}
 
 const ASPECT_RATIOS = ['1:1', '4:3', '3:4', '16:9', '9:16', '3:2']
 const STYLE_PRESETS = ['扁平插画', '3D 渲染', '写实摄影', '水彩画', '动漫风', '像素艺术', '油画', '极简主义', '赛博朋克', '剪纸']
@@ -1585,7 +1592,7 @@ function ProviderTab({ track, providers, config, onChange, lang }) {
                 {testResult.ok ? `${testResult.warning ? '!' : '✓'} ${testResult.msg || t('connectionReady', lang)}` : `✗ ${testResult.msg}`}
               </div>
               {testResult.imageUrl && (
-                <img src={testResult.imageUrl} alt="" style={{ width: 96, height: 96, objectFit: 'cover', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-default)' }} />
+                <SafeImagePreview url={testResult.imageUrl} />
               )}
             </div>
           )}

@@ -4,7 +4,8 @@ import { VID_PROVIDERS } from '../providers/videoProviders'
 import { resolveProviderId } from '../providers/aliases'
 import { t } from '../i18n'
 import { callChatProvider, generateImageProvider, submitVideoProvider } from '../utils/providerClient'
-import { buildGenerationMeta, parseDurationSeconds } from '../utils/generationTasks'
+import { buildGenerationMeta, idList, parseDurationSeconds, uniqueIds } from '../utils/generationTasks'
+import { sanitizeAssetUrl } from '../utils/mediaSecurity.js'
 
 let _msgIdCounter = 0
 function nextId() { return Date.now() * 1000 + (++_msgIdCounter % 1000) }
@@ -69,6 +70,16 @@ function taskAllowedInMode(task, generationMode) {
   if (generationMode === 'image') return task?.type === 'image'
   if (generationMode === 'video') return task?.type === 'video'
   return true
+}
+
+function cleanText(value, max = 50000) {
+  return typeof value === 'string' ? value.slice(0, max) : ''
+}
+
+function cleanId(value) {
+  if (typeof value !== 'string' && typeof value !== 'number') return null
+  const id = String(value)
+  return id ? id : null
 }
 
 export default function useChat(config, canvas, onVideoTaskCreated, activeConversationId, isActiveConversation, conversationBridge, providerLists) {
@@ -234,6 +245,16 @@ ${references.map((r, i) => `  [参考${i + 1}] ${r.type}: "${r.label}" | URL: ${
 用户提供了以上参考图片/视频，请结合这些参考素材来理解用户意图。如果是生成图片，参考其风格、构图、色彩。`
         : ''
 
+      const pendingTasks = sourceMessages
+        .flatMap(m => Array.isArray(m.tasks) ? m.tasks : m.task ? [m.task] : [])
+        .filter(task => task?.status === 'pending' && (task.type === 'image' || task.type === 'video'))
+        .slice(-3)
+      const pendingTaskHint = pendingTasks.length > 0
+        ? `\n\n## 待确认任务
+${pendingTasks.map((task, i) => `  [待确认${i + 1}] ${task.type} | "${task.label || ''}" | 中文说明: "${(task.review_text || '').slice(0, 180)}" | prompt: "${(task.prompt || '').slice(0, 220)}" | 画幅: ${task.ratio || ''}`).join('\n')}
+如果用户是在修改这些待确认任务（例如“改成水彩风”“不要红色”“换成16:9”），请基于最近的待确认任务输出一个新的待确认 task，不要直接生成，也不要删除旧任务。`
+        : ''
+
       const defaultRatio = genSettings?.ratio || config?.general?.defaultRatio || '1:1'
       const defaultStyle = genSettings?.style || config?.general?.defaultStyle || ''
       const defaultNegPrompt = config?.providers?.image?.defaultNegPrompt?.trim() || ''
@@ -255,11 +276,11 @@ ${references.map((r, i) => `  [参考${i + 1}] ${r.type}: "${r.label}" | URL: ${
 
 ## 当前画布
 ${canvas ? canvas.allAssets?.slice(0, 10).map(a => `  [${a.id}] "${a.label}" | ${a.type} | ${a.prompt?.slice(0, 80)}`).join('\n') || '（空）' : '（空）'}
-${modifyHint}${refHint}${styleHint}
+${modifyHint}${refHint}${pendingTaskHint}${styleHint}
 ${modeRule}
 
 ## 响应格式（只输出纯JSON，不要markdown代码块）
-{"understanding":"一句话理解用户意图","intent":"chat|generate_image|modify_image|generate_video|image_to_video","tasks":[{"id":"t1","type":"image|video","label":"中文短标签","prompt":"高质量英文prompt，80词以上，含主体/场景/镜头/构图/光线/色彩/材质/情绪/细节","negative_prompt":${JSON.stringify(defaultNegPrompt || 'low quality, blurry, deformed, watermark, text')},"source_image_id":null,"duration":${defaultDuration},"ratio":"${defaultRatio}"}],"reply":"中文友好回复"}
+{"understanding":"一句话理解用户意图","intent":"chat|generate_image|modify_image|generate_video|image_to_video","tasks":[{"id":"t1","type":"image|video","label":"中文短标签","review_text":"中文创作说明，供用户确认，描述主体/画面/镜头/构图/风格/光线/色彩/情绪/关键细节；视频还要写运动和时长；如果用户描述不足，明确列出你补足的默认假设","prompt":"高质量英文prompt，80词以上，含主体/场景/镜头/构图/光线/色彩/材质/情绪/细节","negative_prompt":${JSON.stringify(defaultNegPrompt || 'low quality, blurry, deformed, watermark, text')},"source_image_id":null,"duration":${defaultDuration},"ratio":"${defaultRatio}"}],"reply":"中文友好回复，提醒用户先审查中文创作说明，确认后再点击生成"}
 
 ## 规则（严格执行）
 1. 默认 intent=chat，tasks=[]。绝大多数对话都是纯聊天。
@@ -269,9 +290,11 @@ ${modeRule}
 5. 选中资产说修改时：intent=modify_image，source_image_id填资产ID。
 6. 选中图片说动起来时：intent=image_to_video，tasks.type=video。
 7. prompt必须英文，80词以上，具体描述镜头/光线/材质/色彩。
-8. reply必须中文，不要声称已经生成完成，只说明你的创作计划。
-9. 不确定时，默认走 chat，不要猜测用户想生成。
-10. modify_image 时，新 prompt 必须基于上次 prompt 做增量修改，保留用户没提到的部分。`
+8. 每个生成 task 必须提供 review_text。review_text 必须中文，写给用户审查，不要混入英文 prompt；用户描述不足时，必须说明你补足的默认假设。
+9. reply必须中文，不要声称已经生成完成，只说明这是待确认方案，并提醒用户审查中文创作说明后点击确认生成。
+10. 不确定时，默认走 chat，不要猜测用户想生成。
+11. modify_image 时，新 prompt 必须基于上次 prompt 做增量修改，保留用户没提到的部分。
+12. 如果用户修改上一条待确认任务，输出新的待确认 task，旧任务留在历史中。`
 
       const system = customSystemPrompt ? `${baseSystem}\n\n## Custom System Prompt\n${customSystemPrompt}` : baseSystem
       const result = await callChatProvider({
@@ -298,27 +321,29 @@ ${modeRule}
         const referenceIds = references?.map(r => r.id).filter(Boolean) || []
         const forcedSourceImageId = genSettings?.sourceImageId || null
         const tasksData = allowedTasks.map(task => {
-          const sourceImageId = task.source_image_id || forcedSourceImageId
+          const sourceImageId = cleanId(task.source_image_id) || cleanId(forcedSourceImageId)
           const sourceAsset = sourceImageId
             ? sourceAssets.find(asset => asset.id === sourceImageId) || references?.find(asset => asset.id === sourceImageId)
             : null
+          const type = task.type === 'video' ? 'video' : 'image'
           return {
             status: 'pending',
-            type: task.type,
-            label: task.label,
-            prompt: task.prompt,
-            negative_prompt: task.negative_prompt || defaultNegPrompt,
-            ratio: task.ratio || defaultRatio,
+            type,
+            label: cleanText(task.label, 120) || (type === 'video' ? t('video', lang) : t('image', lang)),
+            review_text: cleanText(task.review_text),
+            prompt: cleanText(task.prompt),
+            negative_prompt: cleanText(task.negative_prompt || defaultNegPrompt),
+            ratio: cleanText(task.ratio, 50) || defaultRatio,
             duration: parseDurationSeconds(task.duration, defaultDuration),
             source_image_id: sourceImageId,
-            sourceImageUrl: task.sourceImageUrl || sourceAsset?.url || '',
-            intent: parsed.intent,
+            sourceImageUrl: sanitizeAssetUrl(task.sourceImageUrl || sourceAsset?.url || '', 'image'),
+            intent: cleanText(parsed.intent, 100),
             resolution: genSettings?.resolution || '1024',
             sourceAssetIds: uniqueIds([...idList(task.sourceAssetIds), sourceImageId]),
             promptReferenceAssetIds: referenceIds,
-            parentAssetId: genSettings?.parentAssetId || task.parentAssetId || sourceImageId || null,
-            createdFrom: genSettings?.createdFrom || 'chat',
-            styleDirection: genSettings?.styleDirection || ''
+            parentAssetId: cleanId(genSettings?.parentAssetId) || cleanId(task.parentAssetId) || sourceImageId || null,
+            createdFrom: cleanText(genSettings?.createdFrom, 100) || 'chat',
+            styleDirection: cleanText(genSettings?.styleDirection, 500)
           }
         })
         const replyMsg = {

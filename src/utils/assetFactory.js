@@ -9,22 +9,6 @@ function makeAssetId() {
   return `asset_${Date.now()}_${Math.random().toString(36).slice(2, 6)}_${(++_counter) % 1000}`
 }
 
-const DEFAULT_GENERATION = {
-  providerId: '',
-  model: '',
-  mode: '',
-  createdFrom: '',
-  prompt: '',
-  negativePrompt: '',
-  ratio: '',
-  resolution: '',
-  duration: null,
-  parentAssetId: null,
-  sourceAssetIds: [],
-  promptReferenceAssetIds: [],
-  taskId: null
-}
-
 function toIdList(value) {
   const list = Array.isArray(value) ? value : value ? [value] : []
   return list
@@ -55,9 +39,14 @@ function toGenerationMode(value) {
 export function createGeneration(generation = {}) {
   generation = isRecord(generation) ? generation : {}
   return {
-    ...DEFAULT_GENERATION,
-    ...generation,
+    providerId: generation.providerId || '',
+    model: generation.model || '',
     mode: toGenerationMode(generation.mode),
+    createdFrom: generation.createdFrom || '',
+    prompt: generation.prompt || '',
+    negativePrompt: generation.negativePrompt || '',
+    ratio: generation.ratio || '',
+    resolution: generation.resolution || '',
     parentAssetId: toOptionalId(generation.parentAssetId),
     sourceAssetIds: toIdList(generation.sourceAssetIds),
     promptReferenceAssetIds: toIdList(generation.promptReferenceAssetIds),

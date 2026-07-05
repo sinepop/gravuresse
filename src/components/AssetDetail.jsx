@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import Ic from './icons'
 import { t } from '../i18n'
+import useSafeMediaUrl from '../hooks/useSafeMediaUrl'
 
 function ZoomableImage({ src, alt }) {
   const [scale, setScale] = useState(1)
@@ -110,6 +111,16 @@ function DetailRow({ label, value }) {
   )
 }
 
+function LinkedAssetPreview({ asset }) {
+  const { src } = useSafeMediaUrl(asset?.url, asset?.type)
+  if (!src) return null
+  return asset.type === 'video' ? (
+    <video src={src} muted playsInline preload="metadata" style={{ width: '100%', aspectRatio: 1, objectFit: 'cover', borderRadius: 4, display: 'block', background: 'var(--bg-primary)' }} />
+  ) : (
+    <img src={src} alt={asset.label} style={{ width: '100%', aspectRatio: 1, objectFit: 'cover', borderRadius: 4, display: 'block', background: 'var(--bg-primary)' }} />
+  )
+}
+
 function AssetLinksRow({ label, ids = [], assets = [], onSelectAsset, lang }) {
   const [hoveredId, setHoveredId] = useState(null)
   const refs = ids.map(id => {
@@ -165,11 +176,7 @@ function AssetLinksRow({ label, ids = [], assets = [], onSelectAsset, lang }) {
             boxShadow: 'var(--shadow-md)',
             pointerEvents: 'none'
           }}>
-            {hoveredAsset.type === 'video' ? (
-              <video src={hoveredAsset.url} muted playsInline preload="metadata" style={{ width: '100%', aspectRatio: 1, objectFit: 'cover', borderRadius: 4, display: 'block', background: 'var(--bg-primary)' }} />
-            ) : (
-              <img src={hoveredAsset.url} alt={hoveredAsset.label} style={{ width: '100%', aspectRatio: 1, objectFit: 'cover', borderRadius: 4, display: 'block', background: 'var(--bg-primary)' }} />
-            )}
+            <LinkedAssetPreview asset={hoveredAsset} />
             <div style={{ marginTop: 4, fontSize: 10, color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {hoveredAsset.label}
             </div>
@@ -215,6 +222,7 @@ export default function AssetDetail({ asset, allAssets = [], onClose, onDelete, 
   const [saving, setSaving] = useState(false)
   const [mediaError, setMediaError] = useState(false)
   const isVideo = asset?.type === 'video'
+  const { src: previewUrl, loading: previewLoading } = useSafeMediaUrl(asset?.url, asset?.type)
   const generation = asset?.generation || {}
   const prompt = generation.prompt || asset?.prompt || ''
   const negativePrompt = generation.negativePrompt || asset?.negativePrompt || ''
@@ -228,7 +236,7 @@ export default function AssetDetail({ asset, allAssets = [], onClose, onDelete, 
   useEffect(() => {
     setLightbox(false)
     setMediaError(false)
-  }, [asset?.id, asset?.url])
+  }, [asset?.id, asset?.url, previewUrl])
 
   useEffect(() => {
     if (!lightbox) return
@@ -261,21 +269,23 @@ export default function AssetDetail({ asset, allAssets = [], onClose, onDelete, 
 
         <div style={{ flex: 1, overflow: 'auto', padding: 14 }}>
           {asset.url && (
-            <div onClick={() => { if (!isVideo && !mediaError) setLightbox(true) }} style={{
+            <div onClick={() => { if (!isVideo && !mediaError && previewUrl) setLightbox(true) }} style={{
               borderRadius: 'var(--radius-md)', overflow: 'hidden', marginBottom: 14,
               cursor: isVideo || mediaError ? 'default' : 'zoom-in', position: 'relative',
               border: '1px solid var(--border-subtle)', background: 'var(--bg-primary)',
               minHeight: 120, display: 'flex', alignItems: 'center', justifyContent: 'center'
             }}>
-              {mediaError ? (
+              {mediaError || (!previewLoading && !previewUrl) ? (
                 <div style={{ padding: 16, fontSize: 11, color: 'var(--danger)', textAlign: 'center' }}>
                   {t('previewFailed', lang)}
                 </div>
+              ) : previewLoading ? (
+                <div style={{ padding: 16, fontSize: 11, color: 'var(--text-muted)', textAlign: 'center' }}>...</div>
               ) : isVideo ? (
-                <video src={asset.url} controls style={{ width: '100%', display: 'block', maxHeight: 240 }} onError={() => setMediaError(true)} />
+                <video src={previewUrl} controls style={{ width: '100%', display: 'block', maxHeight: 240 }} onError={() => setMediaError(true)} />
               ) : (
                 <>
-                  <img src={asset.url} alt={asset.label} style={{ width: '100%', display: 'block' }} onError={() => setMediaError(true)} />
+                  <img src={previewUrl} alt={asset.label} style={{ width: '100%', display: 'block' }} onError={() => setMediaError(true)} />
                   <div style={{
                     position: 'absolute', bottom: 8, right: 8,
                     background: 'var(--overlay-dark)', backdropFilter: 'blur(8px)',
@@ -346,7 +356,7 @@ export default function AssetDetail({ asset, allAssets = [], onClose, onDelete, 
         </div>
       </div>
 
-      {lightbox && !isVideo && (
+      {lightbox && !isVideo && previewUrl && (
         <div style={{
           position: 'fixed', inset: 0, zIndex: 20000, background: 'var(--overlay-dark)',
           display: 'flex', alignItems: 'center', justifyContent: 'center'
@@ -361,7 +371,7 @@ export default function AssetDetail({ asset, allAssets = [], onClose, onDelete, 
             <Ic n="close" size={14} color="var(--text-white)" />
           </button>
           <div onClick={e => e.stopPropagation()}>
-            <ZoomableImage src={asset.url} alt={asset.label} />
+            <ZoomableImage src={previewUrl} alt={asset.label} />
           </div>
         </div>
       )}

@@ -62,6 +62,7 @@ const ALLOWED_POLL_TEMPLATE_VARIABLES = [
   ...ALLOWED_TEMPLATE_VARIABLES,
   'taskId'
 ]
+const hasOwn = Object.hasOwn || ((obj, key) => Object.prototype.hasOwnProperty.call(obj, key))
 
 function validateGenerationRequest(trackOrAction, providerOrId, task = {}) {
   const track = ACTION_TO_TRACK[trackOrAction] || trackOrAction
@@ -316,7 +317,7 @@ function pickCustomTemplateFields(source) {
 
   const out = {}
   for (const field of [...CUSTOM_TEMPLATE_FIELDS, ...CUSTOM_TEMPLATE_BODY_FIELDS]) {
-    if (field in source) out[field] = source[field]
+    if (hasOwn(source, field)) out[field] = source[field]
   }
   return out
 }

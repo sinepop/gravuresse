@@ -1,21 +1,28 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Ic from './icons'
+import useSafeMediaUrl from '../hooks/useSafeMediaUrl'
 
 export default function AssetCard({ asset, selected, onClick, onContextMenu }) {
   const [mediaError, setMediaError] = useState(false)
   const isVideo = asset.type === 'video'
   const model = asset.generation?.model || asset.model || ''
+  const { src } = useSafeMediaUrl(asset.url, asset.type)
+
+  useEffect(() => {
+    setMediaError(false)
+  }, [asset.id, src])
+
   return (
     <div onClick={() => onClick(asset.id)}
       onContextMenu={(e) => { e.preventDefault(); onContextMenu?.(e, asset) }}
       className={`asset-card ${selected ? 'selected' : ''}`}
     >
       <div className="asset-card-media">
-        {asset.url && !mediaError ? (
+        {src && !mediaError ? (
           isVideo ? (
-            <video src={asset.url} muted playsInline preload="metadata" className="asset-card-image" onError={() => setMediaError(true)} />
+            <video src={src} muted playsInline preload="metadata" className="asset-card-image" onError={() => setMediaError(true)} />
           ) : (
-            <img src={asset.url} alt={asset.label} className="asset-card-image" onError={() => setMediaError(true)} />
+            <img src={src} alt={asset.label} className="asset-card-image" onError={() => setMediaError(true)} />
           )
         ) : (
           <div className="asset-card-fallback">

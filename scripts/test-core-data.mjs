@@ -1,10 +1,15 @@
 import assert from 'node:assert/strict'
+import fs from 'node:fs/promises'
+import Module from 'node:module'
+import os from 'node:os'
+import path from 'node:path'
 import { createRequire } from 'node:module'
 import { assetUrlCases } from './core-tests/asset-url-fixtures.mjs'
 import { runHttpCoreTests } from './core-tests/http.mjs'
 import { runIpcCoreTests } from './core-tests/ipc.mjs'
 import { createAsset, createGeneration, mergeAsset } from '../src/utils/assetFactory.js'
 import { sanitizeAssetUrl } from '../src/utils/mediaSecurity.js'
+import { normalizePreviewUrl } from '../src/hooks/useSafeMediaUrl.js'
 import { formatErrorAlert, getConversationTitle, normalizeConversationRecord, normalizeImportedConversations } from '../src/utils/conversationImport.js'
 import { buildGenerationMeta, parseDurationSeconds } from '../src/utils/generationTasks.js'
 import {
@@ -25,8 +30,31 @@ import { normalizeProviderList } from '../src/hooks/useConfig.js'
 import { createProviderClearPatch, createProviderProfilePatch, createProviderSelectionPatch, defaultProviderTemplatePreset, normalizeProviderTemplate, providerNeedsTemplatePaths, providerTemplatePathStatus, providerTemplatePresets } from '../src/utils/providerConfig.js'
 
 const require = createRequire(import.meta.url)
+function requireWithElectronMock(modulePath, electronMock) {
+  const originalLoad = Module._load
+  Module._load = function patchedLoad(request, parent, isMain) {
+    if (request === 'electron') return electronMock
+    return originalLoad.call(this, request, parent, isMain)
+  }
+  try {
+    return require(modulePath)
+  } finally {
+    Module._load = originalLoad
+  }
+}
+
 const customImage = require('../electron/providers/handlers/custom.js')._test
 const modelsApi = require('../electron/api/models.js')._test
+const { downloadToFile } = require('../electron/api/http.js')
+const mediaCache = require('../electron/media-cache.js')
+const configModule = requireWithElectronMock('../electron/config.js', {
+  app: { getPath: () => path.join(os.tmpdir(), 'gravuresse-config-test') },
+  safeStorage: {
+    isEncryptionAvailable: () => false,
+    encryptString: value => Buffer.from(String(value)),
+    decryptString: value => Buffer.from(value).toString('utf8')
+  }
+})
 const { resolveAuth } = require('../electron/providers/auth.js')
 const providerRegistry = require('../electron/providers/registry.js')
 const registryUtils = require('../electron/providers/registry-utils.js')
@@ -36,6 +64,16 @@ const mainSanitize = require('../electron/security/sanitize.js')
 
 await runHttpCoreTests()
 await runIpcCoreTests()
+
+const pollutedConfig = JSON.parse('{"providers":{"image":{"id":"custom-image"},"__proto__":{"template":{"path":"/evil"}}},"general":{"constructor":{"prototype":{"bad":"yes"}}}}')
+const sanitizedConfig = configModule._test.sanitizeObjectShape(pollutedConfig)
+assert.equal(sanitizedConfig.providers.template, undefined)
+assert.equal(Object.hasOwn(sanitizedConfig.general, 'constructor'), false)
+assert.equal({}.bad, undefined)
+const mergedPollutedConfig = configModule._test.deepMerge(configModule.DEFAULT_CONFIG, pollutedConfig)
+assert.equal(mergedPollutedConfig.providers.image.id, 'custom-image')
+assert.equal(mergedPollutedConfig.providers.template, undefined)
+assert.equal(Object.hasOwn(mergedPollutedConfig.general, 'constructor'), false)
 
 assert.equal(parseDurationSeconds('8s', 5), 8)
 assert.equal(parseDurationSeconds('bad', 5), 5)
@@ -163,6 +201,16 @@ assert.equal(sanitizeAssetUrl('data:image/png;base64,AAAA', 'video'), '')
 assert.equal(sanitizeAssetUrl('data:video/mp4;base64,AAAA', 'video'), 'data:video/mp4;base64,AAAA')
 assert.equal(mainSanitize.sanitizeAssetUrl('https://127.0.0.1/a.png', 'image'), '')
 assert.equal(mainSanitize.sanitizeAssetUrl('https://[::ffff:192.168.0.1]/a.png', 'image'), '')
+assert.deepEqual(normalizePreviewUrl('data:image/png;base64,AAAA', 'image'), { kind: 'direct', url: 'data:image/png;base64,AAAA' })
+assert.deepEqual(normalizePreviewUrl('data:text/html;base64,AAAA', 'image'), { kind: 'blocked', url: '' })
+assert.deepEqual(normalizePreviewUrl('blob:https://example.com/id', 'image'), { kind: 'blocked', url: '' })
+assert.deepEqual(normalizePreviewUrl('https://cdn.example.com/a.png', 'image'), { kind: 'remote', url: 'https://cdn.example.com/a.png' })
+assert.deepEqual(
+  normalizePreviewUrl(`gravuresse-media://cache/${'a'.repeat(64)}.png`, 'image'),
+  { kind: 'direct', url: `gravuresse-media://cache/${'a'.repeat(64)}.png` }
+)
+assert.deepEqual(normalizePreviewUrl(`gravuresse-media://cache/${'a'.repeat(64)}.mp4`, 'image'), { kind: 'blocked', url: '' })
+assert.deepEqual(normalizePreviewUrl('gravuresse-media://cache/../secret.png', 'image'), { kind: 'blocked', url: '' })
 
 const storedImageTestConfig = {
   providers: {
@@ -198,6 +246,51 @@ const savedCredentialImageTest = buildProviderImageTestPayload({
 assert.equal(savedCredentialImageTest.ok, true)
 assert.equal(savedCredentialImageTest.payload.credentials.apiKey, 'stored-key')
 assert.equal(savedCredentialImageTest.payload.template.path, '/stored-images')
+
+const inheritedTemplateProvider = Object.create({ template: { path: '/inherited-images' } })
+Object.assign(inheritedTemplateProvider, {
+  id: 'custom-image',
+  apiKey: 'stored-key',
+  baseUrl: 'https://relay.example.com',
+  model: 'gpt-image-2'
+})
+const inheritedTemplateImageTest = buildProviderImageTestPayload({
+  id: 'custom-image',
+  baseUrl: 'https://relay.example.com',
+  apiKey: 'typed-key',
+  prompt: 'draw a cube',
+  ratio: '1:1',
+  resolution: '1024'
+}, {
+  providers: { image: inheritedTemplateProvider },
+  providerProfiles: { image: [] },
+  general: { apiTimeout: 60000 }
+})
+assert.equal(inheritedTemplateImageTest.ok, true)
+assert.equal(Object.hasOwn(inheritedTemplateImageTest.payload, 'template'), false)
+const inheritedTemplateObject = Object.create({
+  path: '/inherited-images',
+  submitPath: '/inherited-submit',
+  pollPath: '/inherited-poll/{taskId}',
+  requestBody: { prompt: '{prompt}' },
+  imageUrlPath: 'data.0.url'
+})
+const inheritedTemplateValidation = validateGenerationRequest('video', providerRegistry.getProvider('custom-video'), {
+  prompt: 'animate a cube',
+  ratio: '1:1',
+  duration: 5,
+  template: inheritedTemplateObject
+})
+assert.equal(inheritedTemplateValidation.ok, false)
+assert.ok(inheritedTemplateValidation.errors.some(item => item.field === 'template.submitPath'))
+assert.ok(inheritedTemplateValidation.errors.some(item => item.field === 'template.pollPath'))
+const inheritedTemplateRuntime = customImage.getTemplate({
+  action: 'generate',
+  provider: { image: {} },
+  template: inheritedTemplateObject
+})
+assert.equal(Object.hasOwn(inheritedTemplateRuntime, 'path'), false)
+assert.equal(Object.hasOwn(inheritedTemplateRuntime, 'requestBody'), false)
 
 const typedCredentialImageTest = buildProviderImageTestPayload({
   id: 'custom-image',
@@ -238,6 +331,72 @@ assert.equal(mainSanitizedImport.conversation.assets[0].generation.parentAssetId
 assert.deepEqual(mainSanitizedImport.conversation.assets[0].generation.sourceAssetIds, ['source-a'])
 assert.deepEqual(mainSanitizedImport.conversation.assets[0].generation.promptReferenceAssetIds, ['prompt-ref-a'])
 assert.equal(mainSanitizedImport.conversation.assets[0].generation.taskId, 'task-a')
+const sanitizedReviewMessage = mainSanitize._test.sanitizeMessage({
+  id: 'm-review',
+  role: 'assistant',
+  content: '请先审查创作说明。',
+  unknown: 'drop',
+  tasks: [{
+    id: 't-review',
+    type: 'image',
+    status: 'pending',
+    label: '中文标签',
+    review_text: '中文创作说明：一只赛博朋克猫，霓虹灯光，正方形画幅。',
+    prompt: 'A cyberpunk cat portrait with neon lighting and detailed city atmosphere.',
+    negative_prompt: 'low quality',
+    unknown: 'drop'
+  }]
+})
+assert.equal(sanitizedReviewMessage.unknown, undefined)
+assert.equal(sanitizedReviewMessage.tasks[0].review_text, '中文创作说明：一只赛博朋克猫，霓虹灯光，正方形画幅。')
+assert.equal(sanitizedReviewMessage.tasks[0].unknown, undefined)
+const truncatedReviewTask = mainSanitize._test.sanitizeMessage({
+  id: 'm-review-long',
+  role: 'assistant',
+  content: 'long',
+  tasks: [{ id: 't-review-long', type: 'video', status: 'pending', label: '长说明', review_text: '审'.repeat(50020), prompt: 'video prompt' }]
+}).tasks[0]
+assert.equal(truncatedReviewTask.review_text.length, 50000)
+const legacyTaskMessage = mainSanitize._test.sanitizeMessage({
+  id: 'm-legacy-task',
+  role: 'assistant',
+  content: 'legacy',
+  tasks: [{ id: 't-legacy', type: 'image', status: 'pending', label: '旧任务', prompt: 'legacy english prompt' }]
+})
+assert.equal(legacyTaskMessage.tasks[0].prompt, 'legacy english prompt')
+const strippedImport = mainSanitize.sanitizeConversationImportPayload({
+  app: 'Gravuresse',
+  media: { inlined: 1, extra: 'drop' },
+  extraTopLevel: 'drop',
+  conversation: {
+    id: 'conv-a',
+    title: 'kept',
+    unknown: 'drop',
+    messages: [{ id: 'm1', role: 'assistant', content: 'hi', unknown: 'drop', tasks: [{ id: 't1', type: 'image', status: 'pending', label: 'kept', review_text: '保留中文说明', prompt: 'kept prompt', sourceImageUrl: 'https://cdn.example.com/source.png', resolution: '1536', intent: 'modify_image', createdFrom: 'chat', styleDirection: 'watercolor', unknown: 'drop' }] }],
+    assets: []
+  }
+})
+assert.equal(strippedImport.extraTopLevel, undefined)
+assert.equal(strippedImport.media.extra, undefined)
+assert.equal(strippedImport.conversation.unknown, undefined)
+assert.equal(strippedImport.conversation.id, 'conv-a')
+assert.equal(strippedImport.conversation.messages[0].unknown, undefined)
+assert.equal(strippedImport.conversation.messages[0].tasks[0].review_text, '保留中文说明')
+assert.equal(strippedImport.conversation.messages[0].tasks[0].sourceImageUrl, 'https://cdn.example.com/source.png')
+assert.equal(strippedImport.conversation.messages[0].tasks[0].resolution, '1536')
+assert.equal(strippedImport.conversation.messages[0].tasks[0].intent, 'modify_image')
+assert.equal(strippedImport.conversation.messages[0].tasks[0].createdFrom, 'chat')
+assert.equal(strippedImport.conversation.messages[0].tasks[0].styleDirection, 'watercolor')
+assert.equal(strippedImport.conversation.messages[0].tasks[0].unknown, undefined)
+const strippedStore = mainSanitize.sanitizeStorePayload({
+  schemaVersion: 1,
+  activeId: 'conv-a',
+  deletedIds: ['old'],
+  unknown: 'drop',
+  conversations: [{ id: 'conv-a', title: 'kept', unknown: 'drop', messages: [], assets: [] }]
+})
+assert.equal(strippedStore.unknown, undefined)
+assert.equal(strippedStore.conversations[0].unknown, undefined)
 
 const stabilityProvider = providerRegistry.getProvider('stability')
 const stabilityUiProvider = { id: 'stability', integrationStatus: 'custom-template' }
@@ -496,12 +655,14 @@ const generation = createGeneration({
   parentAssetId: '',
   sourceAssetIds: 'source-1',
   promptReferenceAssetIds: [undefined, 'ref-1', 42],
-  duration: 0
+  duration: 0,
+  unknownLargeField: 'drop'
 })
 assert.equal(generation.parentAssetId, null)
 assert.deepEqual(generation.sourceAssetIds, ['source-1'])
 assert.deepEqual(generation.promptReferenceAssetIds, ['ref-1', '42'])
 assert.equal(generation.duration, 0)
+assert.equal(generation.unknownLargeField, undefined)
 
 const legacyAsset = createAsset({
   id: '',
@@ -562,6 +723,9 @@ const assetFromBadInput = createAsset(null)
 assert.ok(assetFromBadInput.id)
 const assetWithBadGeneration = createAsset({ generation: 'bad generation' })
 assert.equal(Object.hasOwn(assetWithBadGeneration.generation, '0'), false)
+const assetWithUnknownGeneration = createAsset({ generation: { prompt: 'keep', unknown: 'drop' } })
+assert.equal(assetWithUnknownGeneration.generation.prompt, 'keep')
+assert.equal(assetWithUnknownGeneration.generation.unknown, undefined)
 
 const mergedAsset = mergeAsset(
   createAsset({
@@ -638,6 +802,35 @@ for (const item of assetUrlCases) {
   assert.equal(mainSanitize.sanitizeAssetUrl(item.url, item.type), item.expected, `main sanitizer mismatch for ${item.url}`)
 }
 
+const mediaCacheDir = await fs.mkdtemp(path.join(os.tmpdir(), 'gravuresse-media-cache-'))
+await assert.rejects(
+  () => mediaCache.cacheAssetPreview(
+    { url: 'https://127.0.0.1/a.png', type: 'image' },
+    {
+      cacheDir: mediaCacheDir,
+      downloadToFile,
+      validateAssetBytes: () => 'image/png'
+    }
+  ),
+  /Blocked private\/internal host/
+)
+const cachedPreviewUrl = await mediaCache.cacheAssetPreview(
+  { url: 'https://cdn.example.com/a.png', type: 'image' },
+  {
+    cacheDir: mediaCacheDir,
+    downloadToFile: async (_, filePath) => {
+      await fs.writeFile(filePath, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
+    },
+    validateAssetBytes: () => 'image/png'
+  }
+)
+assert.match(cachedPreviewUrl, /^gravuresse-media:\/\/cache\/[a-f0-9]{64}\.png$/)
+assert.equal(path.dirname(mediaCache.parseMediaCacheUrl(cachedPreviewUrl, mediaCacheDir)), path.resolve(mediaCacheDir))
+assert.throws(
+  () => mediaCache.parseMediaCacheUrl('gravuresse-media://cache/../secret.png', mediaCacheDir),
+  /Invalid media cache file name/
+)
+
 const dirtyMessageImport = normalizeImportedConversations({
   conversation: {
     title: 'dirty messages',
@@ -646,7 +839,7 @@ const dirtyMessageImport = normalizeImportedConversations({
       'bad',
       { id: 1, role: 'user', content: 123 },
       { id: '1', role: 'assistant', content: 'running task', task: { status: 'generating', type: 'audio', label: '', prompt: 7, error: {} } },
-      { id: 'm3', role: 'assistant', content: 'done task', tasks: ['bad', { status: 'done', type: 'video', prompt: 'video prompt', sourceAssetIds: 'source-video' }] }
+      { id: 'm3', role: 'assistant', content: 'done task', unknown: 'drop', tasks: ['bad', { status: 'done', type: 'video', review_text: '视频中文说明', prompt: 'video prompt', sourceImageUrl: 'https://cdn.example.com/source.png', resolution: '2048', intent: 'generate_video', createdFrom: 'chat', styleDirection: 'cinematic', sourceAssetIds: 'source-video', unknown: 'drop' }] }
     ]
   }
 })
@@ -661,20 +854,30 @@ assert.equal(dirtyMessageImport[0].messages[1].tasks[0].prompt, '')
 assert.equal(typeof dirtyMessageImport[0].messages[1].tasks[0].error, 'string')
 assert.equal(dirtyMessageImport[0].messages[2].tasks.length, 1)
 assert.equal(dirtyMessageImport[0].messages[2].tasks[0].type, 'video')
+assert.equal(dirtyMessageImport[0].messages[2].tasks[0].review_text, '视频中文说明')
+assert.equal(dirtyMessageImport[0].messages[2].tasks[0].sourceImageUrl, 'https://cdn.example.com/source.png')
+assert.equal(dirtyMessageImport[0].messages[2].tasks[0].resolution, '2048')
+assert.equal(dirtyMessageImport[0].messages[2].tasks[0].intent, 'generate_video')
+assert.equal(dirtyMessageImport[0].messages[2].tasks[0].createdFrom, 'chat')
+assert.equal(dirtyMessageImport[0].messages[2].tasks[0].styleDirection, 'cinematic')
+assert.equal(dirtyMessageImport[0].messages[2].unknown, undefined)
+assert.equal(dirtyMessageImport[0].messages[2].tasks[0].unknown, undefined)
 assert.deepEqual(dirtyMessageImport[0].messages[2].tasks[0].sourceAssetIds, ['source-video'])
 
 const normalizedStoredConversation = normalizeConversationRecord({
   id: 99,
   title: 'stored',
+  unknown: 'drop',
   messages: ['bad', { id: 1, role: 'user', content: 'stored prompt' }],
   assets: ['bad', { id: 2, generation: { parentAssetId: 3 } }]
 })
-assert.equal(normalizedStoredConversation.id, 99)
+assert.equal(normalizedStoredConversation.id, '99')
 assert.equal(normalizedStoredConversation.messages.length, 1)
 assert.equal(normalizedStoredConversation.messages[0].id, '1')
 assert.equal(normalizedStoredConversation.assets.length, 1)
 assert.equal(normalizedStoredConversation.assets[0].id, '2')
 assert.equal(normalizedStoredConversation.assets[0].generation.parentAssetId, '3')
+assert.equal(normalizedStoredConversation.unknown, undefined)
 
 const single = normalizeImportedConversations({
   conversation: {

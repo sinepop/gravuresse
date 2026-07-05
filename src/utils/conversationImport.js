@@ -24,6 +24,11 @@ function toIdList(value) {
     .filter(Boolean)
 }
 
+function toNumber(value) {
+  const number = Number(value)
+  return Number.isFinite(number) ? number : undefined
+}
+
 export function getConversationTitle(messages = []) {
   const list = Array.isArray(messages) ? messages : []
   const message = list.find(m => m?.role === 'user' && typeof m.content === 'string' && m.content.trim())
@@ -49,7 +54,33 @@ function normalizeImportedAssets(assets = []) {
   }).map(asset => {
     const requestedId = typeof asset.id === 'string' || typeof asset.id === 'number' ? String(asset.id) : ''
     const shouldKeepId = requestedId && !seenIds.has(requestedId)
-    const normalized = createAsset(shouldKeepId ? { ...asset, id: requestedId } : { ...asset, id: '' })
+    const normalized = createAsset({
+      id: shouldKeepId ? requestedId : '',
+      type: asset.type,
+      label: asset.label,
+      prompt: asset.prompt,
+      negativePrompt: asset.negativePrompt,
+      url: asset.url,
+      originalUrl: asset.originalUrl,
+      model: asset.model,
+      ratio: asset.ratio,
+      resolution: asset.resolution,
+      style: asset.style,
+      createdAt: asset.createdAt,
+      duration: asset.duration,
+      providerId: asset.providerId,
+      provider: asset.provider,
+      createdFrom: asset.createdFrom,
+      parentAssetId: asset.parentAssetId,
+      sourceAssetIds: asset.sourceAssetIds,
+      promptReferenceAssetIds: asset.promptReferenceAssetIds,
+      taskId: asset.taskId,
+      isMaterial: asset.isMaterial,
+      _generating: asset._generating,
+      x: asset.x,
+      y: asset.y,
+      generation: asset.generation
+    })
     seenIds.add(normalized.id)
     return normalized
   })
@@ -65,19 +96,31 @@ function normalizeImportedTask(task = {}) {
       ? task.status
       : 'pending'
   return {
-    ...task,
     id: toOptionalId(task.id) || 't1',
     type: task.type === 'video' ? 'video' : 'image',
     status,
     label: typeof task.label === 'string' && task.label ? task.label : 'Imported task',
     prompt: typeof task.prompt === 'string' ? task.prompt : '',
+    review_text: typeof task.review_text === 'string' ? task.review_text : '',
     negative_prompt: typeof task.negative_prompt === 'string' ? task.negative_prompt : '',
     ratio: typeof task.ratio === 'string' && task.ratio ? task.ratio : '1:1',
+    resolution: typeof task.resolution === 'string' ? task.resolution : '',
     source_image_id: toOptionalId(task.source_image_id),
+    sourceImageUrl: typeof task.sourceImageUrl === 'string' ? task.sourceImageUrl : '',
+    intent: typeof task.intent === 'string' ? task.intent : '',
+    createdFrom: typeof task.createdFrom === 'string' ? task.createdFrom : '',
+    styleDirection: typeof task.styleDirection === 'string' ? task.styleDirection : '',
     sourceAssetIds: toIdList(task.sourceAssetIds),
     promptReferenceAssetIds: toIdList(task.promptReferenceAssetIds),
     parentAssetId: toOptionalId(task.parentAssetId),
     taskId: toOptionalId(task.taskId),
+    assetId: toOptionalId(task.assetId),
+    queueId: toOptionalId(task.queueId),
+    duration: task.duration ?? null,
+    elapsed: toNumber(task.elapsed),
+    startTime: toNumber(task.startTime),
+    batchTotal: toNumber(task.batchTotal),
+    batchDone: toNumber(task.batchDone),
     error: activeStatus ? error || 'Imported task is no longer running in this workspace.' : error || undefined
   }
 }
@@ -92,7 +135,6 @@ function normalizeImportedMessages(messages = []) {
       .map(normalizeImportedTask)
       .filter(Boolean)
     const normalized = {
-      ...message,
       id,
       role: message.role === 'user' ? 'user' : 'assistant',
       content: typeof message.content === 'string' ? message.content : '',
@@ -122,7 +164,15 @@ export function normalizeConversationRecord(source = {}) {
   const messages = normalizeImportedMessages(source.messages)
   const assets = normalizeImportedAssets(source.assets)
   const title = typeof source.title === 'string' ? source.title.slice(0, 80) : getConversationTitle(messages)
-  return { ...source, title, messages, assets }
+  return {
+    ...(toOptionalId(source.id) ? { id: toOptionalId(source.id) } : {}),
+    title,
+    ...(typeof source.createdAt === 'string' ? { createdAt: source.createdAt } : {}),
+    ...(typeof source.updatedAt === 'string' ? { updatedAt: source.updatedAt } : {}),
+    active: source.active === true,
+    messages,
+    assets
+  }
 }
 
 export function formatErrorAlert(label, error) {

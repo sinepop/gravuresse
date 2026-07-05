@@ -4,7 +4,7 @@ function registerConfigIpc({ ipcMain, config }) {
     const allowedKeys = Object.keys(config.DEFAULT_CONFIG)
     const filtered = {}
     for (const key of allowedKeys) {
-      if (key in cfg) filtered[key] = cfg[key]
+      if (Object.hasOwn(cfg || {}, key)) filtered[key] = cfg[key]
     }
     await config.save(config.mergeRedactedApiKeys(filtered, config.load()))
   })

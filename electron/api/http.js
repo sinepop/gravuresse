@@ -85,6 +85,9 @@ function assertHttpsUrl(urlStr) {
   if (!parsed.hostname) {
     throw new Error('Invalid URL host')
   }
+  if (parsed.username || parsed.password) {
+    throw new Error('URL credentials are not allowed')
+  }
   if (isPrivateHost(parsed.hostname)) {
     throw new Error(`Blocked private/internal host: ${parsed.hostname}`)
   }
