@@ -2,6 +2,13 @@
 
 ## 涓枃
 
+#### v2.1.5 (2026-07-05)
+
+**Startup hotfix**
+- Fixed the 2.1.4 startup crash caused by the renderer calling `normalizeConversationRecord()` without importing it.
+- Added a focused entrypoint unresolved-reference check to `npm run test:core` so missing imports in high-risk JS entrypoints fail before release.
+- Added a Windows packaged smoke check for `release/win-unpacked/Gravuresse.exe` to catch startup `ReferenceError`, `Uncaught`, and ErrorBoundary failures before publishing.
+
 #### v2.1.4 (2026-07-05)
 
 **Release hardening**

@@ -10,7 +10,7 @@ import useConfig from './hooks/useConfig'
 import useChat from './hooks/useChat'
 import useCanvas from './hooks/useCanvas'
 import useTaskQueue from './hooks/useTaskQueue'
-import { formatErrorAlert, getConversationTitle, normalizeImportedConversations } from './utils/conversationImport'
+import { formatErrorAlert, getConversationTitle, normalizeConversationRecord, normalizeImportedConversations } from './utils/conversationImport'
 import {
   addAssetToConversationRecord,
   appendMessageToConversation,
