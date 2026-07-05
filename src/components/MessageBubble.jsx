@@ -3,6 +3,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import Ic from './icons'
 import { t } from '../i18n'
+import { sanitizeAssetUrl } from '../utils/mediaSecurity.js'
 
 function ElapsedTimer({ startTime }) {
   const [elapsed, setElapsed] = useState(0)
@@ -25,11 +26,14 @@ function ElapsedTimer({ startTime }) {
 function TaskCard({ task, onConfirm, onBatchGenerate, lang }) {
   const [batchCount, setBatchCount] = useState(2)
   const [showBatch, setShowBatch] = useState(false)
+  const [showPrompt, setShowPrompt] = useState(false)
   const isPending = task.status === 'pending'
   const isGenerating = task.status === 'generating'
   const isQueued = task.status === 'queued' || task.status === 'running'
   const isDone = task.status === 'done'
   const isError = task.status === 'error'
+  const hasReviewText = Boolean(String(task.review_text || '').trim())
+  const reviewText = hasReviewText ? task.review_text : task.prompt
 
   return (
     <div style={{
@@ -52,13 +56,40 @@ function TaskCard({ task, onConfirm, onBatchGenerate, lang }) {
         {isError && <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--danger)' }}>{t('failed', lang)}</span>}
         {isQueued && <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--accent)' }}>{t('queued', lang)}</span>}
       </div>
-      <div style={{
-        fontSize: 11, lineHeight: 1.6, color: 'var(--text-secondary)',
-        background: 'var(--bg-surface)', padding: 8, borderRadius: 'var(--radius-sm)',
-        maxHeight: 120, overflow: 'auto', wordBreak: 'break-word', fontFamily: 'var(--font-mono)'
-      }}>
-        {task.prompt}
+      <div style={{ marginBottom: hasReviewText && task.prompt ? 8 : 0 }}>
+        <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 4, fontWeight: 600 }}>
+          {hasReviewText ? t('creativeReview', lang) : t('promptLabel', lang)}
+        </div>
+        <div style={{
+          fontSize: 12, lineHeight: 1.65, color: 'var(--text-secondary)',
+          background: 'var(--bg-surface)', padding: 8, borderRadius: 'var(--radius-sm)',
+          maxHeight: 150, overflow: 'auto', wordBreak: 'break-word', whiteSpace: 'pre-wrap'
+        }}>
+          {reviewText}
+        </div>
       </div>
+      {hasReviewText && task.prompt && (
+        <div>
+          <button onClick={() => setShowPrompt(!showPrompt)} style={{
+            background: 'transparent', border: '1px solid var(--border-subtle)',
+            borderRadius: 'var(--radius-sm)', padding: '3px 8px',
+            color: 'var(--text-muted)', fontSize: 10, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', gap: 4, marginBottom: showPrompt ? 6 : 0
+          }}>
+            <Ic n="chevDown" size={10} />
+            {t('executionPrompt', lang)}
+          </button>
+          {showPrompt && (
+            <div style={{
+              fontSize: 11, lineHeight: 1.6, color: 'var(--text-secondary)',
+              background: 'var(--bg-surface)', padding: 8, borderRadius: 'var(--radius-sm)',
+              maxHeight: 120, overflow: 'auto', wordBreak: 'break-word', fontFamily: 'var(--font-mono)'
+            }}>
+              {task.prompt}
+            </div>
+          )}
+        </div>
+      )}
       {isError && task.error && (
         <div style={{ fontSize: 11, color: 'var(--danger)', marginTop: 6 }}>{task.error}</div>
       )}
@@ -188,11 +219,14 @@ export default function MessageBubble({ msg, onConfirmTask, onBatchGenerate, lan
                 ? <pre style={{ background: 'var(--bg-primary)', padding: 8, borderRadius: 4, overflow: 'auto', fontSize: 11, fontFamily: 'var(--font-mono)' }}><code>{children}</code></pre>
                 : <code style={{ background: 'var(--bg-primary)', padding: '1px 5px', borderRadius: 3, fontSize: 12 }}>{children}</code>
             ),
-            a: ({ children, href }) => (
-              <a href={href} onClick={(e) => openMarkdownLink(e, href)} style={{ color: 'var(--accent)', textDecoration: 'underline' }}>
-                {children}
-              </a>
-            ),
+            a: ({ children, href }) => {
+              const safeHref = sanitizeAssetUrl(href, 'image')
+              return (
+                <a href={safeHref || undefined} onClick={(e) => openMarkdownLink(e, safeHref)} style={{ color: 'var(--accent)', textDecoration: safeHref ? 'underline' : 'none' }}>
+                  {children}
+                </a>
+              )
+            },
             img: () => null
           }}>{msg.content}</ReactMarkdown>
           </>

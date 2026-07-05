@@ -20,6 +20,7 @@ function registerAssetIpc({
   saveDir,
   normalizeAssetLabel,
   writeAssetUrl,
+  cacheAssetPreview,
   openExternalSafe
 }) {
   ipcMain.handle('api:saveAsset', async (_, params) => {
@@ -30,6 +31,11 @@ function registerAssetIpc({
   })
 
   ipcMain.handle('api:getSaveDir', () => saveDir)
+
+  ipcMain.handle('api:cacheAssetPreview', async (_, params) => {
+    if (typeof cacheAssetPreview !== 'function') throw new Error('Asset preview cache is unavailable')
+    return await cacheAssetPreview(params)
+  })
 
   ipcMain.handle('api:saveAssetWithDialog', async (_, params) => {
     const { url, label, type } = normalizeAssetSaveParams(params)

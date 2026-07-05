@@ -73,6 +73,7 @@ export interface ElectronAPI {
 
   saveAssetToDisk(params: SaveAssetParams): Promise<string>
   saveAssetWithDialog(params: SaveAssetParams): Promise<{ canceled: boolean; filePath?: string }>
+  cacheAssetPreview(params: SaveAssetParams): Promise<string>
   getSaveDir(): Promise<string>
 
   openExternal(url: string): Promise<void>

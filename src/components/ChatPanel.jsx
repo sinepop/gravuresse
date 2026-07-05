@@ -3,6 +3,7 @@ import MessageBubble from './MessageBubble'
 import ModelSelector from './ModelSelector'
 import { t } from '../i18n'
 import Ic from './icons'
+import useSafeMediaUrl from '../hooks/useSafeMediaUrl'
 
 const ASPECT_RATIOS = ['1:1', '4:3', '3:4', '16:9', '9:16', '3:2']
 const STYLE_PRESETS = [
@@ -25,6 +26,16 @@ function styleLabel(value, lang) {
 function normalizeStyleValue(value) {
   return STYLE_PRESETS.find(item => item.value === value || item.label.zh === value)?.value || value || ''
 }
+
+function SafeReferenceThumb({ asset }) {
+  const { src } = useSafeMediaUrl(asset?.url, asset?.type)
+  if (!src) return null
+  if (asset?.type === 'video') {
+    return <video src={src} muted playsInline preload="metadata" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+  }
+  return <img src={src} alt={asset?.label || ''} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+}
+
 const RESOLUTIONS = [
   { value: '1024', label: { zh: '标准', en: 'Standard' } },
   { value: '1536', label: { zh: '高清', en: 'High' } },
@@ -411,7 +422,7 @@ export default function ChatPanel({ chat, config, providerLists, onProviderChang
               position: 'relative', width: 48, height: 48, borderRadius: 'var(--radius-sm)',
               overflow: 'hidden', border: '1px solid var(--border-accent)', flexShrink: 0
             }}>
-              <img src={ref.url} alt={ref.label} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              <SafeReferenceThumb asset={ref} />
               <button onClick={() => removeReference(ref.id)} style={{
                 position: 'absolute', top: -2, right: -2, width: 14, height: 14, borderRadius: '50%',
                 background: 'var(--danger)', border: 'none', color: 'var(--text-white)', fontSize: 8,
@@ -449,7 +460,7 @@ export default function ChatPanel({ chat, config, providerLists, onProviderChang
               border: references.find(r => r.id === asset.id) ? '2px solid var(--accent)' : '1px solid var(--border-default)',
               cursor: 'pointer', flexShrink: 0, position: 'relative'
             }}>
-              <img src={asset.url} alt={asset.label} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              <SafeReferenceThumb asset={asset} />
               {asset.isMaterial && (
                 <div style={{
                   position: 'absolute', top: 3, left: 3, width: 16, height: 16,

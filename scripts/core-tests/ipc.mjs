@@ -122,11 +122,13 @@ export async function runIpcCoreTests() {
     saveDir: 'C:\\tmp',
     normalizeAssetLabel: label => String(label || 'asset'),
     writeAssetUrl: async () => 'C:\\tmp\\asset.png',
+    cacheAssetPreview: async () => 'gravuresse-media://cache/test.png',
     openExternalSafe: async () => {}
   })
-  for (const channel of ['api:saveAsset', 'api:getSaveDir', 'api:saveAssetWithDialog', 'shell:open-external']) {
+  for (const channel of ['api:saveAsset', 'api:getSaveDir', 'api:cacheAssetPreview', 'api:saveAssetWithDialog', 'shell:open-external']) {
     assert.equal(typeof assetIpc.handlers.get(channel), 'function', `${channel} should be registered`)
   }
+  assert.equal(await assetIpc.handlers.get('api:cacheAssetPreview')(null, { url: 'https://cdn.example.com/a.png', type: 'image' }), 'gravuresse-media://cache/test.png')
   await assert.rejects(
     () => assetIpc.handlers.get('api:saveAsset')(null, {}),
     /Asset URL is required/

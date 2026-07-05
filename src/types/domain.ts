@@ -37,6 +37,7 @@ export interface MessageTask {
   status: TaskStatus
   label: string
   prompt: string
+  review_text?: string
   negative_prompt?: string
   ratio?: string
   duration?: number | string | null

@@ -34,6 +34,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   saveAssetToDisk: (params) => ipcRenderer.invoke('api:saveAsset', params),
   saveAssetWithDialog: (params) => ipcRenderer.invoke('api:saveAssetWithDialog', params),
+  cacheAssetPreview: (params) => ipcRenderer.invoke('api:cacheAssetPreview', params),
   getSaveDir: () => ipcRenderer.invoke('api:getSaveDir'),
 
   openExternal: (url) => ipcRenderer.invoke('shell:open-external', url),

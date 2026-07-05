@@ -2,6 +2,14 @@
 
 ## 涓枃
 
+#### v2.1.4 (2026-07-05)
+
+**Release hardening**
+- Added Chinese review text for chat-created image/video tasks so users confirm the creative brief before providers receive the English execution prompt.
+- Routed remote media previews through a main-process HTTPS cache with MIME sniffing, private-host blocking, and a restricted local protocol.
+- Hardened config, import, store, provider template, media URL, Markdown link, and generation metadata boundaries against inherited fields and unsafe URLs.
+- Added release SHA256 checksum generation and expanded core regression coverage for sanitizer, preview cache, task review text, and custom provider templates.
+
 #### v2.1.3 (2026-07-04)
 
 **TypeScript boundary and IPC cleanup**

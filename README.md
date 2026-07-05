@@ -36,7 +36,7 @@
 
 ### 快速开始
 
-1. 下载 `gravuresse-Setup-2.1.3.exe` 并安装
+1. 下载 `gravuresse-Setup-2.1.4.exe` 并安装
 2. 打开程序，点击标题栏齿轮图标（或按 `Ctrl+,`）进入设置
 3. 在 API 配置中选择 Provider，输入 API Key，模型自动获取
 4. 在聊天框输入需求，AI 先出提示词，确认后自动生成
@@ -57,6 +57,8 @@ $env:ELECTRON_MIRROR='https://npmmirror.com/mirrors/electron/'
 $env:ELECTRON_BUILDER_BINARIES_MIRROR='https://npmmirror.com/mirrors/electron-builder-binaries/'
 npm run package
 ```
+
+发布包会在 `release/SHA256SUMS.txt` 生成 SHA256 校验和。正式发布时请同时上传安装包和校验和，便于用户核对下载文件。
 
 ### 更新日志
 
@@ -104,7 +106,7 @@ Driven by a research mindset and sheer persistence, I dug through tons of resour
 
 ### Quick Start
 
-1. Download `gravuresse-Setup-2.1.3.exe` and install
+1. Download `gravuresse-Setup-2.1.4.exe` and install
 2. Open the app, click the gear icon in the title bar (or press `Ctrl+,`) to open Settings
 3. Configure your provider credentials and save the models you want to use in Settings
 4. Type your request in chat and switch saved models from the toolbar when needed
@@ -126,7 +128,7 @@ $env:ELECTRON_BUILDER_BINARIES_MIRROR='https://npmmirror.com/mirrors/electron-bu
 npm run package
 ```
 
-Release builds should be signed when certificate environment variables are available. Publish the installer with a checksum so users can verify the download.
+Release builds should be signed when certificate environment variables are available. `npm run package` writes `release/SHA256SUMS.txt`; publish it with the installer so users can verify the download.
 
 ### Changelog
 

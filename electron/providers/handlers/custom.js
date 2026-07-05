@@ -51,6 +51,7 @@ const RESTRICTED_CUSTOM_HEADERS = new Set([
   'proxy-authorization',
   'proxy-authenticate'
 ])
+const hasOwn = Object.hasOwn || ((obj, key) => Object.prototype.hasOwnProperty.call(obj, key))
 
 function isPlainObject(value) {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value))
@@ -68,7 +69,7 @@ function pickFields(source, fields) {
   if (!isPlainObject(source)) return {}
   const out = {}
   for (const field of fields) {
-    if (field in source) out[field] = source[field]
+    if (hasOwn(source, field)) out[field] = source[field]
   }
   return out
 }
@@ -211,15 +212,17 @@ function substituteString(input, values, extraValues = {}, encode = false) {
 
   if (full) {
     const name = placeholderName(full[0])
-    if (!TEMPLATE_KEYS.has(name) && !(name in extraValues)) throw new Error(`Unsupported template variable: ${name}`)
-    const value = name in extraValues ? extraValues[name] : values[name]
+    const hasExtra = hasOwn(extraValues || {}, name)
+    if (!TEMPLATE_KEYS.has(name) && !hasExtra) throw new Error(`Unsupported template variable: ${name}`)
+    const value = hasExtra ? extraValues[name] : values[name]
     return encode ? encodeTemplateValue(name, value, encode) : value
   }
 
   return source.replace(re, (_, a, b, c) => {
     const name = a || b || c
-    if (!TEMPLATE_KEYS.has(name) && !(name in extraValues)) throw new Error(`Unsupported template variable: ${name}`)
-    const value = name in extraValues ? extraValues[name] : values[name]
+    const hasExtra = hasOwn(extraValues || {}, name)
+    if (!TEMPLATE_KEYS.has(name) && !hasExtra) throw new Error(`Unsupported template variable: ${name}`)
+    const value = hasExtra ? extraValues[name] : values[name]
     const text = String(value ?? '')
     return encode ? encodeTemplateValue(name, text, encode) : text
   })
@@ -356,7 +359,14 @@ function readPath(obj, path) {
         value = undefined
         break
       }
-      value = value[segment]
+      if (Array.isArray(value) && typeof segment === 'number') {
+        value = value[segment]
+      } else if (isPlainObject(value) && hasOwn(value, segment)) {
+        value = value[segment]
+      } else {
+        value = undefined
+        break
+      }
     }
     if (value != null && value !== '') return value
   }

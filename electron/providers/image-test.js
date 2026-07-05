@@ -146,7 +146,7 @@ function buildProviderImageTestPayload(params = {}, stored = {}) {
   }
 
   for (const key of IMAGE_TEST_TEMPLATE_KEYS) {
-    if (key in providerConfigForTemplate) payload[key] = providerConfigForTemplate[key]
+    if (Object.hasOwn(providerConfigForTemplate || {}, key)) payload[key] = providerConfigForTemplate[key]
   }
 
   const validation = validateGenerationRequest(track, providerDef, payload)

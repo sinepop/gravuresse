@@ -5,7 +5,7 @@ import dns from 'node:dns'
 import { createRequire } from 'node:module'
 
 const require = createRequire(import.meta.url)
-const { httpRequest } = require('../../electron/api/http.js')
+const { assertHttpsUrl, httpRequest } = require('../../electron/api/http.js')
 
 function installMockHttps(routes) {
   const originalRequest = https.request
@@ -60,6 +60,11 @@ function installMockDns() {
 }
 
 export async function runHttpCoreTests() {
+  assert.throws(
+    () => assertHttpsUrl('https://user:pass@example.com/a.png'),
+    /credentials/
+  )
+
   let mock = installMockHttps({
     '/start': { status: 302, headers: { location: '/final' } },
     '/final': { status: 200, body: '{"ok":true}' }

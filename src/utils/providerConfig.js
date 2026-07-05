@@ -33,7 +33,7 @@ export function normalizeProviderTemplate(source = {}) {
     ...(isPlainObject(source.template) ? source.template : {})
   }
   for (const key of TEMPLATE_KEYS) {
-    if (source[key] !== undefined && source[key] !== null && source[key] !== '') {
+    if (Object.hasOwn(source || {}, key) && source[key] !== undefined && source[key] !== null && source[key] !== '') {
       template[key] = source[key]
     }
   }
