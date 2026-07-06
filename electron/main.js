@@ -16,6 +16,7 @@ const { registerConversationIpc } = require('./ipc/conversation')
 const { registerAssetIpc } = require('./ipc/assets')
 const { registerProviderIpc } = require('./ipc/provider')
 const { MEDIA_CACHE_SCHEME, cacheAssetPreview, mediaCacheMime, parseMediaCacheUrl } = require('./media-cache')
+const { canUseStoredCredentials, resolveProviderIdByTrack, storedProviderForRequest } = require('./providers/account-resolver')
 // Wire handler side-effects (registerHandler): must be required so the
 // HANDLER_MAP is populated before any provider:call / api:* dispatch.
 require('./providers')
@@ -59,51 +60,6 @@ const STORED_PROVIDER_PAYLOAD_KEYS = [
   'body', 'requestBody', 'submitBody', 'pollBody', 'method', 'submitMethod',
   'pollMethod', 'pollInterval'
 ]
-
-function sameStoredProviderProfile(track, provider = {}, profile = {}) {
-  const providerId = resolveProviderIdByTrack(track, provider.providerId || provider.id)
-  const profileId = resolveProviderIdByTrack(track, profile.providerId || profile.id)
-  if (!providerId || providerId !== profileId) return false
-  if (provider.baseUrl && (provider.baseUrl || '') !== (profile.baseUrl || '')) return false
-  if (provider.model && (provider.model || '') !== (profile.model || '')) return false
-  return true
-}
-
-function findStoredProviderProfile(stored = {}, track, provider = {}) {
-  const profile = (stored.providerProfiles?.[track] || []).find(item => sameStoredProviderProfile(track, provider, item))
-  if (!profile) return null
-  return {
-    ...profile,
-    id: profile.providerId || profile.id,
-    baseUrl: profile.baseUrl || '',
-    model: profile.model || ''
-  }
-}
-
-function storedProviderForRequest(stored = {}, track, provider = {}) {
-  const activeProvider = stored.providers?.[track] || {}
-  const requestedId = resolveProviderIdByTrack(track, provider.providerId || provider.id || activeProvider.id)
-  const activeId = resolveProviderIdByTrack(track, activeProvider.id)
-  const activeMatches =
-    (!requestedId || requestedId === activeId) &&
-    (!provider.baseUrl || (provider.baseUrl || '') === (activeProvider.baseUrl || '')) &&
-    (!provider.model || (provider.model || '') === (activeProvider.model || ''))
-  if (activeMatches) return activeProvider
-  return findStoredProviderProfile(stored, track, { providerId: requestedId, baseUrl: provider.baseUrl, model: provider.model }) || {}
-}
-
-function cleanEndpoint(value) {
-  return String(value || '').trim().replace(/\/+$/, '')
-}
-
-function canUseStoredCredentials(track, candidate = {}, storedProvider = {}) {
-  const candidateId = candidate.id || candidate.providerId || storedProvider.id
-  const canonicalId = resolveProviderIdByTrack(track, candidateId)
-  if (!canonicalId || canonicalId !== resolveProviderIdByTrack(track, storedProvider.id)) return false
-  const candidateUrl = cleanEndpoint(candidate.baseUrl || defaultProviderBaseUrl(canonicalId))
-  const allowedUrl = cleanEndpoint(storedProvider.baseUrl || defaultProviderBaseUrl(canonicalId))
-  return Boolean(candidateUrl && allowedUrl && candidateUrl === allowedUrl)
-}
 
 function applyQueryParams(url, queryParams = {}) {
   for (const [key, value] of Object.entries(queryParams || {})) {
@@ -422,9 +378,10 @@ async function executeProviderCall(params = {}) {
   }
 
   const activeProviderConfig = stored.providers?.[track] || {}
+  const effectiveActiveProvider = storedProviderForRequest(stored, track, activeProviderConfig)
   const requestedProviderId = resolveProviderIdByTrack(track, providerId)
   if (track === 'video' && action === 'poll') {
-    const storedProviderId = resolveProviderIdByTrack(track, activeProviderConfig.id)
+    const storedProviderId = resolveProviderIdByTrack(track, effectiveActiveProvider.id)
     if (requestedProviderId && storedProviderId && requestedProviderId !== storedProviderId) {
       return {
         ok: false,
@@ -436,16 +393,17 @@ async function executeProviderCall(params = {}) {
     }
   }
 
-  const activeProviderId = resolveProviderIdByTrack(track, activeProviderConfig.id)
+  const activeProviderId = resolveProviderIdByTrack(track, effectiveActiveProvider.id)
   const requestTargetsActiveProvider = !requestedProviderId || requestedProviderId === activeProviderId
   const activeMatchesRequestedProfile = requestTargetsActiveProvider &&
-    (!params.baseUrl || (params.baseUrl || '') === (activeProviderConfig.baseUrl || '')) &&
-    (!params.model || (params.model || '') === (activeProviderConfig.model || ''))
+    (!params.baseUrl || (params.baseUrl || '') === (effectiveActiveProvider.baseUrl || '')) &&
+    (!params.model || (params.model || '') === (effectiveActiveProvider.model || ''))
   const hasProfileSelector = Boolean(requestedProviderId && (params.baseUrl || params.model))
   const requestedProfile = hasProfileSelector
-    ? findStoredProviderProfile(stored, track, { providerId: requestedProviderId, baseUrl: params.baseUrl, model: params.model })
+    ? storedProviderForRequest(stored, track, { accountId: params.accountId, providerId: requestedProviderId, baseUrl: params.baseUrl, model: params.model })
     : null
-  if (requestedProviderId && activeProviderId && !activeMatchesRequestedProfile && !requestedProfile) {
+  const requestedProfileId = requestedProfile ? resolveProviderIdByTrack(track, requestedProfile.id || requestedProfile.providerId) : ''
+  if (requestedProviderId && activeProviderId && !activeMatchesRequestedProfile && (!requestedProfile || requestedProfileId !== requestedProviderId)) {
     return {
       ok: false,
       error: {
@@ -454,7 +412,12 @@ async function executeProviderCall(params = {}) {
       }
     }
   }
-  const providerConfig = !activeMatchesRequestedProfile && requestedProfile ? requestedProfile : activeProviderConfig
+  const providerConfig = storedProviderForRequest(stored, track, {
+    accountId: params.accountId || (!activeMatchesRequestedProfile && requestedProfile ? requestedProfile.accountId : effectiveActiveProvider.accountId),
+    providerId: requestedProviderId || activeProviderId,
+    baseUrl: params.baseUrl,
+    model: params.model
+  })
   const canonicalProviderId = resolveProviderIdByTrack(track, providerConfig.id || providerId)
   const providerDef = getProvider(canonicalProviderId)
   if (!providerDef) {
@@ -549,17 +512,6 @@ registerProviderIpc({
   requestOptionsFromConfig,
   getModelFetchProvider
 })
-
-// Map the user-facing stored provider id (e.g. 'claude', 'dalle', 'jimeng_vid')
-// to the canonical registry id (e.g. 'anthropic', 'openai', 'volcengine').
-// Mirrors PROVIDER_ID_ALIASES used on the renderer side so legacy direct-API
-// channels receive a providerId the pipeline can resolve.
-// Reuses the canonical aliases from config.js as the single source of truth on the
-// main-process side.
-const { PROVIDER_ID_ALIASES } = config
-function resolveProviderIdByTrack(track, id) {
-  return (PROVIDER_ID_ALIASES[track] || {})[id] || id
-}
 
 function defaultProviderBaseUrl(providerId) {
   const def = require('./providers/registry').getProvider(providerId)

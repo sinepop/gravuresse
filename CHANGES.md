@@ -2,6 +2,16 @@
 
 ## 涓枃
 
+#### v2.1.6 (2026-07-06)
+
+**Provider/API configuration cleanup**
+- Reworked Provider setup around a canonical `providerAccounts` credential pool with separate chat, image, and video runtime bindings.
+- Added Hermes-style account, API key, and OpenAI-compatible gateway configuration flows while keeping OAuth entries as non-callable placeholders.
+- Moved credential resolution back into the main process, including account track checks so chat-only accounts cannot be reused for image or video calls.
+- Preserved legacy provider/profile compatibility during migration while removing duplicated secret copies from runtime provider payloads.
+- Fixed gateway model defaults and model-fetch/test paths so chat and image bindings use the correct provider definitions, account IDs, and manual fallback behavior.
+- Expanded core regression coverage for migration, redacted secret preservation, account resolver boundaries, OAuth blocking, and gateway image defaults.
+
 #### v2.1.5 (2026-07-05)
 
 **Startup hotfix**

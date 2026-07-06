@@ -18,9 +18,13 @@ import {
 import { t } from '../i18n'
 import Ic from './icons'
 import useSafeMediaUrl from '../hooks/useSafeMediaUrl'
+import { normalizeProviderAccount, providerPatchFromAccount, findProviderAccount } from '../utils/providerAccounts.js'
 
 const NAV_SECTIONS = [
   { id: 'api', labelKey: 'apiConfig', icon: 'link', children: [
+    { id: 'provider-accounts', labelKey: 'providerAccounts' },
+    { id: 'provider-api-keys', labelKey: 'providerApiKeys' },
+    { id: 'provider-gateways', labelKey: 'providerGateways' },
     { id: 'api-chat', labelKey: 'chat' },
     { id: 'api-image', labelKey: 'image' },
     { id: 'api-video', labelKey: 'video', requiresVideo: true },
@@ -121,10 +125,58 @@ const MAINSTREAM_PROVIDER_IDS = {
 }
 
 const AGGREGATOR_PROVIDER_IDS = ['openrouter', 'together', 'fal', 'replicate']
+const API_KEY_PROVIDER_IDS = ['openai', 'openrouter', 'anthropic', 'xai', 'deepseek', 'minimax', 'siliconflow', 'google', 'volcengine', 'alibaba', 'moonshot']
+const OAUTH_PLACEHOLDER_ACCOUNTS = [
+  { providerId: 'chatgpt-plans', name: 'OpenAI OAuth (ChatGPT)', descriptionKey: 'oauthPlaceholderOpenAi' },
+  { providerId: 'minimax', name: 'MiniMax', descriptionKey: 'oauthPlaceholderBrowser' },
+  { providerId: 'xai', name: 'xAI Grok', descriptionKey: 'oauthPlaceholderBrowser' }
+]
 
 function providerErrorMessage(error, lang) {
   if (isProviderNetworkError(error)) return t('networkEndpointUnreachable', lang)
   return error?.message || ''
+}
+
+function allProvidersById(providers = {}) {
+  const map = new Map()
+  for (const track of TRACKS) {
+    for (const provider of providers?.[track] || []) {
+      if (!map.has(provider.id)) map.set(provider.id, provider)
+    }
+  }
+  return map
+}
+
+function providerDefById(providers = {}, providerId) {
+  return allProvidersById(providers).get(providerId) || {}
+}
+
+function providerDefForTrack(providers = {}, track, providerId) {
+  return (providers?.[track] || []).find(provider => provider.id === providerId) || {}
+}
+
+function providerAccountLabel(account = {}, providers = {}, lang = 'zh') {
+  const provider = providerDefById(providers, account.providerId)
+  const base = account.name || providerDisplayName(provider, lang) || account.providerId || t('providerAccount', lang)
+  const suffix = account.kind === 'gateway' ? t('providerGateway', lang) : account.kind === 'oauth-placeholder' ? t('providerAccount', lang) : t('providerApiKey', lang)
+  return `${base} · ${suffix}`
+}
+
+function accountAvailableForTrack(account = {}, track, providers = {}) {
+  if (account.kind === 'oauth-placeholder') return false
+  if (Array.isArray(account.tracks) && account.tracks.length > 0 && !account.tracks.includes(track)) return false
+  return Boolean((providers?.[track] || []).some(provider => provider.id === account.providerId))
+}
+
+function modelForProviderSwitch(currentModel, provider = {}) {
+  const catalog = Array.isArray(provider.modelCatalog) ? provider.modelCatalog : []
+  if (currentModel && catalog.includes(currentModel)) return currentModel
+  if (currentModel && catalog.length === 0 && provider.defaultModel === currentModel) return currentModel
+  return firstProviderModel(provider)
+}
+
+function configuredAccount(account = {}) {
+  return Boolean(account.apiKey || account.sessionToken || account.kind === 'oauth-placeholder')
 }
 
 function modelFetchFailureMessage(error, lang) {
@@ -1130,8 +1182,10 @@ function ProviderReadiness({ items, onApplyRecommended, canApplyRecommended, lan
   )
 }
 
-function ProviderTab({ track, providers, config, onChange, lang }) {
+function ProviderTab({ track, providers, allProviders, config, onChange, lang }) {
   const current = config?.providers?.[track] || {}
+  const providerMap = allProviders || { [track]: providers }
+  const providerAccounts = (config?.providerAccounts || []).filter(account => accountAvailableForTrack(account, track, providerMap))
   const allVisibleProviders = sortProvidersForTrack(providerPoolForTrack(providers), track, current)
   const savedProfiles = (config?.providerProfiles?.[track] || [])
     .filter(profile => {
@@ -1155,6 +1209,7 @@ function ProviderTab({ track, providers, config, onChange, lang }) {
   const selectable = selectableProviders.length ? selectableProviders : visibleProviders
   const selectedProviderId = resolveProviderId(track, current.id, selectable)
   const provider = visibleProviders.find(p => p.id === selectedProviderId) || selectable[0] || allVisibleProviders[0]
+  const currentAccount = findProviderAccount(config, current.accountId)
   const info = providerInfo(provider, track)
   const authOptions = Array.isArray(info.customizable?.auth) ? info.customizable.auth : []
   const showMainAuthMode = provider?.platform === 'Custom' || authOptions.length > 1 || Boolean(current.customAuth?.type)
@@ -1246,6 +1301,8 @@ function ProviderTab({ track, providers, config, onChange, lang }) {
         sessionToken: currentSessionToken,
         customAuth: currentCustomAuth,
         baseUrl: effectiveBaseUrl,
+        accountId: current.accountId,
+        accountKind: current.accountKind,
         id: selectedProviderId,
         track,
         format: provider?.format,
@@ -1300,6 +1357,8 @@ function ProviderTab({ track, providers, config, onChange, lang }) {
       const params = {
         ...current,
         baseUrl: effectiveBaseUrl,
+        accountId: current.accountId,
+        accountKind: current.accountKind,
         id: selectedProviderId,
         providerId: selectedProviderId,
         track,
@@ -1350,6 +1409,8 @@ function ProviderTab({ track, providers, config, onChange, lang }) {
       const params = {
         ...current,
         baseUrl: effectiveBaseUrl,
+        accountId: current.accountId,
+        accountKind: current.accountKind,
         id: selectedProviderId,
         providerId: selectedProviderId,
         track,
@@ -1414,6 +1475,26 @@ function ProviderTab({ track, providers, config, onChange, lang }) {
     setModelFetchResult(null)
   }
 
+  const selectAccount = (accountId) => {
+    if (!accountId) {
+      onChange(track, { accountId: '', accountKind: '' })
+      return
+    }
+    const account = findProviderAccount(config, accountId)
+    if (!account) return
+    const providerForAccount = allVisibleProviders.find(item => item.id === account.providerId)
+    if (providerForAccount) setBillingView(billingGroup(providerForAccount, track))
+    const targetProvider = providerForAccount || providerDefForTrack(providerMap, track, account.providerId)
+    onChange(track, {
+      ...providerPatchFromAccount(account, targetProvider),
+      model: modelForProviderSwitch(current.id === account.providerId ? current.model : '', targetProvider)
+    })
+    modelFetchSeq.current += 1
+    setModels([])
+    setTestResult(null)
+    setModelFetchResult(null)
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <TrackStatusPanel track={track} provider={provider} current={current} lang={lang} />
@@ -1421,6 +1502,20 @@ function ProviderTab({ track, providers, config, onChange, lang }) {
       {/* ── Provider Selection ── */}
       <SectionHeading labelKey="switchProvider" lang={lang} />
       <div style={{ color: 'var(--text-muted)', fontSize: 11, lineHeight: 1.5 }}>{t('switchProviderHint', lang)}</div>
+      <label style={labelS()}>
+        {t('useProviderAccount', lang)}
+        <select value={current.accountId || ''} onChange={e => selectAccount(e.target.value)} style={selectS()}>
+          <option value="">{t('directProviderConfig', lang)}</option>
+          {providerAccounts.map(account => (
+            <option key={account.accountId} value={account.accountId}>
+              {providerAccountLabel(account, providerMap, lang)}
+            </option>
+          ))}
+        </select>
+        <span style={{ color: 'var(--text-muted)', fontSize: 11, lineHeight: 1.4 }}>
+          {currentAccount ? t('providerAccountLinked', lang) : t('providerAccountHint', lang)}
+        </span>
+      </label>
       {savedProfiles.length > 0 && (
         <label style={labelS()}>
           {t('savedProfiles', lang)}
@@ -1734,26 +1829,207 @@ function OtherPage({ config, onChange, lang }) {
 }
 
 /* ── Image settings page ── */
-function ImagePage({ config, providers, onChange, lang }) {
+function ImagePage({ config, providers, allProviders, onChange, lang }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <ProviderTab track="image" providers={providers} config={config} onChange={(t2, patch) => onChange('image', patch)} lang={lang} />
+      <ProviderTab track="image" providers={providers} allProviders={allProviders} config={config} onChange={(t2, patch) => onChange('image', patch)} lang={lang} />
     </div>
   )
 }
 
 /* ── Video settings page ── */
-function VideoPage({ config, providers, onChange, lang }) {
+function VideoPage({ config, providers, allProviders, onChange, lang }) {
   const g = config?.general || {}
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <ProviderTab track="video" providers={providers} config={config} onChange={(t2, patch) => onChange('video', patch)} lang={lang} />
+      <ProviderTab track="video" providers={providers} allProviders={allProviders} config={config} onChange={(t2, patch) => onChange('video', patch)} lang={lang} />
       <label style={labelS()}>
         {t('defaultDuration', lang)}
         <select value={g.defaultDuration || '5s'} onChange={e => onChange('general', { defaultDuration: e.target.value })} style={selectS()}>
           {DURATIONS.map(d => <option key={d} value={d}>{d}</option>)}
         </select>
       </label>
+    </div>
+  )
+}
+
+function providerListForAccounts(providers = {}) {
+  const byId = allProvidersById(providers)
+  return API_KEY_PROVIDER_IDS
+    .map(id => byId.get(id))
+    .filter(Boolean)
+    .filter(provider => provider.executable !== false && provider.integrationStatus !== 'metadata')
+}
+
+function accountForProvider(config = {}, providerId, kind = 'api-key') {
+  return (config.providerAccounts || []).find(account => account.providerId === providerId && (account.kind || 'api-key') === kind)
+}
+
+function upsertAccountList(accounts = [], account) {
+  const next = [...accounts]
+  const index = next.findIndex(item => item.accountId === account.accountId)
+  if (index >= 0) next[index] = { ...next[index], ...account }
+  else next.push(account)
+  return next
+}
+
+function ProviderApiKeysPage({ config, providers, onChange, lang }) {
+  const accounts = config.providerAccounts || []
+  const providerRows = providerListForAccounts(providers)
+  const updateAccount = (provider, patch) => {
+    const current = accountForProvider(config, provider.id, 'api-key')
+    const account = normalizeProviderAccount({
+      ...(current || {}),
+      kind: 'api-key',
+      providerId: provider.id,
+      name: providerDisplayName(provider, lang),
+      baseUrl: current?.baseUrl || provider.defaultUrl || '',
+      authType: current?.authType || provider.authType,
+      protocol: current?.protocol || provider.protocol,
+      format: current?.format || provider.format,
+      tracks: current?.tracks?.length ? current.tracks : TRACKS.filter(track => providers[track]?.some(item => item.id === provider.id)),
+      ...patch
+    }, provider)
+    onChange('providerAccounts', upsertAccountList(accounts, account))
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <SectionHeading labelKey="providerApiKeys" lang={lang} />
+      <div style={{ color: 'var(--text-muted)', fontSize: 12, lineHeight: 1.5 }}>{t('providerApiKeysDesc', lang)}</div>
+      {providerRows.map(provider => {
+        const account = accountForProvider(config, provider.id, 'api-key') || normalizeProviderAccount({ kind: 'api-key', providerId: provider.id, name: providerDisplayName(provider, lang), baseUrl: provider.defaultUrl || '', authType: provider.authType, protocol: provider.protocol, format: provider.format }, provider)
+        const configured = configuredAccount(account)
+        return (
+          <div key={provider.id} style={{ border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-sm)', background: 'var(--bg-elevated)', padding: 12, display: 'grid', gridTemplateColumns: 'minmax(150px, 220px) 1fr', gap: 12, alignItems: 'start' }}>
+            <div>
+              <div style={{ color: 'var(--text-primary)', fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ width: 8, height: 8, borderRadius: 8, background: configured ? 'var(--accent)' : 'var(--border-accent)', display: 'inline-block' }} />
+                {providerDisplayName(provider, lang)}
+              </div>
+              <div style={{ color: 'var(--text-muted)', fontSize: 11, marginTop: 5 }}>{provider.platform}</div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <label style={labelS()}>
+                {t('apiKey', lang)}
+                <input type="password" value={account.apiKey === REDACTED_API_KEY ? '' : account.apiKey || ''} placeholder={account.apiKey === REDACTED_API_KEY ? t('configuredPlaceholder', lang) : `${t('pasteProviderKey', lang)} ${providerDisplayName(provider, lang)}`} onChange={e => updateAccount(provider, { apiKey: e.target.value })} style={inputS()} />
+              </label>
+              <label style={labelS()}>
+                {t('baseUrl', lang)}
+                <input type="text" value={account.baseUrl || ''} placeholder={provider.defaultUrl || 'https://api.example.com'} onChange={e => updateAccount(provider, { baseUrl: e.target.value })} style={inputS()} />
+              </label>
+              <label style={labelS()}>
+                {t('modelListPath', lang)}
+                <input type="text" value={account.modelListPath || ''} placeholder={provider.modelListPath || provider.modelsPath || '/models'} onChange={e => updateAccount(provider, { modelListPath: e.target.value })} style={inputS()} />
+              </label>
+              <label style={labelS()}>
+                {t('tracks', lang)}
+                <input type="text" value={(account.tracks || []).join(', ')} readOnly style={{ ...inputS(), color: 'var(--text-muted)' }} />
+              </label>
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function ProviderGatewaysPage({ config, providers, onChange, lang }) {
+  const accounts = config.providerAccounts || []
+    const openAi = providerDefForTrack(providers, 'chat', 'openai') || providerDefById(providers, 'openai')
+  const gateway = accounts.find(account => account.kind === 'gateway' && account.providerId === 'openai') || normalizeProviderAccount({
+    kind: 'gateway',
+    providerId: 'openai',
+    name: 'OpenAI-compatible Relay',
+    baseUrl: '',
+    authType: { type: 'bearer' },
+    tracks: ['chat', 'image']
+  }, openAi)
+  const updateGateway = (patch) => {
+    const account = normalizeProviderAccount({ ...gateway, ...patch }, openAi)
+    onChange('providerAccounts', upsertAccountList(accounts, account))
+    for (const track of account.tracks || []) {
+      const providerDef = providerDefForTrack(providers, track, account.providerId)
+      if (providers[track]?.some(item => item.id === account.providerId)) {
+        const currentProvider = config.providers?.[track] || {}
+        onChange(track, {
+          ...providerPatchFromAccount(account, providerDef),
+          model: modelForProviderSwitch(currentProvider.id === account.providerId ? currentProvider.model : '', providerDef)
+        })
+      }
+    }
+  }
+  const toggleTrack = (track) => {
+    const current = new Set(gateway.tracks || [])
+    const removing = current.has(track)
+    if (removing) current.delete(track)
+    else current.add(track)
+    updateGateway({ tracks: Array.from(current).filter(item => ['chat', 'image'].includes(item)) })
+    if (removing && config.providers?.[track]?.accountId === gateway.accountId) {
+      onChange(track, { accountId: '', accountKind: '' })
+    }
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <SectionHeading labelKey="providerGateways" lang={lang} />
+      <div style={{ color: 'var(--text-muted)', fontSize: 12, lineHeight: 1.5 }}>{t('providerGatewaysDesc', lang)}</div>
+      <div style={{ border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-sm)', background: 'var(--bg-elevated)', padding: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <label style={labelS()}>
+          {t('gatewayName', lang)}
+          <input type="text" value={gateway.name || ''} placeholder="OpenAI-compatible Relay" onChange={e => updateGateway({ name: e.target.value })} style={inputS()} />
+        </label>
+        <label style={labelS()}>
+          {t('baseUrl', lang)}
+          <input type="text" value={gateway.baseUrl || ''} placeholder="https://relay.example.com" onChange={e => updateGateway({ baseUrl: e.target.value })} style={inputS()} />
+        </label>
+        <label style={labelS()}>
+          {t('apiKey', lang)}
+          <input type="password" value={gateway.apiKey === REDACTED_API_KEY ? '' : gateway.apiKey || ''} placeholder={gateway.apiKey === REDACTED_API_KEY ? t('configuredPlaceholder', lang) : t('credentialPlaceholder', lang)} onChange={e => updateGateway({ apiKey: e.target.value })} style={inputS()} />
+        </label>
+        <label style={labelS()}>
+          {t('modelListPath', lang)}
+          <input type="text" value={gateway.modelListPath || ''} placeholder="/v1/models" onChange={e => updateGateway({ modelListPath: e.target.value })} style={inputS()} />
+        </label>
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+          {['chat', 'image'].map(track => (
+            <label key={track} style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text-secondary)', fontSize: 12 }}>
+              <input type="checkbox" checked={(gateway.tracks || []).includes(track)} onChange={() => toggleTrack(track)} />
+              {t(track, lang)}
+            </label>
+          ))}
+        </div>
+        <div style={{ color: 'var(--text-muted)', fontSize: 11, lineHeight: 1.5 }}>{t('gatewayManualModelHint', lang)}</div>
+      </div>
+    </div>
+  )
+}
+
+function ProviderAccountsPage({ providers, lang }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <SectionHeading labelKey="providerAccounts" lang={lang} />
+      <div style={{ color: 'var(--text-muted)', fontSize: 12, lineHeight: 1.5 }}>{t('providerAccountsDesc', lang)}</div>
+      {OAUTH_PLACEHOLDER_ACCOUNTS.map(item => {
+        const provider = providerDefById(providers, item.providerId)
+        return (
+          <div key={item.providerId} style={{ border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-sm)', background: 'var(--bg-elevated)', padding: 12, display: 'flex', alignItems: 'center', gap: 12 }}>
+            <span style={{ width: 8, height: 8, borderRadius: 8, background: 'var(--border-accent)', display: 'inline-block' }} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ color: 'var(--text-primary)', fontSize: 13, fontWeight: 700 }}>{item.name}</div>
+              <div style={{ color: 'var(--text-muted)', fontSize: 11, marginTop: 4 }}>{t(item.descriptionKey, lang)}</div>
+            </div>
+            {provider?.links?.home && (
+              <button onClick={() => openExternal(provider.links.home)} style={{ ...btnS(false), padding: '6px 9px', fontSize: 11 }}>
+                <Ic n="external" size={11} /> {t('viewMaterials', lang)}
+              </button>
+            )}
+          </div>
+        )
+      })}
+      <div style={{ color: 'var(--danger)', background: 'var(--danger-soft)', border: '1px solid var(--danger-border)', borderRadius: 'var(--radius-sm)', padding: 10, fontSize: 11, lineHeight: 1.5 }}>
+        {t('oauthBoundaryNotice', lang)}
+      </div>
     </div>
   )
 }
@@ -1800,6 +2076,7 @@ export default function Settings({ config, providerLists, onSave, onClose, initi
     if (!local) return
     if (saveError) setSaveError('')
     if (track === 'general') setLocal(prev => ({ ...prev, general: { ...prev.general, ...patch } }))
+    else if (track === 'providerAccounts') setLocal(prev => ({ ...prev, providerAccounts: patch }))
     else if (track === 'providerProfiles') setLocal(prev => ({ ...prev, providerProfiles: { ...prev.providerProfiles, ...patch } }))
     else if (track === '_deletedProfileKeys') setLocal(prev => ({ ...prev, _deletedProfileKeys: patch }))
     else setLocal(prev => ({ ...prev, providers: { ...prev.providers, [track]: { ...prev.providers[track], ...patch } } }))
@@ -1861,9 +2138,12 @@ export default function Settings({ config, providerLists, onSave, onClose, initi
             {page === 'appearance' && <AppearancePage config={local} onChange={handleChange} lang={lang} />}
             {page === 'lang' && <LangPage config={local} onChange={handleChange} lang={lang} />}
             {page === 'other' && <OtherPage config={local} onChange={handleChange} lang={lang} />}
-            {page === 'api-chat' && <ProviderTab track="chat" providers={providers.chat} config={local} onChange={handleChange} lang={lang} />}
-            {page === 'api-image' && <ImagePage config={local} providers={providers.image} onChange={handleChange} lang={lang} />}
-            {page === 'api-video' && videoApiEnabled && <VideoPage config={local} providers={providers.video} onChange={handleChange} lang={lang} />}
+            {page === 'provider-accounts' && <ProviderAccountsPage providers={providers} lang={lang} />}
+            {page === 'provider-api-keys' && <ProviderApiKeysPage config={local} providers={providers} onChange={handleChange} lang={lang} />}
+            {page === 'provider-gateways' && <ProviderGatewaysPage config={local} providers={providers} onChange={handleChange} lang={lang} />}
+            {page === 'api-chat' && <ProviderTab track="chat" providers={providers.chat} allProviders={providers} config={local} onChange={handleChange} lang={lang} />}
+            {page === 'api-image' && <ImagePage config={local} providers={providers.image} allProviders={providers} onChange={handleChange} lang={lang} />}
+            {page === 'api-video' && videoApiEnabled && <VideoPage config={local} providers={providers.video} allProviders={providers} onChange={handleChange} lang={lang} />}
           </div>
         </div>
         {/* Footer */}

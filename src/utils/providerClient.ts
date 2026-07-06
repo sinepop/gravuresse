@@ -40,6 +40,7 @@ export function pollVideoTaskProvider<T>(task: { taskId: string; provider?: Prov
     providerId: resolveProviderId('video', task.provider?.id),
     taskId: task.taskId,
     model: task.provider?.model,
-    baseUrl: task.provider?.baseUrl
+    baseUrl: task.provider?.baseUrl,
+    accountId: task.provider?.accountId as string | undefined
   }, () => window.electronAPI!.pollVideoTask(task.taskId, task.provider) as Promise<T>)
 }

@@ -58,6 +58,7 @@ function normalizeAuthType(type) {
 }
 
 function hasProviderCredential(provider = {}, providerDef = {}) {
+  if (provider.accountId && provider.accountKind !== 'oauth-placeholder') return true
   const customType = normalizeAuthType(provider.customAuth?.type)
   const type = customType || normalizeAuthType(provider.authType?.type || providerDef?.authType?.type)
   if (type === 'none') return Boolean(provider?.id || providerDef?.id)
@@ -304,7 +305,8 @@ ${modeRule}
         system,
         thinking,
         model: provider.model,
-        baseUrl: provider.baseUrl
+        baseUrl: provider.baseUrl,
+        accountId: provider.accountId
       }, { history, system, thinking, provider })
 
       let replyText = result.text
@@ -394,7 +396,8 @@ ${modeRule}
         resolution: imageParams.resolution,
         negative_prompt: imageParams.negative_prompt,
         model: imageParams.model,
-        baseUrl: imageParams.baseUrl
+        baseUrl: imageParams.baseUrl,
+        accountId: imageParams.accountId
       }, imageParams)
       const elapsed = Math.round((Date.now() - startTime) / 1000)
       if (!canWriteToConversation(originConversationId)) return
@@ -467,7 +470,8 @@ ${modeRule}
         duration: videoParams.duration,
         sourceImageUrl: videoParams.sourceImageUrl,
         model: videoParams.model,
-        baseUrl: videoParams.baseUrl
+        baseUrl: videoParams.baseUrl,
+        accountId: videoParams.accountId
       }, videoParams)
       if (!result?.taskId) throw new Error(result?.error || 'Video task was not created')
       if (!canWriteToConversation(originConversationId)) return

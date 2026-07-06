@@ -19,6 +19,7 @@ const DEFAULT_CONFIG = {
     image: [],
     video: []
   },
+  providerAccounts: [],
   general: {
     theme: 'light', language: 'zh', fontSize: 'medium',
     autoSave: true, exportPath: '', apiTimeout: 60000, autoSaveImage: false, enableVideo: false
@@ -121,8 +122,18 @@ function profileSecretPaths(cfg) {
   return paths
 }
 
+function accountSecretPaths(cfg) {
+  const paths = []
+  const accounts = Array.isArray(cfg?.providerAccounts) ? cfg.providerAccounts : []
+  accounts.forEach((_, index) => {
+    paths.push(['providerAccounts', index, 'apiKey'])
+    paths.push(['providerAccounts', index, 'sessionToken'])
+  })
+  return paths
+}
+
 function allSecretPaths(cfg) {
-  return [...SECRET_PATHS, ...profileSecretPaths(cfg)]
+  return [...SECRET_PATHS, ...profileSecretPaths(cfg), ...accountSecretPaths(cfg)]
 }
 
 function getNestedValue(obj, keys) {
@@ -212,6 +223,32 @@ function mergeRedactedApiKeys(nextCfg, currentCfg) {
       }
     })
   }
+  const nextAccounts = Array.isArray(result.providerAccounts) ? result.providerAccounts : []
+  const currentAccounts = Array.isArray(currentCfg.providerAccounts) ? currentCfg.providerAccounts : []
+  const accountAuthSignature = (account = {}) => {
+    const customAuth = account.customAuth || {}
+    const authType = account.authType || {}
+    const type = String(customAuth.type || authType.type || authType || 'bearer').toLowerCase().replace(/_/g, '-')
+    const key = customAuth.headerName || customAuth.paramName || customAuth.sessionHeaderName || customAuth.key || authType.key || ''
+    return `${type}:${key}`
+  }
+  nextAccounts.forEach((account, index) => {
+    for (const field of ['apiKey', 'sessionToken']) {
+      if (account?.[field] !== REDACTED_API_KEY) continue
+      const currentAccount = currentAccounts.find(item =>
+        (account.accountId && item.accountId === account.accountId) ||
+        (
+          !account.accountId &&
+          (account.providerId || account.id) &&
+          (account.providerId || account.id) === (item.providerId || item.id) &&
+          (account.baseUrl || '') === (item.baseUrl || '') &&
+          (account.kind || 'api-key') === (item.kind || 'api-key') &&
+          accountAuthSignature(account) === accountAuthSignature(item)
+        )
+      )
+      setNestedValue(result, ['providerAccounts', index, field], currentAccount?.[field] || '')
+    }
+  })
   return result
 }
 
