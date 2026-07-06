@@ -18,6 +18,7 @@ function isExecutableProvider(provider = {}) {
 }
 
 function hasCredential(profile = {}, providerDef = {}) {
+  if (profile.accountId && profile.accountKind !== 'oauth-placeholder') return true
   const customType = normalizeAuthType(profile.customAuth?.type)
   const type = customType || normalizeAuthType(profile.authType?.type || providerDef?.authType?.type)
   if (type === 'none') return Boolean(profile.providerId || profile.id || providerDef.id)

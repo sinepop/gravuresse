@@ -228,6 +228,8 @@ export function createProviderSelectionPatch(provider = {}, track = '') {
   return {
     ...advancedProviderReset(),
     id: provider.id,
+    accountId: '',
+    accountKind: '',
     apiKey: '',
     sessionToken: '',
     baseUrl: provider.defaultUrl || '',
@@ -244,6 +246,8 @@ export function createProviderProfilePatch(profile = {}) {
   return {
     ...advancedProviderReset(),
     id: profile.providerId || profile.id,
+    accountId: profile.accountId || '',
+    accountKind: profile.accountKind || '',
     apiKey: profile.apiKey || '',
     sessionToken: profile.sessionToken || '',
     baseUrl: profile.baseUrl || '',
@@ -266,6 +270,8 @@ export function createProviderClearPatch() {
   return {
     ...advancedProviderReset(),
     id: '',
+    accountId: '',
+    accountKind: '',
     apiKey: '',
     sessionToken: '',
     baseUrl: '',

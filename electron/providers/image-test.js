@@ -1,10 +1,8 @@
 const { getProvider } = require('./registry')
 const { validateGenerationRequest } = require('./validation')
+const { canUseStoredCredentials, resolveProviderIdByTrack, storedProviderForRequest } = require('./account-resolver')
 
 const REDACTED_API_KEY = '********'
-const PROVIDER_ID_ALIASES = {
-  image: { dalle: 'openai', gemini_img: 'google', jimeng_img: 'volcengine' }
-}
 
 const IMAGE_TEST_TEMPLATE_KEYS = [
   'authType', 'customAuth', 'authConfig', 'template', 'customTemplate', 'generationOptions',
@@ -14,62 +12,8 @@ const IMAGE_TEST_TEMPLATE_KEYS = [
   'pollMethod', 'pollInterval'
 ]
 
-function cleanEndpoint(value) {
-  return String(value || '').trim().replace(/\/+$/, '')
-}
-
 function realSecret(value) {
   return value && value !== REDACTED_API_KEY ? value : ''
-}
-
-function resolveProviderIdByTrack(track, id) {
-  return (PROVIDER_ID_ALIASES[track] || {})[id] || id
-}
-
-function defaultProviderBaseUrl(providerId) {
-  const def = getProvider(providerId)
-  return def?.defaults?.baseUrl || ''
-}
-
-function sameStoredProviderProfile(track, provider = {}, profile = {}) {
-  const providerId = resolveProviderIdByTrack(track, provider.providerId || provider.id)
-  const profileId = resolveProviderIdByTrack(track, profile.providerId || profile.id)
-  if (!providerId || providerId !== profileId) return false
-  if (provider.baseUrl && (provider.baseUrl || '') !== (profile.baseUrl || '')) return false
-  if (provider.model && (provider.model || '') !== (profile.model || '')) return false
-  return true
-}
-
-function findStoredProviderProfile(stored = {}, track, provider = {}) {
-  const profile = (stored.providerProfiles?.[track] || []).find(item => sameStoredProviderProfile(track, provider, item))
-  if (!profile) return null
-  return {
-    ...profile,
-    id: profile.providerId || profile.id,
-    baseUrl: profile.baseUrl || '',
-    model: profile.model || ''
-  }
-}
-
-function storedProviderForRequest(stored = {}, track, provider = {}) {
-  const activeProvider = stored.providers?.[track] || {}
-  const requestedId = resolveProviderIdByTrack(track, provider.providerId || provider.id || activeProvider.id)
-  const activeId = resolveProviderIdByTrack(track, activeProvider.id)
-  const activeMatches =
-    (!requestedId || requestedId === activeId) &&
-    (!provider.baseUrl || (provider.baseUrl || '') === (activeProvider.baseUrl || '')) &&
-    (!provider.model || (provider.model || '') === (activeProvider.model || ''))
-  if (activeMatches) return activeProvider
-  return findStoredProviderProfile(stored, track, { providerId: requestedId, baseUrl: provider.baseUrl, model: provider.model }) || {}
-}
-
-function canUseStoredCredentials(track, candidate = {}, storedProvider = {}) {
-  const candidateId = candidate.id || candidate.providerId || storedProvider.id
-  const canonicalId = resolveProviderIdByTrack(track, candidateId)
-  if (!canonicalId || canonicalId !== resolveProviderIdByTrack(track, storedProvider.id)) return false
-  const candidateUrl = cleanEndpoint(candidate.baseUrl || defaultProviderBaseUrl(canonicalId))
-  const allowedUrl = cleanEndpoint(storedProvider.baseUrl || defaultProviderBaseUrl(canonicalId))
-  return Boolean(candidateUrl && allowedUrl && candidateUrl === allowedUrl)
 }
 
 function normalizeAuthType(type) {
@@ -104,6 +48,7 @@ function validationError(validation) {
 function buildProviderImageTestPayload(params = {}, stored = {}) {
   const track = 'image'
   const storedProvider = storedProviderForRequest(stored, track, {
+    accountId: params.accountId,
     providerId: params.providerId || params.id,
     baseUrl: params.baseUrl,
     model: params.model

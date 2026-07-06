@@ -103,6 +103,7 @@ function registerProviderIpc({
       const stored = config.load()
       const track = params.track || inferProviderTrack({ id: params.providerId || params.id, protocol: params.protocol })
       const storedProvider = storedProviderForRequest(stored, track, {
+        accountId: params.accountId,
         providerId: params.providerId || params.id,
         baseUrl: params.baseUrl,
         model: params.model
@@ -167,7 +168,8 @@ function registerProviderIpc({
       system: messages?.system || provider?.system || '',
       thinking: messages?.thinking || provider?.thinking || false,
       model: provider?.model,
-      baseUrl: provider?.baseUrl
+      baseUrl: provider?.baseUrl,
+      accountId: provider?.accountId
     })
     if (!result.ok) throw new Error(result.error?.message || 'Chat failed')
     return result.data
@@ -181,7 +183,8 @@ function registerProviderIpc({
       prompt: params?.prompt, ratio: params?.ratio, resolution: params?.resolution,
       negative_prompt: params?.negative_prompt,
       model: params?.model,
-      baseUrl: params?.baseUrl
+      baseUrl: params?.baseUrl,
+      accountId: params?.accountId
     })
     if (!result.ok) throw new Error(result.error?.message || 'Image generation failed')
     return result.data
@@ -195,7 +198,8 @@ function registerProviderIpc({
       prompt: params?.prompt, ratio: params?.ratio, duration: params?.duration,
       sourceImageUrl: params?.sourceImageUrl,
       model: params?.model,
-      baseUrl: params?.baseUrl
+      baseUrl: params?.baseUrl,
+      accountId: params?.accountId
     })
     if (!result.ok) throw new Error(result.error?.message || 'Video submit failed')
     return result.data
@@ -208,7 +212,8 @@ function registerProviderIpc({
       providerId: provider?.id,
       taskId,
       model: provider?.model,
-      baseUrl: provider?.baseUrl
+      baseUrl: provider?.baseUrl,
+      accountId: provider?.accountId
     })
     if (!result.ok) throw new Error(result.error?.message || 'Video poll failed')
     return result.data

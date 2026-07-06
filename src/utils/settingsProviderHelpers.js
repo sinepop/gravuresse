@@ -33,6 +33,7 @@ export function providerUsesSession(provider = {}, current = {}) {
 
 export function providerCredentialReady(provider = {}, current = {}) {
   if (!providerRequiresCredential(provider, current)) return Boolean(provider?.id || current?.id)
+  if (current.accountId && current.accountKind !== 'oauth-placeholder') return true
   return providerUsesSession(provider, current) ? Boolean(current.sessionToken) : Boolean(current.apiKey)
 }
 

@@ -4,6 +4,7 @@ import { IMG_PROVIDERS } from '../providers/imageProviders.js'
 import { VID_PROVIDERS } from '../providers/videoProviders.js'
 import { PROVIDER_ID_ALIASES } from '../providers/aliases.js'
 import { firstProviderModel, normalizeProviderTemplate } from '../utils/providerConfig.js'
+import { migrateProviderAccounts, providerPatchFromAccount, findProviderAccount } from '../utils/providerAccounts.js'
 
 const PROVIDER_MAP = { chat: CHAT_PROVIDERS, image: IMG_PROVIDERS, video: VID_PROVIDERS }
 const TRACKS = ['chat', 'image', 'video']
@@ -169,11 +170,19 @@ function findProviderDef(track, id, providerLists = PROVIDER_MAP) {
   )
 }
 
+function modelForProviderSwitch(currentModel, provider = {}) {
+  const catalog = Array.isArray(provider.modelCatalog) ? provider.modelCatalog : []
+  if (currentModel && catalog.includes(currentModel)) return currentModel
+  if (currentModel && catalog.length === 0 && provider.defaultModel === currentModel) return currentModel
+  return firstProviderModel(provider)
+}
+
 function normalizeAuthType(type) {
   return String(type || '').toLowerCase().replace(/_/g, '-')
 }
 
 function providerCredentialReady(providerConfig = {}, providerDef = {}) {
+  if (providerConfig.accountId && providerConfig.accountKind !== 'oauth-placeholder') return true
   const customType = normalizeAuthType(providerConfig.customAuth?.type)
   const type = customType || normalizeAuthType(providerConfig.authType?.type || providerDef?.authType?.type)
   if (type === 'none') return true
@@ -185,9 +194,12 @@ function profileFromProvider(track, providerConfig = {}, providerLists = PROVIDE
   const providerDef = findProviderDef(track, providerConfig.id, providerLists)
   const model = providerConfig.model || firstProviderModel(providerDef)
   if (!providerConfig?.id || !model || !providerCredentialReady(providerConfig, providerDef)) return null
+  const account = findProviderAccount(providerLists?._config || {}, providerConfig.accountId)
   const key = profileKey(track, { ...providerConfig, model })
   return {
     profileId: `profile_${hashString(key)}`,
+    accountId: providerConfig.accountId || account?.accountId || '',
+    accountKind: providerConfig.accountKind || account?.kind || '',
     providerId: providerConfig.id,
     name: providerDef?.name || providerConfig.id,
     apiKey: providerConfig.apiKey || '',
@@ -209,6 +221,7 @@ function profileFromProvider(track, providerConfig = {}, providerLists = PROVIDE
 }
 
 function upsertProviderProfiles(cfg, providerLists = PROVIDER_MAP) {
+  cfg = migrateProviderAccounts(cfg, providerLists)
   const deletedKeys = new Set(cfg?._deletedProfileKeys || [])
   const next = {
     ...cfg,
@@ -221,12 +234,23 @@ function upsertProviderProfiles(cfg, providerLists = PROVIDER_MAP) {
   delete next._deletedProfileKeys
   for (const track of TRACKS) {
     const currentProvider = next.providers?.[track] || {}
-    const providerDef = findProviderDef(track, currentProvider.id, providerLists)
-    const recommendedModel = firstProviderModel(providerDef)
-    if (currentProvider.id && !currentProvider.model && recommendedModel) {
-      next.providers[track] = { ...currentProvider, model: recommendedModel }
+    const account = findProviderAccount(next, currentProvider.accountId)
+    if (account?.accountId) {
+      const accountProviderDef = findProviderDef(track, account.providerId, providerLists)
+      const keepModel = currentProvider.id === account.providerId ? currentProvider.model : ''
+      next.providers[track] = {
+        ...currentProvider,
+        ...providerPatchFromAccount(account, accountProviderDef),
+        model: modelForProviderSwitch(keepModel, accountProviderDef)
+      }
     }
-    const profile = profileFromProvider(track, next.providers?.[track], providerLists)
+    const effectiveProvider = next.providers?.[track] || {}
+    const providerDef = findProviderDef(track, effectiveProvider.id, providerLists)
+    const recommendedModel = firstProviderModel(providerDef)
+    if (effectiveProvider.id && !effectiveProvider.model && recommendedModel) {
+      next.providers[track] = { ...effectiveProvider, model: recommendedModel }
+    }
+    const profile = profileFromProvider(track, next.providers?.[track], { ...providerLists, _config: next })
     if (!profile) continue
     const key = profileKey(track, { providerId: profile.providerId, baseUrl: profile.baseUrl, model: profile.model })
     if (deletedKeys.has(key)) continue
@@ -327,7 +351,7 @@ export default function useConfig() {
           mergeProviderLists(providers, PROVIDER_MAP[track])
         ])
       )
-      const migrated = migrateConfig(c, migrationProviderMap)
+      const migrated = migrateProviderAccounts(migrateConfig(c, migrationProviderMap), migrationProviderMap)
       configRef.current = migrated
       setConfig(migrated)
     })

@@ -29,6 +29,7 @@ import {
 } from '../src/utils/conversationStore.js'
 import { normalizeProviderList } from '../src/hooks/useConfig.js'
 import { createProviderClearPatch, createProviderProfilePatch, createProviderSelectionPatch, defaultProviderTemplatePreset, normalizeProviderTemplate, providerNeedsTemplatePaths, providerTemplatePathStatus, providerTemplatePresets } from '../src/utils/providerConfig.js'
+import { migrateProviderAccounts, providerPatchFromAccount, findProviderAccount, normalizeProviderAccount } from '../src/utils/providerAccounts.js'
 
 const require = createRequire(import.meta.url)
 function requireWithElectronMock(modulePath, electronMock) {
@@ -59,6 +60,7 @@ const configModule = requireWithElectronMock('../electron/config.js', {
 const { resolveAuth } = require('../electron/providers/auth.js')
 const providerRegistry = require('../electron/providers/registry.js')
 const registryUtils = require('../electron/providers/registry-utils.js')
+const providerAccountResolver = require('../electron/providers/account-resolver.js')
 const { validateGenerationRequest } = require('../electron/providers/validation.js')
 const { buildProviderImageTestPayload } = require('../electron/providers/image-test.js')
 const mainSanitize = require('../electron/security/sanitize.js')
@@ -75,6 +77,17 @@ const mergedPollutedConfig = configModule._test.deepMerge(configModule.DEFAULT_C
 assert.equal(mergedPollutedConfig.providers.image.id, 'custom-image')
 assert.equal(mergedPollutedConfig.providers.template, undefined)
 assert.equal(Object.hasOwn(mergedPollutedConfig.general, 'constructor'), false)
+const accountSecretConfig = {
+  providers: { chat: { id: 'deepseek', apiKey: 'track-secret', baseUrl: 'https://api.deepseek.com', model: 'deepseek-chat' } },
+  providerProfiles: { chat: [], image: [], video: [] },
+  providerAccounts: [{ accountId: 'acct_test', providerId: 'deepseek', kind: 'api-key', apiKey: 'account-secret', sessionToken: 'session-secret', baseUrl: 'https://api.deepseek.com' }]
+}
+const redactedAccountConfig = configModule.redactApiKeys(accountSecretConfig)
+assert.equal(redactedAccountConfig.providerAccounts[0].apiKey, configModule.REDACTED_API_KEY)
+assert.equal(redactedAccountConfig.providerAccounts[0].sessionToken, configModule.REDACTED_API_KEY)
+const mergedRedactedAccount = configModule.mergeRedactedApiKeys(redactedAccountConfig, accountSecretConfig)
+assert.equal(mergedRedactedAccount.providerAccounts[0].apiKey, 'account-secret')
+assert.equal(mergedRedactedAccount.providerAccounts[0].sessionToken, 'session-secret')
 
 assert.equal(parseDurationSeconds('8s', 5), 8)
 assert.equal(parseDurationSeconds('bad', 5), 5)
@@ -90,11 +103,92 @@ assert.deepEqual(
 assert.equal(canonicalProviderKey('image', 'dalle'), 'openai')
 assert.deepEqual(providerAuthConfig({ authType: { type: 'api_key', key: 'x-api-key' } }, {}), { type: 'api-key', key: 'x-api-key' })
 assert.equal(providerCredentialReady({ id: 'local', authType: { type: 'none' } }, {}), true)
+assert.equal(providerCredentialReady({ id: 'deepseek', authType: { type: 'bearer' } }, { id: 'deepseek', accountId: 'acct_ready', accountKind: 'api-key' }), true)
+assert.equal(providerCredentialReady({ id: 'openai', authType: { type: 'bearer' } }, { id: 'openai', accountId: 'acct_oauth', accountKind: 'oauth-placeholder' }), false)
 assert.equal(isModelEndpointUnsupportedError(new Error('HTTP 404 Not Found')), true)
 assert.equal(isProviderNetworkError(new Error("Error invoking remote method 'api:models': Error: connect ETIMEDOUT 184.173.136.86:443")), true)
 assert.equal(isProviderNetworkError(new Error('getaddrinfo ENOTFOUND api.openai.com')), true)
 assert.equal(isProviderNetworkError(new Error('HTTP 401: bad key')), false)
 assert.equal(profileKey('image', { providerId: 'dalle', baseUrl: 'https://api.example.com', model: 'm' }), 'image|openai|https://api.example.com|m')
+const migratedAccountsConfig = migrateProviderAccounts({
+  providers: {
+    chat: { id: 'deepseek', apiKey: 'chat-secret', baseUrl: 'https://api.deepseek.com', model: 'deepseek-chat' },
+    image: { id: 'openai', apiKey: 'image-secret', baseUrl: 'https://api.openai.com', model: 'gpt-image-2' }
+  },
+  providerProfiles: {
+    chat: [{ providerId: 'openrouter', apiKey: 'router-secret', baseUrl: 'https://openrouter.ai/api', model: 'openai/gpt-5.1' }],
+    image: [],
+    video: []
+  }
+}, {
+  chat: [
+    { id: 'deepseek', name: 'DeepSeek', defaultUrl: 'https://api.deepseek.com', authType: { type: 'bearer' } },
+    { id: 'openrouter', name: 'OpenRouter', defaultUrl: 'https://openrouter.ai/api', authType: { type: 'bearer' } }
+  ],
+  image: [{ id: 'openai', name: 'OpenAI', defaultUrl: 'https://api.openai.com', authType: { type: 'bearer' } }],
+  video: []
+})
+assert.ok(migratedAccountsConfig.providers.chat.accountId)
+assert.ok(migratedAccountsConfig.providers.image.accountId)
+assert.ok(migratedAccountsConfig.providerProfiles.chat[0].accountId)
+assert.equal(migratedAccountsConfig.providerAccounts.length, 3)
+assert.equal(migratedAccountsConfig.providers.chat.apiKey, '')
+assert.equal(migratedAccountsConfig.providerProfiles.chat[0].apiKey, '')
+const migratedDeepSeek = findProviderAccount(migratedAccountsConfig, migratedAccountsConfig.providers.chat.accountId)
+assert.equal(migratedDeepSeek.apiKey, 'chat-secret')
+assert.equal(providerPatchFromAccount(migratedDeepSeek).baseUrl, 'https://api.deepseek.com')
+assert.equal(providerPatchFromAccount(migratedDeepSeek).apiKey, '')
+const migratedGatewayConfig = migrateProviderAccounts({
+  providers: {
+    chat: { id: 'openai', accountId: 'acct_gateway', accountKind: 'gateway', apiKey: '', baseUrl: 'https://relay.example.com', model: 'gpt-5.1' }
+  },
+  providerProfiles: {
+    chat: [{ providerId: 'openai', accountId: 'acct_gateway', accountKind: 'gateway', baseUrl: 'https://relay.example.com', model: 'gpt-5.1' }],
+    image: [],
+    video: []
+  },
+  providerAccounts: [
+    { accountId: 'acct_gateway', kind: 'gateway', providerId: 'openai', apiKey: 'gateway-secret', baseUrl: 'https://relay.example.com', tracks: ['chat', 'image'] }
+  ]
+}, {
+  chat: [{ id: 'openai', name: 'OpenAI', defaultUrl: 'https://api.openai.com', authType: { type: 'bearer' } }],
+  image: [{ id: 'openai', name: 'OpenAI Image', defaultUrl: 'https://api.openai.com', authType: { type: 'bearer' } }],
+  video: []
+})
+assert.equal(migratedGatewayConfig.providers.chat.accountId, 'acct_gateway')
+assert.equal(migratedGatewayConfig.providers.chat.accountKind, 'gateway')
+assert.equal(migratedGatewayConfig.providerProfiles.chat[0].accountId, 'acct_gateway')
+assert.equal(migratedGatewayConfig.providerAccounts.length, 1)
+assert.equal(migratedGatewayConfig.providerAccounts[0].kind, 'gateway')
+assert.equal(migratedGatewayConfig.providerAccounts[0].apiKey, 'gateway-secret')
+const oauthPatch = providerPatchFromAccount(normalizeProviderAccount({ kind: 'oauth-placeholder', providerId: 'chatgpt-plans', apiKey: 'should-not-use', baseUrl: '' }))
+assert.equal(oauthPatch.apiKey, '')
+const resolvedAccountProvider = providerAccountResolver.storedProviderForRequest({
+  providers: { chat: { id: 'deepseek', accountId: 'acct_deepseek', apiKey: '', baseUrl: 'https://api.deepseek.com', model: 'deepseek-chat' } },
+  providerProfiles: { chat: [], image: [], video: [] },
+  providerAccounts: [
+    { accountId: 'acct_deepseek', kind: 'api-key', providerId: 'deepseek', apiKey: 'account-secret', baseUrl: 'https://relay.example.com', modelListPath: '/models' }
+  ]
+}, 'chat', { providerId: 'deepseek', accountId: 'acct_deepseek' })
+assert.equal(resolvedAccountProvider.apiKey, 'account-secret')
+assert.equal(resolvedAccountProvider.baseUrl, 'https://relay.example.com')
+assert.equal(resolvedAccountProvider.modelListPath, '/models')
+const trackBlockedProvider = providerAccountResolver.storedProviderForRequest({
+  providers: { image: { id: 'openai', accountId: 'acct_chat_only', apiKey: '', baseUrl: 'https://api.openai.com', model: 'gpt-image-2' } },
+  providerProfiles: { chat: [], image: [], video: [] },
+  providerAccounts: [
+    { accountId: 'acct_chat_only', kind: 'api-key', providerId: 'openai', apiKey: 'chat-only-secret', baseUrl: 'https://api.openai.com', tracks: ['chat'] }
+  ]
+}, 'image', { providerId: 'openai', accountId: 'acct_chat_only' })
+assert.equal(trackBlockedProvider.apiKey, '')
+const oauthResolvedProvider = providerAccountResolver.storedProviderForRequest({
+  providers: { chat: { id: 'openai', accountId: 'acct_oauth', apiKey: '', baseUrl: 'https://api.openai.com', model: 'gpt-5.1' } },
+  providerProfiles: { chat: [], image: [], video: [] },
+  providerAccounts: [
+    { accountId: 'acct_oauth', kind: 'oauth-placeholder', providerId: 'openai', apiKey: 'must-not-use', baseUrl: 'https://api.openai.com' }
+  ]
+}, 'chat', { providerId: 'openai', accountId: 'acct_oauth' })
+assert.equal(oauthResolvedProvider.apiKey, '')
 assert.deepEqual(
   registryUtils.normalizeProviderMeta({ links: { docs: 'https://example.com' }, capabilities: { image: true } }),
   {

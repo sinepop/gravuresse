@@ -106,6 +106,7 @@ export interface ProviderCallParams {
   taskId?: string
   model?: string
   baseUrl?: string
+  accountId?: string
   [key: string]: unknown
 }
 
