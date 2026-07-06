@@ -2,6 +2,12 @@
 
 ## 涓枃
 
+#### v2.1.7 (2026-07-06)
+
+**Release asset consistency**
+- Rebuilt and republished the Windows installer as a new version so the installer, blockmap, `latest.yml`, and `SHA256SUMS.txt` are generated from the same release set.
+- Kept the existing `v2.1.6` GitHub Release unchanged to avoid same-version binary drift.
+
 #### v2.1.6 (2026-07-06)
 
 **Provider/API configuration cleanup**
