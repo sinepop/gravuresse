@@ -329,6 +329,7 @@ function shouldValidateCustomTemplate(track, provider, options) {
   const template = customTemplateFromOptions(options)
   if (!hasCustomTemplateFields(template)) return false
 
+  if (track === 'image') return true
   if (provider.id === 'custom-image' || String(protocol || '').startsWith('custom_image_')) return true
   return !resolveHandler(protocol)
 }

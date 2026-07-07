@@ -27,6 +27,12 @@ function copyBuildAssets() {
   cpSync(iconSrc, resolve(destDir, 'icon.png'))
 }
 
+function copySharedRuntimeFiles() {
+  const destDir = resolve(__dirname, 'dist/shared')
+  if (!existsSync(destDir)) mkdirSync(destDir, { recursive: true })
+  cpSync(resolve(__dirname, 'shared/modelCapabilities.cjs'), resolve(destDir, 'modelCapabilities.cjs'))
+}
+
 export default defineConfig({
   main: {
     plugins: [
@@ -36,6 +42,7 @@ export default defineConfig({
         closeBundle() {
           copyElectronRuntimeFiles()
           copyBuildAssets()
+          copySharedRuntimeFiles()
         }
       }
     ],

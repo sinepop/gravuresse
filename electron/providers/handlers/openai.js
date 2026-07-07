@@ -1,5 +1,5 @@
 const { registerHandler } = require('../handler')
-const { request, joinApiUrl } = require('../../api/http')
+const { request, joinCompatibleApiUrl } = require('../../api/http')
 
 const BASE_SIZES = {
   '1:1': [1024, 1024], '4:3': [1536, 1152], '3:4': [1152, 1536],
@@ -16,6 +16,14 @@ function getSize(ratio, resolution) {
   return `${Math.min(w, 4096)}x${Math.min(h, 4096)}`
 }
 
+function chatCompletionsUrl(baseUrl) {
+  return joinCompatibleApiUrl(baseUrl, '/v1/chat/completions')
+}
+
+function imageGenerationsUrl(baseUrl) {
+  return joinCompatibleApiUrl(baseUrl, '/v1/images/generations')
+}
+
 async function handleChat(params) {
   const body = {
     model: params.model,
@@ -25,7 +33,7 @@ async function handleChat(params) {
     ],
     max_tokens: 4096
   }
-  const url = joinApiUrl(params.baseUrl, '/v1/chat/completions')
+  const url = chatCompletionsUrl(params.baseUrl)
   const res = await request(url, {
     method: 'POST',
     headers: { ...params.auth.headers, 'Content-Type': 'application/json' },
@@ -37,12 +45,23 @@ async function handleChat(params) {
   return { text, model: json.model }
 }
 
+function imageFromResponse(json = {}) {
+  const item = Array.isArray(json.data) ? json.data[0] : json.data
+  if (!item) throw new Error('No image returned')
+  if (typeof item === 'string') return item
+  if (item.b64_json) return `data:image/png;base64,${item.b64_json}`
+  if (item.url) return item.url
+  if (item.image_url) return typeof item.image_url === 'string' ? item.image_url : item.image_url.url
+  if (item.output_url) return item.output_url
+  throw new Error('Unknown image response format')
+}
+
 async function handleGenerate(params) {
   const { model, baseUrl, auth, prompt, ratio, resolution, negative_prompt } = params
   const size = getSize(ratio, resolution)
   const finalPrompt = negative_prompt ? `${prompt}\n\nNegative prompt: ${negative_prompt}` : prompt
   const body = { model: model || 'dall-e-3', prompt: finalPrompt, n: 1, size }
-  const url = joinApiUrl(baseUrl, '/v1/images/generations')
+  const url = imageGenerationsUrl(baseUrl)
   const res = await request(url, {
     method: 'POST',
     headers: { ...auth.headers, 'Content-Type': 'application/json' },
@@ -50,12 +69,7 @@ async function handleGenerate(params) {
   }, body)
   const json = JSON.parse(res.data)
   if (json.error) throw new Error(json.error.message)
-  const item = json.data?.[0]
-  if (!item) throw new Error('No image returned')
-  if (typeof item === 'string') return item
-  if (item.b64_json) return `data:image/png;base64,${item.b64_json}`
-  if (item.url) return item.url
-  throw new Error('Unknown image response format')
+  return imageFromResponse(json)
 }
 
 async function openaiHandler(params) {
@@ -71,4 +85,5 @@ async function openaiHandler(params) {
 
 registerHandler('openai', openaiHandler)
 registerHandler('openai_image', openaiHandler)
+openaiHandler._test = { getSize, imageFromResponse, chatCompletionsUrl, imageGenerationsUrl }
 module.exports = openaiHandler

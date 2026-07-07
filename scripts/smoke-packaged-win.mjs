@@ -6,7 +6,9 @@ import path from 'node:path'
 const fatalPatterns = [
   /ReferenceError/i,
   /ErrorBoundary caught/i,
-  /\bUncaught\b/i
+  /\bUncaught\b/i,
+  /Cannot find module/i,
+  /ERR_MODULE_NOT_FOUND/i
 ]
 const timeoutMs = Number(process.env.GRAVURESSE_SMOKE_TIMEOUT_MS || 10000)
 
@@ -88,13 +90,13 @@ try {
     process.exit(1)
   }
 
-  if (!timedOut && result.code !== 0) {
-    console.error(`Packaged smoke failed: process exited with code ${result.code}`)
+  if (!timedOut) {
+    console.error(`Packaged smoke failed: process exited before ${timeoutMs}ms with code ${result.code} signal ${result.signal || 'none'}`)
     printCapturedOutput()
     process.exit(1)
   }
 
-  console.log(`Packaged smoke passed (${timedOut ? `no fatal output for ${timeoutMs}ms` : 'process exited cleanly'})`)
+  console.log(`Packaged smoke passed (no fatal output for ${timeoutMs}ms)`)
 } finally {
   await rm(profileRoot, { recursive: true, force: true })
 }

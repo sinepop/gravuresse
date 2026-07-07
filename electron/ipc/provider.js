@@ -182,6 +182,8 @@ function registerProviderIpc({
       providerId: params?.id,
       prompt: params?.prompt, ratio: params?.ratio, resolution: params?.resolution,
       negative_prompt: params?.negative_prompt,
+      sourceImageUrl: params?.sourceImageUrl,
+      source_image_url: params?.source_image_url,
       model: params?.model,
       baseUrl: params?.baseUrl,
       accountId: params?.accountId

@@ -5,7 +5,7 @@ import dns from 'node:dns'
 import { createRequire } from 'node:module'
 
 const require = createRequire(import.meta.url)
-const { assertHttpsUrl, httpRequest } = require('../../electron/api/http.js')
+const { assertHttpsUrl, httpRequest, joinCompatibleApiUrl } = require('../../electron/api/http.js')
 
 function installMockHttps(routes) {
   const originalRequest = https.request
@@ -60,6 +60,23 @@ function installMockDns() {
 }
 
 export async function runHttpCoreTests() {
+  assert.equal(
+    joinCompatibleApiUrl('https://relay.example.com', '/v1/chat/completions').href,
+    'https://relay.example.com/v1/chat/completions'
+  )
+  assert.equal(
+    joinCompatibleApiUrl('https://relay.example.com/v1', '/v1/chat/completions').href,
+    'https://relay.example.com/v1/chat/completions'
+  )
+  assert.equal(
+    joinCompatibleApiUrl('https://relay.example.com/api/v1', '/v1/images/generations').href,
+    'https://relay.example.com/api/v1/images/generations'
+  )
+  assert.throws(
+    () => joinCompatibleApiUrl('https://relay.example.com', 'https://evil.example.com/v1/models'),
+    /relative API path/
+  )
+
   assert.throws(
     () => assertHttpsUrl('https://user:pass@example.com/a.png'),
     /credentials/

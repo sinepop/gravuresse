@@ -18,16 +18,17 @@ import {
 import { t } from '../i18n'
 import Ic from './icons'
 import useSafeMediaUrl from '../hooks/useSafeMediaUrl'
-import { normalizeProviderAccount, providerPatchFromAccount, findProviderAccount } from '../utils/providerAccounts.js'
+import { OPENAI_COMPATIBLE_GATEWAY_PRESETS, normalizeProviderAccount, providerGatewayPresetPatch, providerPatchFromAccount, findProviderAccount } from '../utils/providerAccounts.js'
+import modelCapabilities from '../../shared/modelCapabilities.cjs'
+
+const { normalizeModelRecord, sortModelRecords } = modelCapabilities
 
 const NAV_SECTIONS = [
   { id: 'api', labelKey: 'apiConfig', icon: 'link', children: [
     { id: 'provider-accounts', labelKey: 'providerAccounts' },
     { id: 'provider-api-keys', labelKey: 'providerApiKeys' },
     { id: 'provider-gateways', labelKey: 'providerGateways' },
-    { id: 'api-chat', labelKey: 'chat' },
-    { id: 'api-image', labelKey: 'image' },
-    { id: 'api-video', labelKey: 'video', requiresVideo: true },
+    { id: 'model-pairing', labelKey: 'modelPairing' },
   ]},
   { id: 'general', labelKey: 'general', icon: 'gear', children: [
     { id: 'appearance', labelKey: 'appearance' },
@@ -640,6 +641,13 @@ function billingLabel(mode, lang) {
   return t('billingUnknown', lang)
 }
 
+function modelCapabilityLabel(capability, lang) {
+  if (capability === 'image') return t('modelCapabilityImage', lang)
+  if (capability === 'chat') return t('modelCapabilityChat', lang)
+  if (capability === 'other') return t('modelCapabilityOther', lang)
+  return t('modelCapabilityUnknown', lang)
+}
+
 function callModeLabel(mode, lang) {
   if (mode === 'direct-api') return t('callModeDirectApi', lang)
   if (mode === 'custom-api') return t('callModeCustomApi', lang)
@@ -733,110 +741,115 @@ function profileDisplayName(track, profile = {}, providers = [], lang) {
   return [name, profile.model].filter(Boolean).join(' · ')
 }
 
-function ProviderCard({ track, provider, selected, onSelect, lang }) {
-  const info = providerInfo(provider, track)
-  const executable = isExecutableProvider(provider)
-  const caps = capabilityLabels(info.capabilities, track, lang)
-  const constraints = compactConstraints(info.constraints, lang)
-  const description = localizedDescription(info, lang)
-  const linkButtons = LINK_BUTTONS.filter(button => {
-    if (!info.links?.[button.key]) return false
-    if (provider.id === 'volcengine' && (button.key === 'codingPlan' || button.key === 'openCode')) return false
-    if (provider.id === 'volcengine-coding-plan' && button.key === 'openCode') return false
-    return true
-  })
-  const templatePreset = hasTemplatePreset(provider, info)
+function ModelPairingPage({ config, providers, onChange, lang }) {
+  const tracks = [
+    { id: 'chat', icon: 'messageCircle', labelKey: 'chatModel' },
+    { id: 'image', icon: 'image', labelKey: 'imageModel' },
+    { id: 'video', icon: 'video', labelKey: 'videoModel' },
+  ]
 
   return (
-    <div style={{
-      border: `1px solid ${selected ? 'var(--border-accent)' : 'var(--border-subtle)'}`,
-      background: selected ? 'var(--accent-soft)' : 'var(--bg-elevated)',
-      borderRadius: 'var(--radius-sm)', padding: 10, display: 'flex', flexDirection: 'column', gap: 8
-    }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text-primary)', fontSize: 13, fontWeight: 600 }}>
-            <Ic n={providerIcon(track)} size={13} />
-            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{providerDisplayName(provider, lang, track)}</span>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div>
+        <div style={{ color: 'var(--text-primary)', fontSize: 14, fontWeight: 600, marginBottom: 4 }}>{t('modelPairing', lang)}</div>
+        <div style={{ color: 'var(--text-muted)', fontSize: 11 }}>{t('modelPairingDesc', lang)}</div>
+      </div>
+      {tracks.map(track => {
+        const trackProviders = (providers[track.id] || []).filter(p => isExecutableProvider(p))
+        const current = config?.providers?.[track.id] || {}
+        const selectedProviderId = current.id || current.providerId || ''
+        const selectedProvider = trackProviders.find(p => p.id === selectedProviderId)
+        const currentModel = current.model || ''
+        const profiles = (config?.providerProfiles?.[track.id] || []).filter(p => {
+          const def = trackProviders.find(d => d.id === (p.providerId || p.id))
+          return isExecutableProvider(def) && (p.apiKey || p.accountId || def?.authType?.type === 'none')
+        })
+
+        return (
+          <div key={track.id} style={{
+            border: `1px solid var(--border-subtle)`,
+            borderRadius: 'var(--radius-sm)',
+            padding: 12,
+            background: 'var(--bg-elevated)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+              <Ic n={track.icon} size={14} />
+              <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-primary)' }}>{t(track.labelKey, lang)}</span>
+              {selectedProvider && currentModel ? (
+                <span style={{ fontSize: 10, color: 'var(--success)', background: 'var(--success-soft)', padding: '2px 6px', borderRadius: 'var(--radius-sm)' }}>{t('paired', lang)}</span>
+              ) : (
+                <span style={{ fontSize: 10, color: 'var(--text-muted)', background: 'var(--bg-hover)', padding: '2px 6px', borderRadius: 'var(--radius-sm)' }}>{t('unpaired', lang)}</span>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
+              <label style={{ ...labelS(), flex: 1 }}>
+                {t('provider', lang)}
+                <select
+                  value={selectedProviderId}
+                  onChange={e => {
+                    const newId = e.target.value
+                    if (!newId) return
+                    onChange(track.id, { id: newId, model: '' })
+                  }}
+                  style={selectS()}
+                >
+                  <option value="">{t('selectProvider', lang)}</option>
+                  {trackProviders.map(p => (
+                    <option key={p.id} value={p.id}>{providerDisplayName(p, lang, track.id)}</option>
+                  ))}
+                </select>
+              </label>
+              <label style={{ ...labelS(), flex: 1 }}>
+                {t('model', lang)}
+                <input
+                  type="text"
+                  value={currentModel}
+                  onChange={e => onChange(track.id, { model: e.target.value })}
+                  placeholder={t('modelPlaceholder', lang)}
+                  style={{
+                    width: '100%',
+                    padding: '7px 10px',
+                    background: 'var(--bg-surface)',
+                    border: '1px solid var(--border-subtle)',
+                    borderRadius: 'var(--radius-sm)',
+                    color: 'var(--text-primary)',
+                    fontSize: 12,
+                    fontFamily: 'var(--font-mono)',
+                    outline: 'none',
+                    boxSizing: 'border-box',
+                  }}
+                  onFocus={e => { e.currentTarget.style.borderColor = 'var(--border-accent)' }}
+                  onBlur={e => { e.currentTarget.style.borderColor = 'var(--border-subtle)' }}
+                />
+              </label>
+            </div>
+            {profiles.length > 0 && (
+              <div style={{ marginTop: 8, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                {profiles.slice(0, 5).map(p => {
+                  const pid = p.providerId || p.id
+                  const isActive = pid === selectedProviderId && p.model === currentModel
+                  return (
+                    <button
+                      key={p.profileId || `${pid}:${p.model}`}
+                      onClick={() => onChange(track.id, { id: pid, model: p.model })}
+                      style={{
+                        ...btnS(isActive),
+                        padding: '3px 8px',
+                        fontSize: 10,
+                        fontFamily: 'var(--font-mono)',
+                        color: isActive ? 'var(--accent)' : 'var(--text-secondary)',
+                        borderColor: isActive ? 'var(--border-accent)' : 'var(--border-subtle)',
+                      }}
+                    >
+                      {p.model}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
           </div>
-          <div style={{ marginTop: 2, color: 'var(--text-muted)', fontSize: 10 }}>{provider.platform} · {regionLabel(info.region, lang)}</div>
-        </div>
-        <button
-          onClick={() => { if (executable) onSelect(provider) }}
-          title={executable ? t('provider', lang) : t('viewMaterials', lang)}
-          style={{
-            ...btnS(false),
-            padding: '5px 8px',
-            fontSize: 11,
-            color: selected ? 'var(--accent)' : 'var(--text-secondary)'
-          }}
-        >
-          {selected ? <Ic n="check" size={12} /> : executable ? <Ic n="plus" size={12} /> : <Ic n="book" size={12} />}
-        </button>
-      </div>
-
-      {description && <div style={{ color: 'var(--text-secondary)', fontSize: 11, lineHeight: 1.45 }}>{description}</div>}
-
-      <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-        <span style={chipS(executable ? 'var(--success)' : 'var(--text-muted)')}>{callModeLabel(provider.callMode, lang)}</span>
-        <span style={chipS(executable ? 'var(--accent)' : 'var(--text-muted)')}>{setupModeLabel(provider.setupMode, lang)}</span>
-        <span style={billingChipS(info.billing?.mode, track)}>{billingLabel(info.billing?.mode, lang)}</span>
-        <span style={chipS(info.relay || templatePreset ? 'var(--success)' : 'var(--text-muted)')}>
-          {templatePreset ? t('templatePreset', lang) : info.relay ? t('relaySupported', lang) : t('relayOfficialOnly', lang)}
-        </span>
-      </div>
-
-      {(track === 'video' || info.billing?.mode === 'subscription') && (
-        <div style={{ color: 'var(--danger)', background: 'var(--danger-soft)', border: '1px solid var(--danger-border)', borderRadius: 'var(--radius-sm)', padding: '6px 8px', fontSize: 10, lineHeight: 1.45 }}>
-          {localizedBillingNote(info, lang)}
-        </div>
-      )}
-
-      <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-        {caps.slice(0, 5).map(item => <span key={item} style={chipS()}>{item}</span>)}
-      </div>
-
-      {constraints.length > 0 && (
-        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-          {constraints.slice(0, 3).map(item => <span key={item} style={chipS()}>{item}</span>)}
-        </div>
-      )}
-
-      {linkButtons.length > 0 && (
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          {linkButtons.map(button => (
-            <button key={button.key} onClick={() => openExternal(info.links[button.key])} style={{ ...btnS(false), padding: '5px 8px', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-              <Ic n={button.icon} size={11} />{t(button.labelKey, lang)}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function ProviderWorkbench({ track, providers, selectedProviderId, onSelect, lang }) {
-  const orderedProviders = providers
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <div style={{ flex: 1 }}>
-          <div style={{ color: 'var(--text-primary)', fontSize: 13, fontWeight: 600 }}>{t('apiWorkbench', lang)}</div>
-          <div style={{ color: 'var(--text-muted)', fontSize: 11, marginTop: 2 }}>{t('apiWorkbenchDesc', lang)}</div>
-        </div>
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 8 }}>
-        {orderedProviders.map(p => (
-          <ProviderCard
-            key={p.id}
-            track={track}
-            provider={p}
-            selected={p.id === selectedProviderId}
-            onSelect={onSelect}
-            lang={lang}
-          />
-        ))}
-      </div>
+        )
+      })}
     </div>
   )
 }
@@ -952,6 +965,24 @@ function CustomApiFields({ track, provider, current, onChange, lang, showAuthMod
           <label style={labelS()}>
             {t('imageResponsePath', lang)}
             <input type="text" value={template.imageUrlPath || template.responsePath || ''} placeholder="data[0].b64_json / data[0].url" onChange={e => patchTemplate({ imageUrlPath: e.target.value })} style={inputS()} />
+          </label>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <label style={labelS()}>
+              {t('taskIdPath', lang)}
+              <input type="text" value={template.taskIdPath || ''} placeholder="data.task_id" onChange={e => patchTemplate({ taskIdPath: e.target.value })} style={inputS()} />
+            </label>
+            <label style={labelS()}>
+              {t('statusPath', lang)}
+              <input type="text" value={template.statusPath || ''} placeholder="data.status" onChange={e => patchTemplate({ statusPath: e.target.value })} style={inputS()} />
+            </label>
+          </div>
+          <label style={labelS()}>
+            {t('pollPath', lang)}
+            <input type="text" value={template.pollPath || ''} placeholder="/v1/images/tasks/{taskId}" onChange={e => patchTemplate({ pollPath: e.target.value })} style={inputS()} />
+          </label>
+          <label style={labelS()}>
+            {t('pollMethod', lang)}
+            {methodSelect(template.pollMethod, value => patchTemplate({ pollMethod: value }))}
           </label>
         </>
       )}
@@ -1237,20 +1268,37 @@ function ProviderTab({ track, providers, allProviders, config, onChange, lang })
   const [loadingModels, setLoadingModels] = useState(false)
   const [modelFetchResult, setModelFetchResult] = useState(null)
   const [showAdvanced, setShowAdvanced] = useState(false)
+  const [modelSearch, setModelSearch] = useState('')
+  const [showAllModels, setShowAllModels] = useState(false)
   const fetchTimeout = useRef(null)
   const modelFetchSeq = useRef(0)
   const isCustomImageRelay = track === 'image' && provider?.id === 'custom-image'
   const showMainBaseUrl = true
-  const modelOptions = useMemo(() => {
-    const items = [
-      current.model,
-      provider?.defaultModel,
-      ...(Array.isArray(provider?.modelCatalog) ? provider.modelCatalog : []),
-      ...(isCustomImageRelay ? ['gpt-image-2'] : []),
-      ...(Array.isArray(models) ? models.map(item => item?.id) : [])
-    ].filter(Boolean)
-    return Array.from(new Set(items))
-  }, [current.model, provider?.defaultModel, provider?.modelCatalog, isCustomImageRelay, models])
+  const modelRecords = useMemo(() => {
+    const byId = new Map()
+    const add = (item, source) => {
+      const record = normalizeModelRecord(typeof item === 'string' ? { id: item } : item, { source })
+      if (!record?.id) return
+      const existing = byId.get(record.id)
+      if (!existing || existing.capability === 'unknown') byId.set(record.id, record)
+    }
+    add(current.model, 'manual')
+    add(provider?.defaultModel, 'catalog')
+    for (const item of Array.isArray(provider?.modelCatalog) ? provider.modelCatalog : []) add(item, 'catalog')
+    if (isCustomImageRelay) add('gpt-image-2', 'catalog')
+    for (const item of Array.isArray(models) ? models : []) add(item, item?.source || 'remote')
+    return Array.from(byId.values()).sort(sortModelRecords(track))
+  }, [current.model, provider?.defaultModel, provider?.modelCatalog, isCustomImageRelay, models, track])
+  const visibleModelRecords = useMemo(() => {
+    const query = modelSearch.trim().toLowerCase()
+    const filtered = modelRecords.filter(record => {
+      if (track === 'image' && !showAllModels && !['image', 'unknown'].includes(record.capability)) return false
+      if (track === 'chat' && !showAllModels && !['chat', 'unknown'].includes(record.capability)) return false
+      return !query || record.id.toLowerCase().includes(query)
+    })
+    return filtered
+  }, [modelRecords, modelSearch, showAllModels, track])
+  const modelOptions = visibleModelRecords.map(record => record.id)
   const recommendedModel = firstProviderModel(provider) || current.model || ''
   const effectiveBaseUrl = current.baseUrl || provider?.defaultUrl || ''
   const effectivePathPrefix = current.pathPrefix || provider?.pathPrefix || ''
@@ -1572,8 +1620,6 @@ function ProviderTab({ track, providers, allProviders, config, onChange, lang })
       <div style={{ color: billingView === 'subscription' ? 'var(--danger)' : 'var(--text-muted)', background: billingView === 'subscription' ? 'var(--danger-soft)' : 'transparent', border: billingView === 'subscription' ? '1px solid var(--danger-border)' : 'none', borderRadius: 'var(--radius-sm)', padding: billingView === 'subscription' ? '7px 9px' : 0, fontSize: 11, lineHeight: 1.5 }}>
         {t(billingView === 'subscription' ? 'subscriptionBillingDesc' : 'usageBillingDesc', lang)}
       </div>
-      <ProviderWorkbench track={track} providers={visibleProviders} selectedProviderId={current.id || ''} onSelect={selectProvider} lang={lang} />
-
       {/* ── Current Provider Config ── */}
       {!isExecutableProvider(provider) ? (
         <NonExecutableInfoCard provider={provider} track={track} lang={lang} />
@@ -1646,13 +1692,16 @@ function ProviderTab({ track, providers, allProviders, config, onChange, lang })
             <span>{t('model', lang)}<PresetBadge show={current.model === provider?.defaultModel && Boolean(provider?.defaultModel)} lang={lang} /></span>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                {modelOptions.length > 0 ? (
-                  <select value={current.model || recommendedModel || ''} onChange={e => onChange(track, { model: e.target.value })} style={{ ...selectS(), flex: 1 }}>
-                    {modelOptions.map(model => <option key={model} value={model}>{model}</option>)}
-                  </select>
-                ) : (
-                  <input type="text" value={current.model || ''} placeholder={provider?.defaultModel || ''} onChange={e => onChange(track, { model: e.target.value })} style={{ ...inputS(), flex: 1 }} />
-                )}
+                <input
+                  type="text"
+                  value={current.model || ''}
+                  placeholder={modelSearch ? t('manualModel', lang) : provider?.defaultModel || t('manualModel', lang)}
+                  onChange={e => {
+                    onChange(track, { model: e.target.value })
+                    setModelSearch(e.target.value)
+                  }}
+                  style={{ ...inputS(), flex: 1 }}
+                />
                 <button
                   onClick={fetchModelList}
                   disabled={loadingModels || !credentialReady || !effectiveBaseUrl}
@@ -1662,13 +1711,41 @@ function ProviderTab({ track, providers, allProviders, config, onChange, lang })
                   {loadingModels ? '...' : <Ic n="refresh" size={12} />}
                 </button>
               </div>
-              {modelOptions.length > 0 && (
+              {modelRecords.length > 0 && (
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <input
+                    type="text"
+                    value={modelSearch}
+                    placeholder={t('searchModels', lang)}
+                    onChange={e => setModelSearch(e.target.value)}
+                    style={{ ...inputS(), flex: '1 1 180px', minWidth: 0 }}
+                  />
+                  <button onClick={() => setShowAllModels(!showAllModels)} style={{ ...btnS(false), padding: '7px 9px', fontSize: 11 }}>
+                    {showAllModels ? t('showRecommendedModels', lang) : t('showAllModels', lang)}
+                  </button>
+                </div>
+              )}
+              {visibleModelRecords.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 168, overflow: 'auto', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-sm)', padding: 6, background: 'var(--bg-surface)' }}>
+                  {visibleModelRecords.slice(0, 80).map(record => (
+                    <button
+                      key={record.id}
+                      onClick={() => onChange(track, { model: record.id })}
+                      style={{ ...btnS(false), justifyContent: 'space-between', padding: '6px 8px', color: current.model === record.id ? 'var(--accent)' : 'var(--text-secondary)' }}
+                    >
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{record.id}</span>
+                      <span style={chipS(record.capability === 'image' ? 'var(--success)' : record.capability === 'chat' ? 'var(--accent)' : 'var(--text-muted)')}>
+                        {modelCapabilityLabel(record.capability, lang)}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {modelOptions.length === 0 && modelRecords.length > 0 && (
                 <input
-                  type="text"
-                  value={current.model || ''}
-                  placeholder={`${t('manualModel', lang)}: ${provider?.defaultModel || ''}`}
-                  onChange={e => onChange(track, { model: e.target.value })}
-                  style={inputS()}
+                  readOnly
+                  value={t('noMatchingModels', lang)}
+                  style={{ ...inputS(), color: 'var(--text-muted)' }}
                 />
               )}
             </div>
@@ -1828,30 +1905,6 @@ function OtherPage({ config, onChange, lang }) {
   )
 }
 
-/* ── Image settings page ── */
-function ImagePage({ config, providers, allProviders, onChange, lang }) {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <ProviderTab track="image" providers={providers} allProviders={allProviders} config={config} onChange={(t2, patch) => onChange('image', patch)} lang={lang} />
-    </div>
-  )
-}
-
-/* ── Video settings page ── */
-function VideoPage({ config, providers, allProviders, onChange, lang }) {
-  const g = config?.general || {}
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <ProviderTab track="video" providers={providers} allProviders={allProviders} config={config} onChange={(t2, patch) => onChange('video', patch)} lang={lang} />
-      <label style={labelS()}>
-        {t('defaultDuration', lang)}
-        <select value={g.defaultDuration || '5s'} onChange={e => onChange('general', { defaultDuration: e.target.value })} style={selectS()}>
-          {DURATIONS.map(d => <option key={d} value={d}>{d}</option>)}
-        </select>
-      </label>
-    </div>
-  )
-}
 
 function providerListForAccounts(providers = {}) {
   const byId = allProvidersById(providers)
@@ -1969,12 +2022,25 @@ function ProviderGatewaysPage({ config, providers, onChange, lang }) {
       onChange(track, { accountId: '', accountKind: '' })
     }
   }
+  const applyPreset = (presetId) => {
+    updateGateway(providerGatewayPresetPatch(presetId))
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <SectionHeading labelKey="providerGateways" lang={lang} />
       <div style={{ color: 'var(--text-muted)', fontSize: 12, lineHeight: 1.5 }}>{t('providerGatewaysDesc', lang)}</div>
       <div style={{ border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-sm)', background: 'var(--bg-elevated)', padding: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ color: 'var(--text-muted)', fontSize: 11 }}>{t('gatewayPreset', lang)}</div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {OPENAI_COMPATIBLE_GATEWAY_PRESETS.map(preset => (
+              <button key={preset.id} onClick={() => applyPreset(preset.id)} style={{ ...btnS(false), padding: '6px 9px', fontSize: 11 }}>
+                {preset.label}
+              </button>
+            ))}
+          </div>
+        </div>
         <label style={labelS()}>
           {t('gatewayName', lang)}
           <input type="text" value={gateway.name || ''} placeholder="OpenAI-compatible Relay" onChange={e => updateGateway({ name: e.target.value })} style={inputS()} />
@@ -2036,10 +2102,8 @@ function ProviderAccountsPage({ providers, lang }) {
 
 /* ── Main Settings ── */
 function normalizeSettingsPage(page, videoEnabled) {
-  if (page === 'api' || page === 'chat') return 'api-chat'
-  if (page === 'image') return 'api-image'
-  if (page === 'video') return videoEnabled ? 'api-video' : 'api-image'
-  if (page === 'api-video' && !videoEnabled) return 'api-image'
+  if (page === 'api' || page === 'chat' || page === 'image' || page === 'video') return 'model-pairing'
+  if (page === 'api-chat' || page === 'api-image' || page === 'api-video') return 'model-pairing'
   return page || 'appearance'
 }
 
@@ -2141,9 +2205,7 @@ export default function Settings({ config, providerLists, onSave, onClose, initi
             {page === 'provider-accounts' && <ProviderAccountsPage providers={providers} lang={lang} />}
             {page === 'provider-api-keys' && <ProviderApiKeysPage config={local} providers={providers} onChange={handleChange} lang={lang} />}
             {page === 'provider-gateways' && <ProviderGatewaysPage config={local} providers={providers} onChange={handleChange} lang={lang} />}
-            {page === 'api-chat' && <ProviderTab track="chat" providers={providers.chat} allProviders={providers} config={local} onChange={handleChange} lang={lang} />}
-            {page === 'api-image' && <ImagePage config={local} providers={providers.image} allProviders={providers} onChange={handleChange} lang={lang} />}
-            {page === 'api-video' && videoApiEnabled && <VideoPage config={local} providers={providers.video} allProviders={providers} onChange={handleChange} lang={lang} />}
+            {page === 'model-pairing' && <ModelPairingPage config={local} providers={providers} onChange={handleChange} lang={lang} />}
           </div>
         </div>
         {/* Footer */}

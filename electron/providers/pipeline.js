@@ -84,7 +84,9 @@ async function execute(params) {
   })
 
   // 5. Resolve handler module by protocol
-  let handler = resolveHandler(protocol)
+  let handler = capKey === 'image' && hasTemplatePath(payload, capKey)
+    ? resolveHandler(genericTemplateProtocol(capKey))
+    : resolveHandler(protocol)
   if (!handler && hasTemplatePath(payload, capKey)) {
     handler = resolveHandler(genericTemplateProtocol(capKey))
   }

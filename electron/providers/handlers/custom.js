@@ -336,6 +336,27 @@ async function requestJson(url, method, headers, requestOptions, body) {
   return json
 }
 
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+function isUnsupportedRequestError(error) {
+  const message = String(error?.message || '').toLowerCase()
+  return /\b(400|404|405|422)\b/.test(message) ||
+    message.includes('unsupported') ||
+    message.includes('unknown parameter') ||
+    message.includes('invalid parameter') ||
+    message.includes('not found') ||
+    message.includes('method not allowed')
+}
+
+function isUnsupportedEndpointError(error) {
+  const message = String(error?.message || '').toLowerCase()
+  return /\b(404|405)\b/.test(message) ||
+    message.includes('not found') ||
+    message.includes('method not allowed')
+}
+
 function pathSegments(path) {
   const clean = String(path || '').trim().replace(/^\$\.?/, '')
   if (!clean) return []
@@ -439,12 +460,17 @@ function extractImage(json, template = {}) {
 
 function defaultOpenAiBody(params) {
   const negativePrompt = params.negativePrompt || params.negative_prompt || ''
-  return {
+  const body = {
     model: params.model,
     prompt: promptWithNegative(params.prompt, negativePrompt, 'Negative prompt'),
-    n: 1,
     size: getSize(params.ratio, params.resolution)
   }
+  const sourceImageUrl = params.sourceImageUrl || params.source_image_url || ''
+  if (sourceImageUrl) {
+    body.image_url = sourceImageUrl
+    body.image = sourceImageUrl
+  }
+  return body
 }
 
 function defaultGeminiBody(params) {
@@ -474,6 +500,76 @@ function customImageBodyTemplate(template = {}) {
   return template.requestBody || template.body || template.submitBody
 }
 
+function commonImageTaskId(json) {
+  return readPath(json, [
+    'task_id',
+    'taskId',
+    'id',
+    'data.task_id',
+    'data.taskId',
+    'data.id',
+    'task.id',
+    'output.id'
+  ])
+}
+
+function commonImageStatus(json, template = {}) {
+  return normalizeStatus(readPath(json, template.statusPath) || json.status || json.data?.status || json.task?.status || '')
+}
+
+function imageTaskDone(status) {
+  return ['succeeded', 'success', 'completed', 'complete', 'done'].includes(String(status || '').toLowerCase())
+}
+
+function imageTaskFailed(status) {
+  return ['failed', 'failure', 'error', 'cancelled', 'canceled', 'expired'].includes(String(status || '').toLowerCase())
+}
+
+function fallbackImagePollPath(path) {
+  const text = String(path || '')
+  if (!text.includes('/images/tasks/')) return ''
+  return text.replace('/images/tasks/', '/tasks/')
+}
+
+async function pollImageTask(params, template, values, auth, taskId) {
+  const pollPath = template.pollPath || '/v1/images/tasks/{taskId}'
+  const pollMethod = template.pollMethod || 'GET'
+  const pollInterval = Math.max(1000, Math.min(15000, Number(params.pollInterval || template.pollInterval) || 3000))
+  const timeout = Math.max(pollInterval, Number(params.requestOptions?.timeout || params.timeout) || 60000)
+  const deadline = Date.now() + timeout
+  let path = pollPath
+  let fallbackTried = false
+
+  while (Date.now() <= deadline) {
+    const bodyTemplate = template.pollBody
+    const body = bodyTemplate ? applyTemplate(bodyTemplate, values, { taskId }) : undefined
+    const url = buildUrl(params.baseUrl, template.pathPrefix, path, values, auth.queryParams, 'Custom image pollPath', { taskId })
+    try {
+      const json = await requestJson(url, pollMethod, {
+        ...auth.headers,
+        ...(body ? { 'Content-Type': 'application/json' } : {})
+      }, params.requestOptions, body)
+      const image = (() => {
+        try { return extractImage(json, template) } catch { return '' }
+      })()
+      if (image) return image
+      const status = commonImageStatus(json, template)
+      if (imageTaskFailed(status)) throw new Error(readPath(json, template.errorPath) || json.error?.message || 'Image task failed')
+      if (imageTaskDone(status)) throw new Error('Image task completed without an image URL')
+    } catch (error) {
+      const fallbackPath = fallbackImagePollPath(path)
+      if (!fallbackTried && fallbackPath && isUnsupportedEndpointError(error)) {
+        fallbackTried = true
+        path = fallbackPath
+        continue
+      }
+      throw error
+    }
+    await sleep(pollInterval)
+  }
+  throw new Error('Image task timed out')
+}
+
 async function handleCustomImage(params, defaults) {
   const template = getTemplate(params)
   const values = templateValues(params)
@@ -482,10 +578,29 @@ async function handleCustomImage(params, defaults) {
   const bodyTemplate = customImageBodyTemplate(template)
   const body = bodyTemplate ? applyTemplate(bodyTemplate, values) : defaults.body(params)
   const url = buildUrl(params.baseUrl, template.pathPrefix, path, values, auth.queryParams, 'Custom image path')
-  const json = await requestJson(url, template.method || template.submitMethod || 'POST', {
+  const method = template.method || template.submitMethod || 'POST'
+  const headers = {
     ...auth.headers,
     'Content-Type': 'application/json'
-  }, params.requestOptions, body)
+  }
+  let json
+  try {
+    json = await requestJson(url, method, headers, params.requestOptions, body)
+  } catch (error) {
+    if (!bodyTemplate && body && Object.hasOwn(body, 'n') && isUnsupportedRequestError(error)) {
+      const slim = { ...body }
+      delete slim.n
+      json = await requestJson(url, method, headers, params.requestOptions, slim)
+    } else {
+      throw error
+    }
+  }
+  const image = (() => {
+    try { return extractImage(json, template) } catch { return '' }
+  })()
+  if (image) return image
+  const taskId = readPath(json, template.taskIdPath) || commonImageTaskId(json)
+  if (taskId) return pollImageTask(params, template, values, auth, String(taskId))
   return extractImage(json, template)
 }
 
@@ -636,8 +751,11 @@ module.exports = {
     applyTemplate,
     buildUrl,
     dedupeBasePath,
+    defaultOpenAiBody,
     extractImage,
     getTemplate,
-    customImageBodyTemplate
+    customImageBodyTemplate,
+    commonImageTaskId,
+    customOpenAiImageHandler
   }
 }

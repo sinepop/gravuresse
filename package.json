@@ -1,6 +1,6 @@
 {
   "name": "gravuresse",
-  "version": "2.1.7",
+  "version": "2.2.0",
   "description": "Gravuresse - AI Creative Design Desktop App",
   "author": "Gravuresse",
   "license": "MIT",
@@ -12,12 +12,14 @@
     "dev": "electron-vite dev --config electron.vite.config.mjs",
     "build": "electron-vite build --config electron.vite.config.mjs",
     "test:core": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-core-data.mjs && node scripts/check-entrypoint-globals.mjs",
+    "check:runtime": "node scripts/check-runtime-packaging.mjs --dist",
+    "check:asar": "node scripts/check-runtime-packaging.mjs --asar",
     "smoke:packaged": "node scripts/smoke-packaged-win.mjs",
     "typecheck": "tsc --noEmit",
     "preview": "electron-vite preview --config electron.vite.config.mjs",
     "release:checksums": "node scripts/release-checksums.mjs",
-    "package": "electron-vite build --config electron.vite.config.mjs && electron-builder --win && npm run release:checksums",
-    "package:dir": "electron-vite build --config electron.vite.config.mjs && electron-builder --win dir --publish=never"
+    "package": "electron-vite build --config electron.vite.config.mjs && npm run check:runtime && electron-builder --win && npm run check:asar && npm run release:checksums",
+    "package:dir": "electron-vite build --config electron.vite.config.mjs && npm run check:runtime && electron-builder --win dir --publish=never && npm run check:asar"
   },
   "dependencies": {
     "@electron-toolkit/utils": "^3.0.0",

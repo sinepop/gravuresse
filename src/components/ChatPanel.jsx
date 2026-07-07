@@ -5,6 +5,48 @@ import { t } from '../i18n'
 import Ic from './icons'
 import useSafeMediaUrl from '../hooks/useSafeMediaUrl'
 
+function ChipSelect({ value, options, onChange, style }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+  useEffect(() => {
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+  const selectedLabel = options.find(o => o.value === value)?.label || value
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <button onClick={() => setOpen(!open)} style={{
+        ...style, display: 'flex', alignItems: 'center', gap: 3, whiteSpace: 'nowrap',
+      }}>
+        {selectedLabel}
+        <Ic n="chevDown" size={8} sw={2} />
+      </button>
+      {open && (
+        <div style={{
+          position: 'absolute', top: '100%', left: 0, marginTop: 4,
+          background: 'var(--bg-elevated)', border: '1px solid var(--border-default)',
+          borderRadius: 'var(--radius-sm)', padding: 4, zIndex: 1000,
+          boxShadow: 'var(--shadow-lg)', minWidth: 120, maxHeight: 200, overflow: 'auto',
+          animation: 'scaleIn 0.12s ease',
+        }}>
+          {options.map(o => (
+            <button key={o.value} onClick={() => { onChange(o.value); setOpen(false) }} style={{
+              display: 'block', width: '100%', textAlign: 'left', padding: '5px 8px',
+              background: o.value === value ? 'var(--accent-soft)' : 'transparent',
+              border: 'none', borderRadius: 'var(--radius-sm)',
+              color: o.value === value ? 'var(--accent)' : 'var(--text-primary)',
+              fontSize: 11, cursor: 'pointer', fontFamily: 'var(--font-body)', whiteSpace: 'nowrap',
+            }}>
+              {o.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 const ASPECT_RATIOS = ['1:1', '4:3', '3:4', '16:9', '9:16', '3:2']
 const STYLE_PRESETS = [
   { value: 'flat illustration', label: { zh: '扁平插画', en: 'Flat illustration' } },
@@ -59,7 +101,7 @@ const selectChipS = () => ({
   borderRadius: 'var(--radius-sm)', padding: '3px 6px',
   color: 'var(--select-text)', fontSize: 10, cursor: 'pointer',
   fontFamily: 'var(--font-body)', outline: 'none',
-  appearance: 'auto', transition: 'all 0.15s',
+  transition: 'all 0.15s',
 })
 
 export default function ChatPanel({ chat, config, providerLists, onProviderChange, lang, generationMode = 'image', conversations, activeConvId, onSwitchConv, onNewConv, onDeleteConv, onRenameConv, onExportConv, onExportProject, onImportConv, onEnsureConversation, conversationBusy = false, canvas, referenceIntent, onReferenceIntentConsumed, composerIntent, onComposerIntentConsumed }) {
@@ -394,7 +436,8 @@ export default function ChatPanel({ chat, config, providerLists, onProviderChang
         {chat.messages.map(msg => (
           <MessageBubble key={msg.id} msg={msg} lang={lang}
             onConfirmTask={(msgId, task, taskIdx) => chat.confirmGenerate(msgId, task, taskIdx)}
-            onBatchGenerate={(msgId, task, count, taskIdx) => chat.batchGenerate?.(msgId, task, count, taskIdx)} />
+            onBatchGenerate={(msgId, task, count, taskIdx) => chat.batchGenerate?.(msgId, task, count, taskIdx)}
+            onRetryTask={(msgId, task, taskIdx) => chat.retryErroredTask(msgId, task, taskIdx, lang)} />
         ))}
         {chat.loading && (
           <div style={{ padding: '8px 0', display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -566,22 +609,15 @@ export default function ChatPanel({ chat, config, providerLists, onProviderChang
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
               <span style={{ fontSize: 10, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{t('ratio', lang)}</span>
-              <select value={genRatio} onChange={e => setGenRatio(e.target.value)} style={selectChipS()}>
-                {ASPECT_RATIOS.map(r => <option key={r} value={r}>{r}</option>)}
-              </select>
+              <ChipSelect value={genRatio} options={ASPECT_RATIOS.map(r => ({ value: r, label: r }))} onChange={setGenRatio} style={selectChipS()} />
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
               <span style={{ fontSize: 10, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{t('style', lang)}</span>
-              <select value={genStyle} onChange={e => setGenStyle(e.target.value)} style={selectChipS()}>
-                <option value="">{t('noStyle', lang)}</option>
-                {STYLE_PRESETS.map(s => <option key={s.value} value={s.value}>{s.label[lang] || s.value}</option>)}
-              </select>
+              <ChipSelect value={genStyle} options={[{ value: '', label: t('noStyle', lang) }, ...STYLE_PRESETS.map(s => ({ value: s.value, label: s.label[lang] || s.value }))]} onChange={setGenStyle} style={selectChipS()} />
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
               <span style={{ fontSize: 10, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{t('resolution', lang)}</span>
-              <select value={genResolution} onChange={e => setGenResolution(e.target.value)} style={selectChipS()}>
-                {RESOLUTIONS.map(r => <option key={r.value} value={r.value}>{r.label[lang] || r.label.zh}</option>)}
-              </select>
+              <ChipSelect value={genResolution} options={RESOLUTIONS.map(r => ({ value: r.value, label: r.label[lang] || r.label.zh }))} onChange={setGenResolution} style={selectChipS()} />
             </div>
           </div>
         )}

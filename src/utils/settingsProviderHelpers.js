@@ -48,6 +48,7 @@ export function isModelEndpointUnsupportedError(error) {
 export function isProviderNetworkError(error) {
   const message = String(error?.message || error || '')
   return /\b(ETIMEDOUT|ECONNRESET|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ENETUNREACH|EHOSTUNREACH)\b/i.test(message) ||
+    /\b(502|503|504)\b/.test(message) ||
     /request timed out|connect timed out|socket hang up/i.test(message)
 }
 
