@@ -51,3 +51,8 @@ secrets.json
 *.sqlite
 *.sqlite3
 *.db
+
+# Agent and security audit files
+AGENTS.md
+SECURITY-AUDIT-*.md
+Screenshot*.png
