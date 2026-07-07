@@ -621,7 +621,7 @@ export default function App() {
         </nav>
         <main className="module-content">
           <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}>
-            <div style={{ width: 360, minWidth: 320, overflow: 'hidden', display: 'flex', flexDirection: 'column', borderRight: '1px solid var(--border-subtle)' }}>
+            <div style={{ width: 360, minWidth: 320, overflow: 'visible', display: 'flex', flexDirection: 'column', borderRight: '1px solid var(--border-subtle)' }}>
                 <ChatPanel chat={chat} config={config} providerLists={providerLists} onProviderChange={updateProvider} lang={lang} generationMode={activeModule}
                   conversations={conversations} activeConvId={activeConvId}
                   onSwitchConv={handleSwitchConv} onNewConv={handleNewConv} onDeleteConv={handleDeleteConv}

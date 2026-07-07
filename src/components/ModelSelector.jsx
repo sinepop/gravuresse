@@ -57,7 +57,7 @@ function ModelPicker({ track, current, profiles, providerLists, onSelect, lang }
   }
 
   return (
-    <div ref={ref} style={{ position: 'relative' }}>
+    <div ref={ref} style={{ position: 'relative', minWidth: 0, maxWidth: '100%' }}>
       <button onClick={() => setOpen(!open)} style={{
         background: open ? 'var(--accent-soft)' : 'var(--bg-surface)',
         border: `1px solid ${open ? 'var(--border-accent)' : 'var(--border-subtle)'}`,
@@ -69,13 +69,14 @@ function ModelPicker({ track, current, profiles, providerLists, onSelect, lang }
         display: 'flex',
         alignItems: 'center',
         gap: 5,
-        maxWidth: 150,
+        maxWidth: 142,
+        minWidth: 0,
         minHeight: 28,
         fontFamily: 'var(--font-body)',
         boxShadow: open ? '0 0 0 2px var(--accent-glow)' : 'none'
       }}>
         <span style={{ color: 'var(--accent)', fontWeight: 700, textTransform: 'uppercase' }}>{t(track, lang)}</span>
-        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayModel}</span>
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{displayModel}</span>
         <Ic n="chevDown" size={10} sw={2} />
       </button>
 
@@ -83,13 +84,14 @@ function ModelPicker({ track, current, profiles, providerLists, onSelect, lang }
         <div style={{
           position: 'absolute',
           bottom: '100%',
-          right: 0,
+          left: 0,
           marginBottom: 6,
           background: 'var(--bg-elevated)',
           border: '1px solid var(--border-default)',
           borderRadius: 'var(--radius-md)',
           padding: 6,
-          width: 300,
+          width: 280,
+          maxWidth: 'calc(100vw - 96px)',
           zIndex: 100,
           boxShadow: 'var(--shadow-lg)',
           animation: 'scaleIn 0.12s ease'
@@ -160,7 +162,7 @@ export default function ModelSelector({ config, providerLists, activeModule = 'i
   }
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0, maxWidth: '100%', flexWrap: 'wrap' }}>
       {items.map(item => (
         <ModelPicker
           key={item.track}

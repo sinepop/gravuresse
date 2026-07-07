@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react'
 import MessageBubble from './MessageBubble'
 import ModelSelector from './ModelSelector'
 import { t } from '../i18n'
@@ -86,6 +86,25 @@ const RESOLUTIONS = [
   { value: '3840', label: { zh: '4K', en: '4K' } },
 ]
 
+const FALLBACK_MEDIA_CONSTRAINTS = {
+  image: {
+    openai: { ratios: ['1:1', '4:3', '3:4', '16:9', '9:16'], resolutions: ['1024', '1536', '2048', '4096'] },
+    'custom-image': { ratios: ['1:1', '4:3', '3:4', '16:9', '9:16', '3:2', '2:3'], resolutions: ['1024', '1536', '2048', '4096'] },
+    google: { ratios: ['1:1', '4:3', '3:4', '16:9', '9:16', '3:2', '2:3'], resolutions: ['1024', '2048'] },
+    volcengine: { ratios: ['1:1', '4:3', '3:4', '16:9', '9:16'], resolutions: ['1024', '2048', '4096'] },
+    'alibaba-wan': { ratios: ['1:1', '4:3', '3:4', '16:9', '9:16', '3:2', '2:3'], resolutions: ['1280', '1440'] }
+  }
+}
+
+function findProviderDef(track, providerLists = {}, current = {}) {
+  const id = current?.id || current?.providerId || ''
+  return (providerLists?.[track] || []).find(provider => provider.id === id) || null
+}
+
+function resolutionLabel(value, lang) {
+  return RESOLUTIONS.find(item => item.value === value)?.label?.[lang] || value
+}
+
 const chipBtnS = (active) => ({
   background: active ? 'var(--accent-soft)' : 'var(--bg-surface)',
   border: `1px solid ${active ? 'var(--border-accent)' : 'var(--border-subtle)'}`,
@@ -129,6 +148,24 @@ export default function ChatPanel({ chat, config, providerLists, onProviderChang
     .sort((a, b) => Number(b.isMaterial === true) - Number(a.isMaterial === true))
   const hasReferenceAssets = referenceAssets.length > 0
   const modeHint = t(generationMode === 'video' ? 'videoModeHint' : 'imageModeHint', lang)
+  const mediaTrack = generationMode === 'video' ? 'video' : 'image'
+  const mediaProvider = config?.providers?.[mediaTrack] || {}
+  const mediaProviderId = mediaProvider.id || (mediaTrack === 'image' ? 'custom-image' : 'custom-video')
+  const mediaProviderDef = findProviderDef(mediaTrack, providerLists, mediaProvider)
+  const mediaConstraints = mediaProviderDef?.constraints?.[mediaTrack] ||
+    mediaProviderDef?.meta?.constraints?.[mediaTrack] ||
+    FALLBACK_MEDIA_CONSTRAINTS[mediaTrack]?.[mediaProviderId] ||
+    {}
+  const ratioOptions = useMemo(() => {
+    const ratios = Array.isArray(mediaConstraints.ratios) && mediaConstraints.ratios.length ? mediaConstraints.ratios : ASPECT_RATIOS
+    return ratios.map(ratio => ({ value: ratio, label: ratio }))
+  }, [mediaConstraints.ratios])
+  const resolutionOptions = useMemo(() => {
+    const resolutions = Array.isArray(mediaConstraints.resolutions) && mediaConstraints.resolutions.length
+      ? mediaConstraints.resolutions
+      : RESOLUTIONS.map(item => item.value)
+    return resolutions.map(value => ({ value, label: resolutionLabel(value, lang) }))
+  }, [mediaConstraints.resolutions, lang])
 
   // Sync settings when config changes
   useEffect(() => {
@@ -138,6 +175,15 @@ export default function ChatPanel({ chat, config, providerLists, onProviderChang
       setGenResolution(config.general.defaultResolution || '1024')
     }
   }, [config?.general?.defaultRatio, config?.general?.defaultStyle, config?.general?.defaultResolution])
+
+  useEffect(() => {
+    if (ratioOptions.length > 0 && !ratioOptions.some(option => option.value === genRatio)) {
+      setGenRatio(ratioOptions[0].value)
+    }
+    if (resolutionOptions.length > 0 && !resolutionOptions.some(option => option.value === genResolution)) {
+      setGenResolution(resolutionOptions[0].value)
+    }
+  }, [ratioOptions, resolutionOptions, genRatio, genResolution])
 
   // Elapsed timer for thinking state
   const [elapsed, setElapsed] = useState(0)
@@ -575,13 +621,15 @@ export default function ChatPanel({ chat, config, providerLists, onProviderChang
             {t('genSettings', lang)}
           </button>
 
-          <ModelSelector
-            config={config}
-            providerLists={providerLists}
-            activeModule={generationMode}
-            onProviderChange={onProviderChange}
-            lang={lang}
-          />
+          <div style={{ minWidth: 0, maxWidth: '100%', overflow: 'visible', position: 'relative', zIndex: 10 }}>
+            <ModelSelector
+              config={config}
+              providerLists={providerLists}
+              activeModule={generationMode}
+              onProviderChange={onProviderChange}
+              lang={lang}
+            />
+          </div>
 
           <div style={{ flex: 1 }} />
 
@@ -609,7 +657,7 @@ export default function ChatPanel({ chat, config, providerLists, onProviderChang
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
               <span style={{ fontSize: 10, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{t('ratio', lang)}</span>
-              <ChipSelect value={genRatio} options={ASPECT_RATIOS.map(r => ({ value: r, label: r }))} onChange={setGenRatio} style={selectChipS()} />
+              <ChipSelect value={genRatio} options={ratioOptions} onChange={setGenRatio} style={selectChipS()} />
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
               <span style={{ fontSize: 10, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{t('style', lang)}</span>
@@ -617,7 +665,7 @@ export default function ChatPanel({ chat, config, providerLists, onProviderChang
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
               <span style={{ fontSize: 10, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{t('resolution', lang)}</span>
-              <ChipSelect value={genResolution} options={RESOLUTIONS.map(r => ({ value: r.value, label: r.label[lang] || r.label.zh }))} onChange={setGenResolution} style={selectChipS()} />
+              <ChipSelect value={genResolution} options={resolutionOptions} onChange={setGenResolution} style={selectChipS()} />
             </div>
           </div>
         )}

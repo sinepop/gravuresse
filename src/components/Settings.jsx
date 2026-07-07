@@ -19,9 +19,7 @@ import { t } from '../i18n'
 import Ic from './icons'
 import useSafeMediaUrl from '../hooks/useSafeMediaUrl'
 import { OPENAI_COMPATIBLE_GATEWAY_PRESETS, normalizeProviderAccount, providerGatewayPresetPatch, providerPatchFromAccount, findProviderAccount } from '../utils/providerAccounts.js'
-import modelCapabilities from '../../shared/modelCapabilities.cjs'
-
-const { normalizeModelRecord, sortModelRecords } = modelCapabilities
+import { normalizeModelRecord, sortModelRecords } from '../utils/modelCapabilities.js'
 
 const NAV_SECTIONS = [
   { id: 'api', labelKey: 'apiConfig', icon: 'link', children: [
@@ -126,7 +124,36 @@ const MAINSTREAM_PROVIDER_IDS = {
 }
 
 const AGGREGATOR_PROVIDER_IDS = ['openrouter', 'together', 'fal', 'replicate']
-const API_KEY_PROVIDER_IDS = ['openai', 'openrouter', 'anthropic', 'xai', 'deepseek', 'minimax', 'siliconflow', 'google', 'volcengine', 'alibaba', 'moonshot']
+const API_KEY_PROVIDER_IDS = [
+  'openai',
+  'openrouter',
+  'anthropic',
+  'google',
+  'deepseek',
+  'xai',
+  'perplexity',
+  'groq',
+  'together',
+  'alibaba',
+  'moonshot',
+  'zhipu',
+  'lingyi',
+  'siliconflow',
+  'volcengine',
+  'alibaba-wan',
+  'baidu-qianfan',
+  'tencent-tokenhub',
+  'minimax',
+  'runway',
+  'kling',
+  'luma',
+  'pixverse',
+  'happyhorse',
+  'stability',
+  'ideogram',
+  'fal',
+  'replicate'
+]
 const OAUTH_PLACEHOLDER_ACCOUNTS = [
   { providerId: 'chatgpt-plans', name: 'OpenAI OAuth (ChatGPT)', descriptionKey: 'oauthPlaceholderOpenAi' },
   { providerId: 'minimax', name: 'MiniMax', descriptionKey: 'oauthPlaceholderBrowser' },
@@ -717,6 +744,10 @@ function openExternal(url) {
   window.electronAPI?.openExternal?.(url).catch?.(() => {})
 }
 
+function localText(lang, zh, en) {
+  return lang === 'en' ? en : zh
+}
+
 /* ── reusable styles (all CSS variables) ── */
 const labelS = () => ({ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13, color: 'var(--text-secondary)', fontFamily: 'var(--font-body)', fontWeight: 400, letterSpacing: '0.2px' })
 const inputS = () => ({ background: 'var(--bg-input)', border: '1px solid var(--border-default)', borderRadius: 'var(--radius-sm)', padding: '9px 12px', color: 'var(--text-primary)', fontSize: 13, fontFamily: 'var(--font-mono)', outline: 'none', transition: 'all 0.2s ease', lineHeight: 1.5 })
@@ -760,9 +791,12 @@ function ModelPairingPage({ config, providers, onChange, lang }) {
         const selectedProviderId = current.id || current.providerId || ''
         const selectedProvider = trackProviders.find(p => p.id === selectedProviderId)
         const currentModel = current.model || ''
+        const credentialReady = selectedProvider ? providerCredentialReady(selectedProvider, current) : false
+        const endpointReady = Boolean(current.baseUrl || selectedProvider?.defaultUrl)
+        const isPaired = Boolean(selectedProvider && currentModel && credentialReady && endpointReady)
         const profiles = (config?.providerProfiles?.[track.id] || []).filter(p => {
           const def = trackProviders.find(d => d.id === (p.providerId || p.id))
-          return isExecutableProvider(def) && (p.apiKey || p.accountId || def?.authType?.type === 'none')
+          return isExecutableProvider(def) && providerCredentialReady(def, p) && p.model
         })
 
         return (
@@ -775,21 +809,28 @@ function ModelPairingPage({ config, providers, onChange, lang }) {
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
               <Ic n={track.icon} size={14} />
               <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-primary)' }}>{t(track.labelKey, lang)}</span>
-              {selectedProvider && currentModel ? (
+              {isPaired ? (
                 <span style={{ fontSize: 10, color: 'var(--success)', background: 'var(--success-soft)', padding: '2px 6px', borderRadius: 'var(--radius-sm)' }}>{t('paired', lang)}</span>
               ) : (
                 <span style={{ fontSize: 10, color: 'var(--text-muted)', background: 'var(--bg-hover)', padding: '2px 6px', borderRadius: 'var(--radius-sm)' }}>{t('unpaired', lang)}</span>
               )}
+              <button
+                onClick={() => onChange(track.id, createProviderClearPatch())}
+                style={{ ...btnS(false), marginLeft: 'auto', padding: '4px 8px', fontSize: 11, color: 'var(--danger)' }}
+              >
+                {t('clearConfig', lang)}
+              </button>
             </div>
             <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
               <label style={{ ...labelS(), flex: 1 }}>
                 {t('provider', lang)}
                 <select
-                  value={selectedProviderId}
+                  value={selectedProvider ? selectedProviderId : ''}
                   onChange={e => {
                     const newId = e.target.value
                     if (!newId) return
-                    onChange(track.id, { id: newId, model: '' })
+                    const provider = trackProviders.find(p => p.id === newId)
+                    if (provider) onChange(track.id, createProviderSelectionPatch(provider, track.id))
                   }}
                   style={selectS()}
                 >
@@ -831,14 +872,16 @@ function ModelPairingPage({ config, providers, onChange, lang }) {
                   return (
                     <button
                       key={p.profileId || `${pid}:${p.model}`}
-                      onClick={() => onChange(track.id, { id: pid, model: p.model })}
+                      onClick={() => onChange(track.id, createProviderProfilePatch(p))}
                       style={{
-                        ...btnS(isActive),
+                        ...btnS(false),
                         padding: '3px 8px',
                         fontSize: 10,
                         fontFamily: 'var(--font-mono)',
                         color: isActive ? 'var(--accent)' : 'var(--text-secondary)',
                         borderColor: isActive ? 'var(--border-accent)' : 'var(--border-subtle)',
+                        background: isActive ? 'var(--accent-soft)' : 'var(--bg-surface)',
+                        boxShadow: isActive ? '0 0 0 2px var(--accent-glow)' : 'none',
                       }}
                     >
                       {p.model}
@@ -1871,6 +1914,42 @@ function OtherPage({ config, onChange, lang }) {
   const g = config?.general || {}
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <div style={{ color: 'var(--text-primary)', fontSize: 13, fontWeight: 600 }}>{localText(lang, '生成默认设置', 'Generation Defaults')}</div>
+      <label style={labelS()}>
+        {t('defaultRatio', lang)}
+        <select value={g.defaultRatio || '1:1'} onChange={e => onChange('general', { defaultRatio: e.target.value })} style={selectS()}>
+          {['1:1', '4:3', '3:4', '16:9', '9:16', '3:2'].map(r => <option key={r} value={r}>{r}</option>)}
+        </select>
+      </label>
+      <label style={labelS()}>
+        {t('defaultStyle', lang)}
+        <select value={g.defaultStyle || ''} onChange={e => onChange('general', { defaultStyle: e.target.value })} style={selectS()}>
+          <option value="">{localText(lang, '无风格', 'No style')}</option>
+          {[
+            { value: 'flat illustration', label: { zh: '扁平插画', en: 'Flat illustration' } },
+            { value: '3D render', label: { zh: '3D 渲染', en: '3D render' } },
+            { value: 'realistic photography', label: { zh: '写实摄影', en: 'Realistic photography' } },
+            { value: 'watercolor painting', label: { zh: '水彩画', en: 'Watercolor' } },
+            { value: 'anime style', label: { zh: '动漫风', en: 'Anime' } },
+            { value: 'pixel art', label: { zh: '像素艺术', en: 'Pixel art' } },
+            { value: 'oil painting', label: { zh: '油画', en: 'Oil painting' } },
+            { value: 'minimalism', label: { zh: '极简主义', en: 'Minimalism' } },
+            { value: 'cyberpunk', label: { zh: '赛博朋克', en: 'Cyberpunk' } },
+            { value: 'paper cutout', label: { zh: '剪纸', en: 'Paper cutout' } }
+          ].map(s => <option key={s.value} value={s.value}>{s.label[lang] || s.label.zh}</option>)}
+        </select>
+      </label>
+      <label style={labelS()}>
+        {localText(lang, '默认分辨率', 'Default Resolution')}
+        <select value={g.defaultResolution || '1024'} onChange={e => onChange('general', { defaultResolution: e.target.value })} style={selectS()}>
+          <option value="1024">{localText(lang, '标准', 'Standard')}</option>
+          <option value="1536">{localText(lang, '高清', 'High')}</option>
+          <option value="2048">{localText(lang, '超清', 'Ultra HD')}</option>
+          <option value="2560">2K</option>
+          <option value="3840">4K</option>
+        </select>
+      </label>
+      <div style={{ borderTop: '1px solid var(--border-subtle)', margin: '4px 0' }} />
       <label style={{ ...labelS(), flexDirection: 'row', alignItems: 'center', gap: 8 }}>
         <input type="checkbox" checked={g.autoSave !== false} onChange={e => onChange('general', { autoSave: e.target.checked })} />
         {t('autoSave', lang)}
@@ -1907,9 +1986,13 @@ function OtherPage({ config, onChange, lang }) {
 
 
 function providerListForAccounts(providers = {}) {
-  const byId = allProvidersById(providers)
   return API_KEY_PROVIDER_IDS
-    .map(id => byId.get(id))
+    .map(id => {
+      const matches = TRACKS
+        .flatMap(track => providers[track] || [])
+        .filter(provider => provider.id === id)
+      return matches.find(isExecutableProvider) || matches[0]
+    })
     .filter(Boolean)
     .filter(provider => provider.executable !== false && provider.integrationStatus !== 'metadata')
 }
@@ -1929,6 +2012,20 @@ function upsertAccountList(accounts = [], account) {
 function ProviderApiKeysPage({ config, providers, onChange, lang }) {
   const accounts = config.providerAccounts || []
   const providerRows = providerListForAccounts(providers)
+  const applyAccountToTracks = (provider, account) => {
+    if (!account?.accountId) return
+    const tracks = account.tracks?.length
+      ? account.tracks
+      : TRACKS.filter(track => providers[track]?.some(item => item.id === provider.id))
+    for (const track of tracks) {
+      const providerDef = providerDefForTrack(providers, track, provider.id)
+      if (!providerDef?.id) continue
+      onChange(track, {
+        ...providerPatchFromAccount(account, providerDef),
+        model: modelForProviderSwitch(config.providers?.[track]?.id === provider.id ? config.providers?.[track]?.model : '', providerDef)
+      })
+    }
+  }
   const updateAccount = (provider, patch) => {
     const current = accountForProvider(config, provider.id, 'api-key')
     const account = normalizeProviderAccount({
@@ -1944,6 +2041,16 @@ function ProviderApiKeysPage({ config, providers, onChange, lang }) {
       ...patch
     }, provider)
     onChange('providerAccounts', upsertAccountList(accounts, account))
+  }
+  const clearAccount = (provider) => {
+    const current = accountForProvider(config, provider.id, 'api-key')
+    if (!current) return
+    onChange('providerAccounts', accounts.filter(account => account.accountId !== current.accountId))
+    for (const track of TRACKS) {
+      if (config.providers?.[track]?.accountId === current.accountId) {
+        onChange(track, createProviderClearPatch())
+      }
+    }
   }
 
   return (
@@ -1979,6 +2086,22 @@ function ProviderApiKeysPage({ config, providers, onChange, lang }) {
                 {t('tracks', lang)}
                 <input type="text" value={(account.tracks || []).join(', ')} readOnly style={{ ...inputS(), color: 'var(--text-muted)' }} />
               </label>
+              <div style={{ gridColumn: '1 / -1', display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                <button
+                  onClick={() => applyAccountToTracks(provider, account)}
+                  disabled={!configured}
+                  style={{ ...btnS(false), padding: '6px 10px', fontSize: 11, opacity: configured ? 1 : 0.45 }}
+                >
+                  {localText(lang, '一键配置到可用轨道', 'One-click setup')}
+                </button>
+                <button
+                  onClick={() => clearAccount(provider)}
+                  disabled={!accountForProvider(config, provider.id, 'api-key')}
+                  style={{ ...btnS(false), padding: '6px 10px', fontSize: 11, color: 'var(--danger)', opacity: accountForProvider(config, provider.id, 'api-key') ? 1 : 0.45 }}
+                >
+                  {t('clearConfig', lang)}
+                </button>
+              </div>
             </div>
           </div>
         )
@@ -2071,11 +2194,62 @@ function ProviderGatewaysPage({ config, providers, onChange, lang }) {
   )
 }
 
-function ProviderAccountsPage({ providers, lang }) {
+function ProviderAccountsPage({ config, providers, onChange, onOpenApiKeys, lang }) {
+  const providerRows = providerListForAccounts(providers)
+  const applyAccountToTracks = (provider, account) => {
+    if (!account?.accountId) return
+    const tracks = account.tracks?.length
+      ? account.tracks
+      : TRACKS.filter(track => providers[track]?.some(item => item.id === provider.id))
+    for (const track of tracks) {
+      const providerDef = providerDefForTrack(providers, track, provider.id)
+      if (!providerDef?.id) continue
+      onChange(track, {
+        ...providerPatchFromAccount(account, providerDef),
+        model: modelForProviderSwitch(config.providers?.[track]?.id === provider.id ? config.providers?.[track]?.model : '', providerDef)
+      })
+    }
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <SectionHeading labelKey="providerAccounts" lang={lang} />
       <div style={{ color: 'var(--text-muted)', fontSize: 12, lineHeight: 1.5 }}>{t('providerAccountsDesc', lang)}</div>
+      <div style={{ border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-sm)', background: 'var(--bg-elevated)', padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ color: 'var(--text-primary)', fontSize: 13, fontWeight: 700 }}>{localText(lang, '统一账号快捷配置', 'Unified account setup')}</div>
+            <div style={{ color: 'var(--text-muted)', fontSize: 11, marginTop: 4 }}>{localText(lang, '先在 API Key 页保存密钥，再一键应用到该提供商支持的轨道。', 'Save a key on the API Key page, then apply it to every supported track.')}</div>
+          </div>
+          <button onClick={onOpenApiKeys} style={{ ...btnS(false), padding: '6px 9px', fontSize: 11 }}>
+            <Ic n="key" size={11} /> API Key
+          </button>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: 8 }}>
+          {providerRows.map(provider => {
+            const account = accountForProvider(config, provider.id, 'api-key')
+            const configured = configuredAccount(account)
+            const tracks = account?.tracks?.length
+              ? account.tracks
+              : TRACKS.filter(track => providers[track]?.some(item => item.id === provider.id))
+            return (
+              <div key={provider.id} style={{ border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-sm)', background: 'var(--bg-surface)', padding: 10, display: 'flex', alignItems: 'center', gap: 9 }}>
+                <span style={{ width: 8, height: 8, borderRadius: 8, background: configured ? 'var(--success)' : 'var(--border-accent)', display: 'inline-block', flexShrink: 0 }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ color: 'var(--text-primary)', fontSize: 12, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{providerDisplayName(provider, lang)}</div>
+                  <div style={{ color: 'var(--text-muted)', fontSize: 10, marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{provider.platform} · {tracks.join(' / ')}</div>
+                </div>
+                <button
+                  onClick={() => configured ? applyAccountToTracks(provider, account) : onOpenApiKeys?.()}
+                  style={{ ...btnS(false), padding: '5px 8px', fontSize: 11, whiteSpace: 'nowrap' }}
+                >
+                  {configured ? localText(lang, '一键配置', 'Apply') : localText(lang, '填写 Key', 'Add key')}
+                </button>
+              </div>
+            )
+          })}
+        </div>
+      </div>
       {OAUTH_PLACEHOLDER_ACCOUNTS.map(item => {
         const provider = providerDefById(providers, item.providerId)
         return (
@@ -2202,7 +2376,7 @@ export default function Settings({ config, providerLists, onSave, onClose, initi
             {page === 'appearance' && <AppearancePage config={local} onChange={handleChange} lang={lang} />}
             {page === 'lang' && <LangPage config={local} onChange={handleChange} lang={lang} />}
             {page === 'other' && <OtherPage config={local} onChange={handleChange} lang={lang} />}
-            {page === 'provider-accounts' && <ProviderAccountsPage providers={providers} lang={lang} />}
+            {page === 'provider-accounts' && <ProviderAccountsPage config={local} providers={providers} onChange={handleChange} onOpenApiKeys={() => setPage('provider-api-keys')} lang={lang} />}
             {page === 'provider-api-keys' && <ProviderApiKeysPage config={local} providers={providers} onChange={handleChange} lang={lang} />}
             {page === 'provider-gateways' && <ProviderGatewaysPage config={local} providers={providers} onChange={handleChange} lang={lang} />}
             {page === 'model-pairing' && <ModelPairingPage config={local} providers={providers} onChange={handleChange} lang={lang} />}

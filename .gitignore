@@ -56,3 +56,7 @@ secrets.json
 AGENTS.md
 SECURITY-AUDIT-*.md
 Screenshot*.png
+
+# Hermes plans
+.hermes/
+SECURITY-FIXES-*.md

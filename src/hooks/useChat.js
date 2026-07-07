@@ -53,6 +53,22 @@ function precheckGeneration(track, providerDef, task, extra = {}) {
   }
 }
 
+function coerceOption(value, allowed = [], fallback = '') {
+  const current = String(value || '')
+  if (!Array.isArray(allowed) || allowed.length === 0) return current || fallback
+  if (allowed.includes(current)) return current
+  return allowed[0] || fallback
+}
+
+function coerceTaskForProvider(track, providerDef, task = {}) {
+  const constraints = providerDef?.constraints?.[track] || providerDef?.meta?.constraints?.[track] || {}
+  return {
+    ...task,
+    ratio: coerceOption(task.ratio || '1:1', constraints.ratios, '1:1'),
+    resolution: coerceOption(task.resolution || '1024', constraints.resolutions, '1024')
+  }
+}
+
 function normalizeAuthType(type) {
   return String(type || '').toLowerCase().replace(/_/g, '-')
 }
@@ -81,6 +97,14 @@ function cleanId(value) {
   if (typeof value !== 'string' && typeof value !== 'number') return null
   const id = String(value)
   return id ? id : null
+}
+
+function appendStyleToPrompt(prompt, style) {
+  const base = cleanText(prompt)
+  const selectedStyle = cleanText(style, 120).trim()
+  if (!selectedStyle) return base
+  if (base.toLowerCase().includes(selectedStyle.toLowerCase())) return base
+  return `${base}\n\nVisual style direction: ${selectedStyle}.`
 }
 
 export default function useChat(config, canvas, onVideoTaskCreated, activeConversationId, isActiveConversation, conversationBridge, providerLists) {
@@ -328,12 +352,14 @@ ${modeRule}
             ? sourceAssets.find(asset => asset.id === sourceImageId) || references?.find(asset => asset.id === sourceImageId)
             : null
           const type = task.type === 'video' ? 'video' : 'image'
+          const selectedStyle = type === 'image' ? cleanText(defaultStyle, 120).trim() : ''
+          const prompt = selectedStyle ? appendStyleToPrompt(task.prompt, selectedStyle) : cleanText(task.prompt)
           return {
             status: 'pending',
             type,
             label: cleanText(task.label, 120) || (type === 'video' ? t('video', lang) : t('image', lang)),
             review_text: cleanText(task.review_text),
-            prompt: cleanText(task.prompt),
+            prompt,
             negative_prompt: cleanText(task.negative_prompt || defaultNegPrompt),
             ratio: cleanText(task.ratio, 50) || defaultRatio,
             duration: parseDurationSeconds(task.duration, defaultDuration),
@@ -345,7 +371,7 @@ ${modeRule}
             promptReferenceAssetIds: referenceIds,
             parentAssetId: cleanId(genSettings?.parentAssetId) || cleanId(task.parentAssetId) || sourceImageId || null,
             createdFrom: cleanText(genSettings?.createdFrom, 100) || 'chat',
-            styleDirection: cleanText(genSettings?.styleDirection, 500)
+            styleDirection: cleanText(genSettings?.styleDirection || selectedStyle, 500)
           }
         })
         const replyMsg = {
@@ -381,12 +407,13 @@ ${modeRule}
       const providerDef = findProviderDef('image', providerLists, imgProvider.id) || IMG_PROVIDERS.find(p => p.id === imgProvider.id)
       if (!imgProvider?.id || !hasProviderCredential(imgProvider, providerDef)) throw new Error(t('configImageApi', lang))
       const protocol = imgProvider.protocol || providerDef?.protocol || 'openai_image'
+      const safeTask = coerceTaskForProvider('image', providerDef, task)
       const negativePrompt = task.negative_prompt || imgProvider.defaultNegPrompt || ''
-      const sourceAsset = task.source_image_id ? getAssetFromConversation(originConversationId, task.source_image_id) : null
+      const sourceAsset = safeTask.source_image_id ? getAssetFromConversation(originConversationId, safeTask.source_image_id) : null
       const sourceImageUrl = task.sourceImageUrl || sourceAsset?.url || ''
-      precheckGeneration('image', providerDef, { ...task, negative_prompt: negativePrompt }, { lang })
+      precheckGeneration('image', providerDef, { ...safeTask, negative_prompt: negativePrompt }, { lang })
       const imageParams = {
-        prompt: task.prompt, ratio: task.ratio || '1:1', resolution: task.resolution || '1024',
+        prompt: safeTask.prompt, ratio: safeTask.ratio || '1:1', resolution: safeTask.resolution || '1024',
         negative_prompt: negativePrompt,
         sourceImageUrl,
         ...imgProvider, protocol
@@ -408,7 +435,7 @@ ${modeRule}
       if (!canWriteToConversation(originConversationId)) return
       const providerForGeneration = { ...imgProvider, id: resolveProviderId('image', imgProvider.id) }
       const generation = buildGenerationMeta({
-        task: { ...task, negative_prompt: negativePrompt },
+        task: { ...safeTask, negative_prompt: negativePrompt },
         provider: providerForGeneration,
         mode: 'image'
       })
@@ -416,12 +443,12 @@ ${modeRule}
       if (placeholderId) {
         updateAssetInConversation(originConversationId, placeholderId, {
           url,
-          prompt: task.prompt,
+          prompt: safeTask.prompt,
           negativePrompt,
-          label: task.label,
+          label: safeTask.label,
           model: imgProvider.model,
-          ratio: task.ratio,
-          resolution: task.resolution || '1024',
+          ratio: safeTask.ratio,
+          resolution: safeTask.resolution || '1024',
           _generating: false,
           generation
         })
@@ -429,12 +456,12 @@ ${modeRule}
         const asset = addAssetToConversation(originConversationId, {
           type: 'image',
           url,
-          prompt: task.prompt,
+          prompt: safeTask.prompt,
           negativePrompt,
-          label: task.label,
+          label: safeTask.label,
           model: imgProvider.model,
-          ratio: task.ratio,
-          resolution: task.resolution || '1024',
+          ratio: safeTask.ratio,
+          resolution: safeTask.resolution || '1024',
           generation
         })
         assetId = asset?.id
@@ -442,12 +469,12 @@ ${modeRule}
       if (canWriteToCurrentConversation(originConversationId) && assetId) {
         lastImageContext.current = {
           conversationId: originConversationId,
-          prompt: task.prompt,
-          ratio: task.ratio || '1:1',
+          prompt: safeTask.prompt,
+          ratio: safeTask.ratio || '1:1',
           assetId
         }
       }
-      updateTask({ status: 'done', assetId, elapsed })
+      updateTask({ status: 'done', assetId, elapsed, ratio: safeTask.ratio, resolution: safeTask.resolution })
       if (config?.general?.autoSaveImage === true) {
         try { await window.electronAPI.saveAssetToDisk?.({ url, label: task.label, type: 'image' }) } catch {}
       }
