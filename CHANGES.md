@@ -2,6 +2,32 @@
 
 ## 涓枃
 
+#### v2.2.0 (2026-07-07)
+
+**设置页重构与体验修复**
+- 设置页重构：合并对话/图像/视频三个 API 配置页为统一的「模型配对」页面，按轨道（对话/图像/视频）各自选择 Provider + 模型
+- 删除冗余的 API 工作台（ProviderWorkbench）组件，Provider 选择统一使用下拉框+模型输入框
+- 网关预设精简：从 4 个减为 3 个，移除 cpa-compatible
+- 修复 ChatPanel 原生 select 下拉被左侧栏遮挡的白条问题，改用自定义 ChipSelect 弹出式下拉
+- 图像/视频生成错误卡片新增「重新生成」按钮，点击后复用原 prompt 和参数重试
+- 新增 `useChat.retryErroredTask` 错误重试机制
+- 开发模式代理绕过：主进程添加 `proxy-bypass-list` 避免系统代理干扰 localhost 开发服务器
+
+#### v2.1.9 (2026-07-07)
+
+**Startup hotfix**
+- Fixed the 2.1.8 packaged startup crash caused by a shared model-capability helper not being included in `app.asar`.
+- Added release/runtime checks so missing packaged runtime files fail before shipping.
+- Rebuilt the Windows release set so the installer, blockmap, `latest.yml`, and `SHA256SUMS.txt` are generated together.
+
+#### v2.1.8 (2026-07-06)
+
+**Relay image generation compatibility**
+- Added stronger New API / One API, sub2api, and CPA-compatible relay handling for image models such as `gpt-image-2`, `image2`, `nano-banana2`, and Gemini image aliases.
+- Added image-model capability classification so image setup prioritizes generation-capable models while keeping manual model entry available.
+- Expanded relay image response handling for URL, base64, Gemini inline data, and asynchronous task-style image results.
+- Preserved the subscription/API-key/gateway setup boundary: subscription entries remain non-callable unless a provider offers an official OAuth/API token flow.
+
 #### v2.1.7 (2026-07-06)
 
 **Release asset consistency**
@@ -442,6 +468,17 @@
 ---
 
 ## English
+
+#### v2.2.0 (2026-07-07)
+
+**Settings restructure & UX fixes**
+- Settings restructure: merged Chat/Image/Video API config tabs into a unified Model Pairing page, with per-track Provider + model selection
+- Removed redundant ProviderWorkbench component; provider selection now uses dropdown + model input
+- Gateway presets reduced from 4 to 3 (removed cpa-compatible)
+- Fixed native select dropdown clipping in ChatPanel by replacing with custom ChipSelect popovers
+- Added Retry button on error task cards for image/video generation — reuses the original prompt and parameters
+- Added `useChat.retryErroredTask` error retry mechanism
+- Dev mode proxy bypass: added `proxy-bypass-list` in main process to avoid system proxy interference with localhost dev server
 
 #### v2.1.1 (2026-07-03)
 

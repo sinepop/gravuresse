@@ -69,20 +69,40 @@ export function providerTemplatePathStatus(track, providerConfig = {}) {
 
 export function providerTemplatePresets(track, provider = {}) {
   if (track === 'image') {
+    const openAiImageTemplate = () => ({
+      path: '/v1/images/generations',
+      method: 'POST',
+      requestBody: {
+        model: '{model}',
+        prompt: '{prompt}',
+        size: '1024x1024'
+      },
+      imageUrlPath: 'data[0].url',
+      pollPath: '/v1/images/tasks/{taskId}',
+      pollMethod: 'GET',
+      taskIdPath: 'data.task_id',
+      statusPath: 'data.status'
+    })
     const presets = [
       {
         id: 'openai-image-json',
         labelKey: 'presetOpenAiImageJson',
-        template: {
-          path: '/v1/images/generations',
-          method: 'POST',
-          requestBody: {
-            model: '{model}',
-            prompt: '{prompt}',
-            size: '1024x1024'
-          },
-          imageUrlPath: 'data[0].url'
-        }
+        template: openAiImageTemplate()
+      },
+      {
+        id: 'newapi-image-json',
+        labelKey: 'presetNewApiImageJson',
+        template: openAiImageTemplate()
+      },
+      {
+        id: 'sub2api-image-json',
+        labelKey: 'presetSub2ApiImageJson',
+        template: openAiImageTemplate()
+      },
+      {
+        id: 'cpa-image-json',
+        labelKey: 'presetCpaImageJson',
+        template: openAiImageTemplate()
       },
       {
         id: 'generic-image-json',

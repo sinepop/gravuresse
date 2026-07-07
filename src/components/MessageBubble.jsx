@@ -23,7 +23,7 @@ function ElapsedTimer({ startTime }) {
   )
 }
 
-function TaskCard({ task, onConfirm, onBatchGenerate, lang }) {
+function TaskCard({ task, onConfirm, onBatchGenerate, onRetry, lang }) {
   const [batchCount, setBatchCount] = useState(2)
   const [showBatch, setShowBatch] = useState(false)
   const [showPrompt, setShowPrompt] = useState(false)
@@ -90,8 +90,19 @@ function TaskCard({ task, onConfirm, onBatchGenerate, lang }) {
           )}
         </div>
       )}
-      {isError && task.error && (
-        <div style={{ fontSize: 11, color: 'var(--danger)', marginTop: 6 }}>{task.error}</div>
+      {isError && (
+        <div style={{ marginTop: 8 }}>
+          {task.error && <div style={{ fontSize: 11, color: 'var(--danger)', marginBottom: 6 }}>{task.error}</div>}
+          <button onClick={() => onRetry?.()} style={{
+            padding: '6px 14px', background: 'transparent',
+            border: '1px solid var(--danger)',
+            borderRadius: 'var(--radius-sm)', color: 'var(--danger)', fontSize: 11, cursor: 'pointer',
+            fontWeight: 500, fontFamily: 'var(--font-body)', display: 'flex', alignItems: 'center', gap: 5,
+          }}>
+            <Ic n="refresh" size={11} />
+            {t('regenerate', lang)}
+          </button>
+        </div>
       )}
       {isPending && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
@@ -156,7 +167,7 @@ function TaskCard({ task, onConfirm, onBatchGenerate, lang }) {
   )
 }
 
-export default function MessageBubble({ msg, onConfirmTask, onBatchGenerate, lang }) {
+export default function MessageBubble({ msg, onConfirmTask, onBatchGenerate, onRetryTask, lang }) {
   const isUser = msg.role === 'user'
   const [showThinking, setShowThinking] = useState(false)
 
@@ -234,7 +245,8 @@ export default function MessageBubble({ msg, onConfirmTask, onBatchGenerate, lan
         {tasks.map((task, idx) => (
           <TaskCard key={idx} task={task} lang={lang}
             onConfirm={() => onConfirmTask?.(msg.id, task, idx)}
-            onBatchGenerate={(count) => onBatchGenerate?.(msg.id, task, count, idx)} />
+            onBatchGenerate={(count) => onBatchGenerate?.(msg.id, task, count, idx)}
+            onRetry={() => onRetryTask?.(msg.id, task, idx)} />
         ))}
         {/* error-only messages are rendered above, skipping ReactMarkdown */}
       </div>

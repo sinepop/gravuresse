@@ -9,6 +9,11 @@ import { migrateProviderAccounts, providerPatchFromAccount, findProviderAccount 
 const PROVIDER_MAP = { chat: CHAT_PROVIDERS, image: IMG_PROVIDERS, video: VID_PROVIDERS }
 const TRACKS = ['chat', 'image', 'video']
 
+function providerProfileList(cfg, track) {
+  const profiles = cfg?.providerProfiles?.[track]
+  return Array.isArray(profiles) ? profiles : []
+}
+
 const DEPRECATED_MODELS = ['pollinations']
 const FALLBACK_MODEL_CATALOGS = {
   chat: {
@@ -226,9 +231,9 @@ function upsertProviderProfiles(cfg, providerLists = PROVIDER_MAP) {
   const next = {
     ...cfg,
     providerProfiles: {
-      chat: [...(cfg.providerProfiles?.chat || [])],
-      image: [...(cfg.providerProfiles?.image || [])],
-      video: [...(cfg.providerProfiles?.video || [])]
+      chat: [...providerProfileList(cfg, 'chat')],
+      image: [...providerProfileList(cfg, 'image')],
+      video: [...providerProfileList(cfg, 'video')]
     }
   }
   delete next._deletedProfileKeys
@@ -303,9 +308,9 @@ function migrateConfig(cfg, providerMap = PROVIDER_MAP) {
     },
     providers: { ...cfg.providers },
     providerProfiles: {
-      chat: cfg.providerProfiles?.chat || [],
-      image: cfg.providerProfiles?.image || [],
-      video: cfg.providerProfiles?.video || []
+      chat: providerProfileList(cfg, 'chat'),
+      image: providerProfileList(cfg, 'image'),
+      video: providerProfileList(cfg, 'video')
     }
   }
   for (const [track, providers] of Object.entries(providerMap)) {
@@ -354,6 +359,9 @@ export default function useConfig() {
       const migrated = migrateProviderAccounts(migrateConfig(c, migrationProviderMap), migrationProviderMap)
       configRef.current = migrated
       setConfig(migrated)
+    }).catch(() => {
+      // Keep the initial fallback state and avoid logging config load failures
+      // here; error payloads can contain provider-specific request details.
     })
     return () => { cancelled = true }
   }, [])
@@ -376,7 +384,7 @@ export default function useConfig() {
         setConfig(redacted)
       }
     } catch {
-      // Persisted fine; if reload fails we just keep the previous state.
+      // Persisted fine; if reload fails we keep the previous redacted state.
     }
   }, [providerLists])
 

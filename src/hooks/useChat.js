@@ -382,10 +382,13 @@ ${modeRule}
       if (!imgProvider?.id || !hasProviderCredential(imgProvider, providerDef)) throw new Error(t('configImageApi', lang))
       const protocol = imgProvider.protocol || providerDef?.protocol || 'openai_image'
       const negativePrompt = task.negative_prompt || imgProvider.defaultNegPrompt || ''
+      const sourceAsset = task.source_image_id ? getAssetFromConversation(originConversationId, task.source_image_id) : null
+      const sourceImageUrl = task.sourceImageUrl || sourceAsset?.url || ''
       precheckGeneration('image', providerDef, { ...task, negative_prompt: negativePrompt }, { lang })
       const imageParams = {
         prompt: task.prompt, ratio: task.ratio || '1:1', resolution: task.resolution || '1024',
         negative_prompt: negativePrompt,
+        sourceImageUrl,
         ...imgProvider, protocol
       }
       const url = await generateImageProvider({
@@ -395,6 +398,8 @@ ${modeRule}
         ratio: imageParams.ratio,
         resolution: imageParams.resolution,
         negative_prompt: imageParams.negative_prompt,
+        sourceImageUrl: imageParams.sourceImageUrl,
+        source_image_url: imageParams.sourceImageUrl,
         model: imageParams.model,
         baseUrl: imageParams.baseUrl,
         accountId: imageParams.accountId
@@ -693,6 +698,13 @@ ${modeRule}
     patchTask(originConversationId, msgId, idx, { status: done > 0 && !hasFailure ? 'done' : done > 0 ? 'partial' : 'error', batchDone: done, error: done === 0 ? 'All batch items failed' : hasFailure ? `${count - done} of ${count} failed` : undefined })
   }, [config, addPlaceholderToConversation, doGenerate, canWriteToConversation, removeAssetFromConversation, patchTask])
 
+  const retryErroredTask = useCallback(async (msgId, task, taskIndex, lang) => {
+    const idx = taskIndex ?? 0
+    const conversationId = activeConversationIdRef.current
+    patchTask(conversationId, msgId, idx, { status: 'pending', error: undefined })
+    await doGenerate(msgId, { ...task, status: 'pending', error: undefined }, lang, undefined, idx, conversationId)
+  }, [patchTask, doGenerate])
+
   const setMessagesDirectly = useCallback((update) => {
     // No side effects inside the updater (CLAUDE.md red line) — the messagesRef
     // is kept in sync by the dedicated useEffect on [messages] below.
@@ -705,5 +717,5 @@ ${modeRule}
     lastImageContext.current = null
   }, [])
 
-  return { messages, loading, send, clear, confirmGenerate, batchGenerate, regenerateDirectly, createDerivedImageDirectly, setMessages: setMessagesDirectly, lastImageContext, thinking, setThinking }
+  return { messages, loading, send, clear, confirmGenerate, batchGenerate, regenerateDirectly, createDerivedImageDirectly, retryErroredTask, setMessages: setMessagesDirectly, lastImageContext, thinking, setThinking }
 }

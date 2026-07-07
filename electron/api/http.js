@@ -113,6 +113,38 @@ function joinApiUrl(baseUrl, path) {
   return new URL(`${base.href.replace(/\/$/, '')}${path}`)
 }
 
+function cleanRelativeApiPath(path, label = 'API path') {
+  const value = String(path || '').trim()
+  if (!value) return '/'
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(value) || value.startsWith('//')) {
+    throw new Error(`${label} must be a relative API path`)
+  }
+  if (/[\\\r\n]/.test(value)) throw new Error(`Invalid ${label}`)
+  return value.startsWith('/') ? value : `/${value}`
+}
+
+function dedupeApiPath(base, path) {
+  const baseParts = base.pathname.replace(/\/+$/, '').split('/').filter(Boolean)
+  const pathParts = cleanRelativeApiPath(path).split('/').filter(Boolean)
+  if (!baseParts.length || !pathParts.length) return cleanRelativeApiPath(path)
+
+  let overlap = 0
+  for (let i = Math.min(baseParts.length, pathParts.length); i > 0; i -= 1) {
+    if (baseParts.slice(-i).join('/').toLowerCase() === pathParts.slice(0, i).join('/').toLowerCase()) {
+      overlap = i
+      break
+    }
+  }
+  if (!overlap) return `/${pathParts.join('/')}`
+  const remaining = pathParts.slice(overlap).join('/')
+  return remaining ? `/${remaining}` : '/'
+}
+
+function joinCompatibleApiUrl(baseUrl, path) {
+  const base = assertApiBaseUrl(baseUrl)
+  return new URL(`${base.href.replace(/\/$/, '')}${dedupeApiPath(base, path)}`)
+}
+
 function assertSameOriginRedirect(currentUrl, nextUrl) {
   if (currentUrl.origin !== nextUrl.origin) {
     throw new Error('Redirects to a different origin are not allowed')
@@ -279,4 +311,4 @@ async function request(url, options = {}, body = null, { retries = 0, retryDelay
   throw lastErr
 }
 
-module.exports = { httpRequest, request, assertHttpsUrl, assertApiBaseUrl, joinApiUrl, downloadToFile }
+module.exports = { httpRequest, request, assertHttpsUrl, assertApiBaseUrl, joinApiUrl, joinCompatibleApiUrl, downloadToFile, _test: { cleanRelativeApiPath, dedupeApiPath } }

@@ -27,6 +27,8 @@ const { validateGenerationRequest } = require('./providers/validation')
 let mainWindow = null
 let crashCount = 0
 
+app.commandLine.appendSwitch('proxy-bypass-list', '<-loopback>')
+
 protocol.registerSchemesAsPrivileged([{
   scheme: MEDIA_CACHE_SCHEME,
   privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true }
@@ -51,7 +53,7 @@ const videoPollSessions = new Map()
 const ALLOWED_PROVIDER_PAYLOAD_KEYS = [
   'messages', 'system', 'thinking', 'model',
   'prompt', 'ratio', 'resolution', 'negative_prompt', 'source_image_id',
-  'negativePrompt', 'duration', 'sourceImageUrl', 'taskId', 'mode', 'generationMode'
+  'negativePrompt', 'duration', 'sourceImageUrl', 'source_image_url', 'taskId', 'mode', 'generationMode'
 ]
 const STORED_PROVIDER_PAYLOAD_KEYS = [
   'authType', 'customAuth', 'authConfig', 'template', 'customTemplate', 'generationOptions',
@@ -427,7 +429,7 @@ async function executeProviderCall(params = {}) {
     return { ok: false, error: { code: 'UNSUPPORTED_ACTION', message: `${canonicalProviderId} does not support ${track}` } }
   }
   const hasNativeHandler = Boolean(resolveHandler(providerDef[track]?.protocol))
-  const canUseTemplateHandler = !hasNativeHandler && hasTemplatePath(providerConfig, track)
+  const canUseTemplateHandler = hasTemplatePath(providerConfig, track) && (track === 'image' || !hasNativeHandler)
   if (!hasNativeHandler && !canUseTemplateHandler) {
     return {
       ok: false,

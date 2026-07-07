@@ -1,5 +1,6 @@
-const { request, assertApiBaseUrl } = require('./http')
+const { request, assertApiBaseUrl, joinCompatibleApiUrl } = require('./http')
 const { redactSecrets } = require('../providers/pipeline')
+const { normalizeModelRecord, sortModelRecords } = require('../../shared/modelCapabilities.cjs')
 
 const RESTRICTED_CUSTOM_HEADERS = new Set([
   'cookie',
@@ -101,15 +102,9 @@ function joinModelPath(pathPrefix, modelListPath) {
 }
 
 function buildCustomModelListUrl(baseUrl, pathPrefix, modelListPath, queryParams = {}) {
-  const base = assertApiBaseUrl(baseUrl)
-  const baseHref = base.href.replace(/\/$/, '')
-  const basePath = base.pathname.replace(/\/+$/, '')
   let path = joinModelPath(pathPrefix, modelListPath)
   if (!path) throw new Error('Model list path is required')
-  if (basePath && path.toLowerCase().startsWith(`${basePath.toLowerCase()}/`)) {
-    path = path.slice(basePath.length) || '/'
-  }
-  return applyQueryParams(new URL(`${baseHref}${path}`), queryParams)
+  return applyQueryParams(joinCompatibleApiUrl(baseUrl, path), queryParams)
 }
 
 function buildModelListUrl(baseUrl, queryParams = {}, options = {}) {
@@ -142,6 +137,19 @@ function handleFetchError(error, provider = {}) {
   throw new Error(message)
 }
 
+function normalizeModelList(list = [], provider = {}) {
+  if (!Array.isArray(list)) return []
+  const seen = new Set()
+  const out = []
+  for (const item of list) {
+    const record = normalizeModelRecord(item, { source: 'remote' })
+    if (!record || seen.has(record.id)) continue
+    seen.add(record.id)
+    out.push(record)
+  }
+  return out.sort(sortModelRecords(provider.track || ''))
+}
+
 async function fetch(provider) {
   const auth = buildModelAuth(provider)
   if ((auth.requiresCredential && (auth.usesSession ? !provider.sessionToken : !provider.apiKey)) || !provider.baseUrl) return []
@@ -157,21 +165,21 @@ async function fetch(provider) {
       const json = JSON.parse(res.data)
       const list = json.data || json.models || json
       if (!Array.isArray(list)) return []
-      return list.map(m => ({ id: m.id || m.name || m })).filter(m => m.id).sort((a, b) => String(a.id).localeCompare(String(b.id)))
+      return normalizeModelList(list, provider)
     }
     if (!auth.usesSession && (provider.format === 'gemini' || provider.id === 'gemini' || provider.id === 'gemini_img')) {
       const url = buildGeminiModelListUrl(provider.baseUrl, Object.keys(auth.queryParams).length ? auth.queryParams : { key: provider.apiKey })
       const res = await request(url, { method: 'GET', ...requestOptions })
       const json = JSON.parse(res.data)
-      return (json.models || []).map(m => ({ id: (m.name || '').replace(/^models\//, '') })).filter(m => m.id).sort((a, b) => a.id.localeCompare(b.id))
+      return normalizeModelList((json.models || []).map(m => ({ ...m, id: (m.name || '').replace(/^models\//, '') })), provider)
     }
     const url = buildModelListUrl(provider.baseUrl, auth.queryParams)
     const res = await request(url, { method: 'GET', headers: auth.headers, ...requestOptions })
     const json = JSON.parse(res.data)
     const list = json.data || json.models || json
     if (!Array.isArray(list)) return []
-    return list.map(m => ({ id: m.id || m.name || m })).filter(m => m.id).sort((a, b) => String(a.id).localeCompare(String(b.id)))
+    return normalizeModelList(list, provider)
   } catch (error) { return handleFetchError(error, provider) }
 }
 
-module.exports = { fetch, _test: { buildModelAuth, modelAuthType, applyQueryParams, buildModelListUrl, buildGeminiModelListUrl, buildCustomModelListUrl, handleFetchError } }
+module.exports = { fetch, _test: { buildModelAuth, modelAuthType, applyQueryParams, buildModelListUrl, buildGeminiModelListUrl, buildCustomModelListUrl, handleFetchError, normalizeModelList } }

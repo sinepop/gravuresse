@@ -29,7 +29,8 @@ import {
 } from '../src/utils/conversationStore.js'
 import { normalizeProviderList } from '../src/hooks/useConfig.js'
 import { createProviderClearPatch, createProviderProfilePatch, createProviderSelectionPatch, defaultProviderTemplatePreset, normalizeProviderTemplate, providerNeedsTemplatePaths, providerTemplatePathStatus, providerTemplatePresets } from '../src/utils/providerConfig.js'
-import { migrateProviderAccounts, providerPatchFromAccount, findProviderAccount, normalizeProviderAccount } from '../src/utils/providerAccounts.js'
+import { migrateProviderAccounts, providerPatchFromAccount, findProviderAccount, normalizeProviderAccount, providerGatewayPresetPatch } from '../src/utils/providerAccounts.js'
+import modelCapabilities from '../shared/modelCapabilities.cjs'
 
 const require = createRequire(import.meta.url)
 function requireWithElectronMock(modulePath, electronMock) {
@@ -48,6 +49,8 @@ function requireWithElectronMock(modulePath, electronMock) {
 const customImage = require('../electron/providers/handlers/custom.js')._test
 const modelsApi = require('../electron/api/models.js')._test
 const { downloadToFile } = require('../electron/api/http.js')
+const openAiHandlerTests = require('../electron/providers/handlers/openai.js')._test
+const { classifyModel } = modelCapabilities
 const mediaCache = require('../electron/media-cache.js')
 const configModule = requireWithElectronMock('../electron/config.js', {
   app: { getPath: () => path.join(os.tmpdir(), 'gravuresse-config-test') },
@@ -106,8 +109,10 @@ assert.equal(providerCredentialReady({ id: 'local', authType: { type: 'none' } }
 assert.equal(providerCredentialReady({ id: 'deepseek', authType: { type: 'bearer' } }, { id: 'deepseek', accountId: 'acct_ready', accountKind: 'api-key' }), true)
 assert.equal(providerCredentialReady({ id: 'openai', authType: { type: 'bearer' } }, { id: 'openai', accountId: 'acct_oauth', accountKind: 'oauth-placeholder' }), false)
 assert.equal(isModelEndpointUnsupportedError(new Error('HTTP 404 Not Found')), true)
+assert.equal(isModelEndpointUnsupportedError(new Error('HTTP 405 Method Not Allowed')), true)
 assert.equal(isProviderNetworkError(new Error("Error invoking remote method 'api:models': Error: connect ETIMEDOUT 184.173.136.86:443")), true)
 assert.equal(isProviderNetworkError(new Error('getaddrinfo ENOTFOUND api.openai.com')), true)
+assert.equal(isProviderNetworkError(new Error('HTTP 503 Service Unavailable')), true)
 assert.equal(isProviderNetworkError(new Error('HTTP 401: bad key')), false)
 assert.equal(profileKey('image', { providerId: 'dalle', baseUrl: 'https://api.example.com', model: 'm' }), 'image|openai|https://api.example.com|m')
 const migratedAccountsConfig = migrateProviderAccounts({
@@ -161,6 +166,23 @@ assert.equal(migratedGatewayConfig.providerProfiles.chat[0].accountId, 'acct_gat
 assert.equal(migratedGatewayConfig.providerAccounts.length, 1)
 assert.equal(migratedGatewayConfig.providerAccounts[0].kind, 'gateway')
 assert.equal(migratedGatewayConfig.providerAccounts[0].apiKey, 'gateway-secret')
+const newApiGatewayPreset = providerGatewayPresetPatch('newapi')
+assert.equal(newApiGatewayPreset.kind, 'gateway')
+assert.equal(newApiGatewayPreset.providerId, 'openai')
+assert.equal(newApiGatewayPreset.name, 'New API / One API Relay')
+assert.equal(newApiGatewayPreset.apiKey, undefined)
+assert.equal(newApiGatewayPreset.sessionToken, undefined)
+assert.deepEqual(newApiGatewayPreset.authType, { type: 'bearer' })
+assert.equal(newApiGatewayPreset.modelListPath, '/v1/models')
+assert.equal(newApiGatewayPreset.template.path, '/v1/images/generations')
+assert.equal(newApiGatewayPreset.template.pollPath, '/v1/images/tasks/{taskId}')
+assert.deepEqual(newApiGatewayPreset.tracks, ['chat', 'image'])
+assert.equal(providerGatewayPresetPatch('sub2api').name, 'sub2api Relay')
+assert.equal(providerGatewayPresetPatch('cpa-compatible').name, 'CPA compatible Relay')
+assert.equal(
+  { apiKey: '********', ...providerGatewayPresetPatch('sub2api') }.apiKey,
+  '********'
+)
 const oauthPatch = providerPatchFromAccount(normalizeProviderAccount({ kind: 'oauth-placeholder', providerId: 'chatgpt-plans', apiKey: 'should-not-use', baseUrl: '' }))
 assert.equal(oauthPatch.apiKey, '')
 const resolvedAccountProvider = providerAccountResolver.storedProviderForRequest({
@@ -212,6 +234,22 @@ assert.equal(
   modelsApi.buildModelAuth({ authType: { type: 'none' } }).requiresCredential,
   false
 )
+assert.equal(classifyModel({ id: 'gpt-image-2' }).capability, 'image')
+assert.equal(classifyModel({ id: 'image2' }).capability, 'image')
+assert.equal(classifyModel({ id: 'nano-banana2' }).capability, 'image')
+assert.equal(classifyModel({ id: 'gemini-3.1-flash-image-preview' }).capability, 'image')
+assert.equal(classifyModel({ id: 'google/gemini-3.1-flash-lite-image' }).capability, 'image')
+assert.equal(classifyModel({ id: 'text-embedding-3-large', type: 'embedding' }).capability, 'other')
+assert.equal(classifyModel({ id: 'gpt-5.1' }).capability, 'chat')
+const mixedRelayModels = modelsApi.normalizeModelList([
+  { id: 'gpt-5.1' },
+  { id: 'text-embedding-3-large', type: 'embedding' },
+  { id: 'nano-banana2' },
+  { id: 'image2' },
+  { id: 'google/gemini-3.1-flash-lite-image' }
+], { track: 'image' })
+assert.deepEqual(mixedRelayModels.slice(0, 3).map(item => item.id), ['google/gemini-3.1-flash-lite-image', 'image2', 'nano-banana2'])
+assert.equal(mixedRelayModels.find(item => item.id === 'gpt-5.1').capability, 'chat')
 assert.equal(
   modelsApi.buildModelListUrl('https://api.openai.com', {}).href,
   'https://api.openai.com/v1/models'
@@ -219,6 +257,18 @@ assert.equal(
 assert.equal(
   modelsApi.buildModelListUrl('https://openrouter.ai/api', {}).href,
   'https://openrouter.ai/api/v1/models'
+)
+assert.equal(
+  modelsApi.buildModelListUrl('https://relay.example.com/v1', {}).href,
+  'https://relay.example.com/v1/models'
+)
+assert.equal(
+  modelsApi.buildModelListUrl('https://relay.example.com/v1', {}, { modelListPath: '/v1/models' }).href,
+  'https://relay.example.com/v1/models'
+)
+assert.equal(
+  modelsApi.buildModelListUrl('https://relay.example.com/api/v1', {}, { modelListPath: '/v1/models' }).href,
+  'https://relay.example.com/api/v1/models'
 )
 assert.equal(
   modelsApi.buildModelListUrl('https://ark.cn-beijing.volces.com/api/v3', {}).href,
@@ -517,6 +567,10 @@ assert.ok(providerTemplatePresets('image', { id: 'stability' }).some(item => ite
 assert.equal(defaultProviderTemplatePreset('image', { id: 'stability' }), undefined)
 assert.equal(defaultProviderTemplatePreset('image', { id: 'fal' }).id, 'fal-image')
 assert.equal(defaultProviderTemplatePreset('video', { id: 'custom-video' }).id, 'generic-video-task')
+const imagePresetIds = providerTemplatePresets('image', { id: 'custom-image' }).map(item => item.id)
+assert.ok(imagePresetIds.includes('newapi-image-json'))
+assert.ok(imagePresetIds.includes('sub2api-image-json'))
+assert.ok(imagePresetIds.includes('cpa-image-json'))
 const imageTemplateValidation = validateGenerationRequest('image', stabilityProvider, {
   prompt: 'draw a glass cube',
   model: 'stable-image-core',
@@ -748,6 +802,20 @@ assert.equal(
   customImage.extractImage({ result: { images: [{ url: 'https://cdn.example.com/c.png' }] } }, { imageUrlPath: 'result.images[0].url' }),
   'https://cdn.example.com/c.png'
 )
+assert.equal(customImage.defaultOpenAiBody({ model: 'image2', prompt: 'p', ratio: '1:1', resolution: '1024' }).image_url, undefined)
+assert.equal(
+  customImage.defaultOpenAiBody({ model: 'nano-banana2', prompt: 'p', ratio: '1:1', resolution: '1024', sourceImageUrl: 'https://cdn.example.com/source.png' }).image_url,
+  'https://cdn.example.com/source.png'
+)
+assert.equal(customImage.commonImageTaskId({ data: { task_id: 'task-1' } }), 'task-1')
+assert.equal(customImage.commonImageTaskId({ task: { id: 'task-2' } }), 'task-2')
+assert.equal(openAiHandlerTests.imageFromResponse({ data: ['https://cdn.example.com/openai-string.png'] }), 'https://cdn.example.com/openai-string.png')
+assert.equal(openAiHandlerTests.imageFromResponse({ data: [{ b64_json: 'abc123' }] }), 'data:image/png;base64,abc123')
+assert.equal(openAiHandlerTests.imageFromResponse({ data: [{ url: 'https://cdn.example.com/openai-url.png' }] }), 'https://cdn.example.com/openai-url.png')
+assert.equal(openAiHandlerTests.imageFromResponse({ data: [{ image_url: { url: 'https://cdn.example.com/openai-image-url.png' } }] }), 'https://cdn.example.com/openai-image-url.png')
+assert.equal(openAiHandlerTests.imageFromResponse({ data: { output_url: 'https://cdn.example.com/openai-output.png' } }), 'https://cdn.example.com/openai-output.png')
+assert.equal(openAiHandlerTests.chatCompletionsUrl('https://relay.example.com/v1').href, 'https://relay.example.com/v1/chat/completions')
+assert.equal(openAiHandlerTests.imageGenerationsUrl('https://relay.example.com/api/v1').href, 'https://relay.example.com/api/v1/images/generations')
 
 const generation = createGeneration({
   parentAssetId: '',

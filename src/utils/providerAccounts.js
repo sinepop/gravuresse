@@ -1,6 +1,12 @@
 const TRACKS = ['chat', 'image', 'video']
 const SECRET_REDACTED = '********'
 
+export const OPENAI_COMPATIBLE_GATEWAY_PRESETS = [
+  { id: 'openai-compatible', label: 'OpenAI-compatible', name: 'OpenAI-compatible Relay' },
+  { id: 'newapi', label: 'New API / One API', name: 'New API / One API Relay' },
+  { id: 'sub2api', label: 'sub2api', name: 'sub2api Relay' }
+]
+
 function hashString(value) {
   let hash = 0
   for (let i = 0; i < value.length; i += 1) {
@@ -43,6 +49,28 @@ export function providerAccountKey(account = {}) {
 
 export function makeProviderAccountId(account = {}) {
   return `acct_${hashString(providerAccountKey(account))}`
+}
+
+export function providerGatewayPresetPatch(presetId = 'openai-compatible') {
+  const preset = OPENAI_COMPATIBLE_GATEWAY_PRESETS.find(item => item.id === presetId) || OPENAI_COMPATIBLE_GATEWAY_PRESETS[0]
+  return {
+    kind: 'gateway',
+    providerId: 'openai',
+    name: preset.name,
+    authType: { type: 'bearer' },
+    customAuth: {},
+    modelListPath: '/v1/models',
+    template: {
+      path: '/v1/images/generations',
+      method: 'POST',
+      pollPath: '/v1/images/tasks/{taskId}',
+      pollMethod: 'GET',
+      taskIdPath: 'data.task_id',
+      statusPath: 'data.status',
+      imageUrlPath: 'data[0].url'
+    },
+    tracks: ['chat', 'image']
+  }
 }
 
 export function normalizeProviderAccount(account = {}, providerDef = {}) {
