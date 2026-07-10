@@ -237,11 +237,43 @@ export function resolveChatProvider(config) {
 }
 
 /**
+ * Build ModelSelector-compatible profiles from the config.providers array.
+ * Each model in each enabled provider becomes its own profile entry so the
+ * dropdown can display all models grouped by provider name.
+ */
+export function buildConfigProviderProfiles(config) {
+  const providers = Array.isArray(config?.providers) ? config.providers : []
+  const profiles = []
+  for (let i = 0; i < providers.length; i++) {
+    const p = providers[i]
+    if (p.enabled === false) continue
+    const models = Array.isArray(p.models) ? p.models.filter(Boolean) : []
+    if (!models.length && p.defaultModel) models.push(p.defaultModel)
+    for (const model of models) {
+      profiles.push({
+        id: 'custom-chat',
+        providerId: 'custom-chat',
+        name: p.name,
+        baseUrl: p.baseUrl || '',
+        apiKey: p.apiKey || '',
+        model,
+        format: 'openai',
+        authType: { type: 'bearer' },
+        _configProviderIndex: i
+      })
+    }
+  }
+  return profiles
+}
+
+/**
  * Apply a patch to the chat provider config and return the updated config.
  * For the new array format, "model" patches update savedChatModel; other
- * patches (baseUrl, apiKey, etc.) are applied to the first enabled provider entry.
- * Strips adapter-only fields (_configProvider, _configProviderIndex) from the patch
- * before writing to the array.
+ * patches (baseUrl, apiKey, etc.) are applied to the targeted provider entry.
+ * The patch may carry _configProviderIndex to select a specific provider in
+ * the array; falls back to the first enabled provider.
+ * Strips adapter-only fields (_configProvider, _configProviderIndex) from the
+ * patch before writing to the array.
  */
 export function applyChatProviderPatch(config, patch) {
   if (!patch || typeof patch !== 'object') return config
@@ -254,14 +286,18 @@ export function applyChatProviderPatch(config, patch) {
   // Fields that are adapter-only and must not be written to the providers array
   const ADAPTER_KEYS = new Set(['id', 'platform', 'name', 'defaultModel', 'models', 'format', 'authType', 'capabilities', '_configProvider', '_configProviderIndex'])
   const arrayPatch = {}
+  let targetIndex = undefined
   for (const [k, v] of Object.entries(patch)) {
+    if (k === '_configProviderIndex') { targetIndex = v; continue }
     if (!ADAPTER_KEYS.has(k)) arrayPatch[k] = v
   }
 
   if (Array.isArray(next.providers)) {
     if (Object.keys(arrayPatch).length > 0) {
       const arr = [...next.providers]
-      const idx = arr.findIndex(p => p.enabled !== false)
+      const idx = (typeof targetIndex === 'number' && targetIndex >= 0 && targetIndex < arr.length && arr[targetIndex].enabled !== false)
+        ? targetIndex
+        : arr.findIndex(p => p.enabled !== false)
       if (idx >= 0) {
         arr[idx] = { ...arr[idx], ...arrayPatch }
         next.providers = arr
@@ -382,7 +418,8 @@ export function createProviderProfilePatch(profile = {}) {
     timeout: profile.timeout || '',
     pollInterval: profile.pollInterval || '',
     defaultNegPrompt: profile.defaultNegPrompt || '',
-    customSystemPrompt: profile.customSystemPrompt || ''
+    customSystemPrompt: profile.customSystemPrompt || '',
+    ...(typeof profile._configProviderIndex === 'number' ? { _configProviderIndex: profile._configProviderIndex } : {})
   }
 }
 

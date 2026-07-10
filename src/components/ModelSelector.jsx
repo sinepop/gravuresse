@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { t } from '../i18n'
 import { sameProviderId } from '../providers/aliases'
-import { createProviderProfilePatch } from '../utils/providerConfig.js'
+import { createProviderProfilePatch, buildConfigProviderProfiles } from '../utils/providerConfig.js'
 import Ic from './icons'
 
 function normalizeAuthType(type) {
@@ -32,6 +32,11 @@ function providerName(track, providerLists = {}, profile = {}) {
 }
 
 function sameProfile(track, current = {}, profile = {}) {
+  // Config-array profiles share the same id; use _configProviderIndex to disambiguate
+  if (typeof profile._configProviderIndex === 'number' && typeof current._configProviderIndex === 'number') {
+    return profile._configProviderIndex === current._configProviderIndex &&
+      (current?.model || '') === (profile.model || '')
+  }
   return sameProviderId(track, current?.id, profile.providerId || profile.id) &&
     (current?.baseUrl || '') === (profile.baseUrl || '') &&
     (current?.model || '') === (profile.model || '')
@@ -133,11 +138,24 @@ function ModelPicker({ track, current, profiles, providerLists, onSelect, lang }
 export default function ModelSelector({ config, providerLists, activeModule = 'image', onProviderChange, lang }) {
   const mediaTrack = activeModule === 'video' ? 'video' : 'image'
   const items = ['chat', mediaTrack].map(track => {
-    const profiles = (config?.providerProfiles?.[track] || []).filter(profile => {
-      const providerDef = findProviderDef(track, providerLists, profile)
-      return isExecutableProvider(providerDef) && hasCredential(profile, providerDef) && profile.model
-    })
-    return profiles.length ? { track, current: config?.providers?.[track], profiles } : null
+    let profiles
+    let current = config?.providers?.[track]
+    if (track === 'chat' && Array.isArray(config?.providers)) {
+      // New array format: collect all models from enabled config.providers
+      profiles = buildConfigProviderProfiles(config)
+      // Build a synthetic current that matches the saved model so sameProfile can highlight it
+      const savedModel = config?.savedChatModel || ''
+      const matched = profiles.find(p => p.model === savedModel) || profiles[0]
+      if (matched) {
+        current = { id: matched.id, baseUrl: matched.baseUrl, model: matched.model, _configProviderIndex: matched._configProviderIndex }
+      }
+    } else {
+      profiles = (config?.providerProfiles?.[track] || []).filter(profile => {
+        const providerDef = findProviderDef(track, providerLists, profile)
+        return isExecutableProvider(providerDef) && hasCredential(profile, providerDef) && profile.model
+      })
+    }
+    return profiles.length ? { track, current, profiles } : null
   }).filter(Boolean)
 
   if (items.length === 0) {

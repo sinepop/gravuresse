@@ -23,6 +23,7 @@ import { normalizeModelRecord, sortModelRecords } from '../utils/modelCapabiliti
 
 const NAV_SECTIONS = [
   { id: 'api', labelKey: 'apiConfig', icon: 'link', children: [
+    { id: 'chat-providers', labelKey: 'chatProviders' },
     { id: 'provider-accounts', labelKey: 'providerAccounts' },
     { id: 'provider-api-keys', labelKey: 'providerApiKeys' },
     { id: 'provider-gateways', labelKey: 'providerGateways' },
@@ -2274,6 +2275,249 @@ function ProviderAccountsPage({ config, providers, onChange, onOpenApiKeys, lang
   )
 }
 
+/* ── ChatProvidersPage ── */
+function ChatProvidersPage({ config, onChange, lang }) {
+  const providers = Array.isArray(config?.providers) ? config.providers : []
+
+  const updateProvider = (index, patch) => {
+    const next = providers.map((p, i) => i === index ? { ...p, ...patch } : p)
+    onChange('providers', next)
+  }
+
+  const addProvider = () => {
+    onChange('providers', [...providers, {
+      name: '',
+      baseUrl: '',
+      apiKey: '',
+      defaultModel: '',
+      models: [],
+      enabled: true,
+    }])
+  }
+
+  const deleteProvider = (index) => {
+    if (!window.confirm(t('deleteProviderConfirm', lang))) return
+    onChange('providers', providers.filter((_, i) => i !== index))
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <SectionHeading labelKey="chatProviders" lang={lang} />
+      <div style={{ color: 'var(--text-muted)', fontSize: 12, lineHeight: 1.5 }}>{t('chatProvidersDesc', lang)}</div>
+      {providers.map((p, idx) => (
+        <ChatProviderCard
+          key={idx}
+          provider={p}
+          index={idx}
+          lang={lang}
+          onUpdate={updateProvider}
+          onDelete={deleteProvider}
+        />
+      ))}
+      <button onClick={addProvider} style={{ ...btnS(false), padding: '8px 16px', fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 6, alignSelf: 'flex-start' }}>
+        <Ic n="plus" size={12} /> {t('addProvider', lang)}
+      </button>
+    </div>
+  )
+}
+
+function ChatProviderCard({ provider, index, lang, onUpdate, onDelete }) {
+  const [fetching, setFetching] = useState(false)
+  const [fetchResult, setFetchResult] = useState(null)
+  const [testing, setTesting] = useState(false)
+  const [testResult, setTestResult] = useState(null)
+  const [showApiKey, setShowApiKey] = useState(false)
+
+  const patch = (partial) => onUpdate(index, partial)
+
+  const handleFetchModels = async () => {
+    if (!provider.baseUrl || !provider.apiKey) return
+    setFetching(true)
+    setFetchResult(null)
+    try {
+      const result = await window.electronAPI?.providerAPI?.fetchModels?.({ baseUrl: provider.baseUrl, apiKey: provider.apiKey })
+      const list = Array.isArray(result) ? result : result?.models || []
+      patch({ models: list.map(m => typeof m === 'string' ? m : m.id || m.model || String(m)) })
+      setFetchResult({ ok: true, count: list.length })
+    } catch (e) {
+      setFetchResult({ ok: false, msg: e?.message || 'Failed' })
+    } finally {
+      setFetching(false)
+    }
+  }
+
+  const handleTestConnection = async () => {
+    if (!provider.baseUrl || !provider.apiKey) return
+    setTesting(true)
+    setTestResult(null)
+    const start = Date.now()
+    try {
+      const result = await window.electronAPI?.providerAPI?.testConnection?.({ baseUrl: provider.baseUrl, apiKey: provider.apiKey })
+      const latency = Date.now() - start
+      setTestResult({ ok: result?.ok !== false, latency, msg: result?.message })
+    } catch (e) {
+      setTestResult({ ok: false, msg: e?.message || 'Connection failed' })
+    } finally {
+      setTesting(false)
+    }
+  }
+
+  const handleRemoveModel = (modelToRemove) => {
+    patch({ models: (provider.models || []).filter(m => m !== modelToRemove) })
+  }
+
+  const handleAddModel = (e) => {
+    if (e.key === 'Enter' && e.target.value.trim()) {
+      const newModel = e.target.value.trim()
+      const current = provider.models || []
+      if (!current.includes(newModel)) patch({ models: [...current, newModel] })
+      e.target.value = ''
+    }
+  }
+
+  return (
+    <div style={{
+      border: `1px solid ${provider.enabled === false ? 'var(--border-subtle)' : 'var(--border-accent)'}`,
+      borderRadius: 'var(--radius-sm)',
+      background: 'var(--bg-elevated)',
+      padding: 12,
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 10,
+      opacity: provider.enabled === false ? 0.65 : 1,
+    }}>
+      {/* Row 1: Name + toggle + delete */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <Ic n="chat" size={14} />
+        <input
+          type="text"
+          value={provider.name || ''}
+          placeholder={localText(lang, '供应商名称', 'Provider name')}
+          onChange={e => patch({ name: e.target.value })}
+          style={{ ...inputS(), flex: 1, fontWeight: 600 }}
+        />
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-secondary)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+          <input
+            type="checkbox"
+            checked={provider.enabled !== false}
+            onChange={e => patch({ enabled: e.target.checked })}
+          />
+          {t('enable', lang)}
+        </label>
+        <button
+          onClick={() => onDelete(index)}
+          title={t('deleteProvider', lang)}
+          style={{ ...btnS(false), padding: '6px 8px', color: 'var(--danger)', borderColor: 'var(--danger-border)' }}
+        >
+          <Ic n="trash" size={12} />
+        </button>
+      </div>
+
+      {/* Row 2: baseUrl + apiKey */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+        <label style={labelS()}>
+          {t('baseUrl', lang)}
+          <input
+            type="text"
+            value={provider.baseUrl || ''}
+            placeholder="https://api.example.com/v1"
+            onChange={e => patch({ baseUrl: e.target.value })}
+            style={inputS()}
+          />
+        </label>
+        <label style={labelS()}>
+          {t('apiKey', lang)}
+          <div style={{ display: 'flex', gap: 6 }}>
+            <input
+              type={showApiKey ? 'text' : 'password'}
+              value={provider.apiKey === REDACTED_API_KEY ? '' : provider.apiKey || ''}
+              placeholder={provider.apiKey === REDACTED_API_KEY ? t('configuredPlaceholder', lang) : 'sk-...'}
+              onChange={e => patch({ apiKey: e.target.value })}
+              style={{ ...inputS(), flex: 1 }}
+            />
+            <button
+              onClick={() => setShowApiKey(!showApiKey)}
+              style={{ ...btnS(false), padding: '8px', flexShrink: 0 }}
+              title={showApiKey ? 'Hide' : 'Show'}
+            >
+              <Ic n={showApiKey ? 'eye' : 'eye'} size={12} />
+            </button>
+          </div>
+        </label>
+      </div>
+
+      {/* Row 3: Default model */}
+      <label style={labelS()}>
+        {t('defaultModel', lang)}
+        <input
+          type="text"
+          value={provider.defaultModel || ''}
+          placeholder={localText(lang, '默认模型名', 'e.g. gpt-4o')}
+          onChange={e => patch({ defaultModel: e.target.value })}
+          style={{ ...inputS(), fontFamily: 'var(--font-mono)' }}
+        />
+      </label>
+
+      {/* Row 4: Models tags + Fetch Models + Test Connection */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{t('model', lang)}</span>
+          <button
+            onClick={handleFetchModels}
+            disabled={fetching || !provider.baseUrl || !provider.apiKey}
+            style={{ ...btnS(false), padding: '5px 10px', fontSize: 11, opacity: (!provider.baseUrl || !provider.apiKey) ? 0.4 : 1 }}
+          >
+            {fetching ? '...' : <><Ic n="refresh" size={10} /> {t('fetchModels', lang)}</>}
+          </button>
+          <button
+            onClick={handleTestConnection}
+            disabled={testing || !provider.baseUrl || !provider.apiKey}
+            style={{ ...btnS(false), padding: '5px 10px', fontSize: 11, opacity: (!provider.baseUrl || !provider.apiKey) ? 0.4 : 1 }}
+          >
+            {testing ? t('testing', lang) : <><Ic n="zap" size={10} /> {t('connectTest', lang)}</>}
+          </button>
+        </div>
+        {/* Models as tags */}
+        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', alignItems: 'center' }}>
+          {(provider.models || []).map(m => (
+            <span key={m} style={{
+              display: 'inline-flex', alignItems: 'center', gap: 4,
+              padding: '3px 8px', borderRadius: 'var(--radius-sm)',
+              background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)',
+              color: 'var(--text-primary)', fontSize: 11, fontFamily: 'var(--font-mono)',
+            }}>
+              {m}
+              <button
+                onClick={() => handleRemoveModel(m)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 0, display: 'flex', alignItems: 'center' }}
+              >
+                <Ic n="close" size={10} />
+              </button>
+            </span>
+          ))}
+          <input
+            type="text"
+            placeholder="+"
+            onKeyDown={handleAddModel}
+            style={{ ...inputS(), width: 60, padding: '3px 6px', fontSize: 11 }}
+          />
+        </div>
+        {/* Fetch / Test results */}
+        {fetchResult && (
+          <span style={{ fontSize: 11, color: fetchResult.ok ? 'var(--success)' : 'var(--danger)' }}>
+            {fetchResult.ok ? `✓ ${fetchResult.count} ${t('modelsLoaded', lang)}` : `✗ ${fetchResult.msg}`}
+          </span>
+        )}
+        {testResult && (
+          <span style={{ fontSize: 11, color: testResult.ok ? 'var(--success)' : 'var(--danger)' }}>
+            {testResult.ok ? `✓ ${t('connectionReady', lang)} (${testResult.latency}ms)` : `✗ ${testResult.msg || t('testFail', lang)}`}
+          </span>
+        )}
+      </div>
+    </div>
+  )
+}
+
 /* ── Main Settings ── */
 function normalizeSettingsPage(page, videoEnabled) {
   if (page === 'api' || page === 'chat' || page === 'image' || page === 'video') return 'model-pairing'
@@ -2317,6 +2561,7 @@ export default function Settings({ config, providerLists, onSave, onClose, initi
     else if (track === 'providerAccounts') setLocal(prev => ({ ...prev, providerAccounts: patch }))
     else if (track === 'providerProfiles') setLocal(prev => ({ ...prev, providerProfiles: { ...prev.providerProfiles, ...patch } }))
     else if (track === '_deletedProfileKeys') setLocal(prev => ({ ...prev, _deletedProfileKeys: patch }))
+    else if (track === 'providers') setLocal(prev => ({ ...prev, providers: patch }))
     else setLocal(prev => ({ ...prev, providers: { ...prev.providers, [track]: { ...prev.providers[track], ...patch } } }))
   }
 
@@ -2376,6 +2621,7 @@ export default function Settings({ config, providerLists, onSave, onClose, initi
             {page === 'appearance' && <AppearancePage config={local} onChange={handleChange} lang={lang} />}
             {page === 'lang' && <LangPage config={local} onChange={handleChange} lang={lang} />}
             {page === 'other' && <OtherPage config={local} onChange={handleChange} lang={lang} />}
+            {page === 'chat-providers' && <ChatProvidersPage config={local} onChange={handleChange} lang={lang} />}
             {page === 'provider-accounts' && <ProviderAccountsPage config={local} providers={providers} onChange={handleChange} onOpenApiKeys={() => setPage('provider-api-keys')} lang={lang} />}
             {page === 'provider-api-keys' && <ProviderApiKeysPage config={local} providers={providers} onChange={handleChange} lang={lang} />}
             {page === 'provider-gateways' && <ProviderGatewaysPage config={local} providers={providers} onChange={handleChange} lang={lang} />}

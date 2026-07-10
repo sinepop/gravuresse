@@ -25,7 +25,8 @@ const MODEL_CATALOGS = {
     together: ['meta-llama/Llama-4-17B-128E-Instruct-FP8', 'Qwen/Qwen2.5-72B-Instruct-Turbo'],
     xai: ['grok-3', 'grok-3-mini'],
     perplexity: ['sonar-pro', 'sonar'],
-    siliconflow: ['Qwen/Qwen2.5-72B-Instruct', 'deepseek-ai/DeepSeek-V3']
+    siliconflow: ['Qwen/Qwen2.5-72B-Instruct', 'deepseek-ai/DeepSeek-V3'],
+    'custom-chat': []
   },
   image: {
     openai: ['gpt-image-2', 'gpt-image-1'],
@@ -1470,6 +1471,38 @@ const REGISTRY = [
     },
     customizable: { video: { auth: ['bearer'], baseUrl: true, model: true, timeout: true, polling: true } },
     meta: { region: 'global', description: 'Existing HappyHorse video generation provider.' }
+  },
+  {
+    id: 'custom-chat',
+    name: 'Custom Chat API',
+    platform: 'Custom',
+    chat: {
+      defaultModel: '',
+      protocol: 'openai',
+      integrationStatus: 'handler'
+    },
+    authType: { type: 'bearer' },
+    defaults: { baseUrl: '' },
+    billing: { mode: 'unknown', note: 'Custom relay billing depends on the relay provider; configure only trusted HTTPS endpoints.' },
+    capabilities: {
+      chat: { text: true, openaiCompatible: true, relay: true, customBaseUrl: true, integrationStatus: 'handler' }
+    },
+    customizable: {
+      chat: {
+        auth: ['bearer', 'api-key', 'header', 'query'],
+        baseUrl: true,
+        model: true,
+        timeout: true,
+        relayCompatible: true
+      }
+    },
+    meta: {
+      region: 'both',
+      nameZh: '自定义对话 API',
+      nameEn: 'Custom Chat API',
+      description: 'OpenAI-compatible custom chat relay for any API endpoint.',
+      descriptionZh: '适配任意 OpenAI 兼容 API 的自定义对话中转接口。'
+    }
   }
 ]
 

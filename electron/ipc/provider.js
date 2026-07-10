@@ -154,6 +154,58 @@ function registerProviderIpc({
     }
   })
 
+  ipcMain.handle('provider:fetchModels', async (_, params = {}) => {
+    try {
+      const { baseUrl, apiKey } = params || {}
+      if (!baseUrl) return { ok: false, message: 'baseUrl is required' }
+      if (!apiKey) return { ok: false, message: 'apiKey is required' }
+
+      const { request, joinApiUrl } = require('../api/http')
+      const url = joinApiUrl(baseUrl, '/v1/models')
+      const res = await request(url, {
+        method: 'GET',
+        headers: {
+          'Authorization': 'Bearer ' + String(apiKey),
+          'Content-Type': 'application/json'
+        }
+      })
+
+      const data = JSON.parse(res.data || '{}')
+      const models = (data.data || []).map(m => m.id || m.name || String(m)).filter(Boolean).sort()
+      return { ok: true, models }
+    } catch (err) {
+      return { ok: false, message: err?.message || 'Failed to fetch models' }
+    }
+  })
+
+  ipcMain.handle('provider:testConnection', async (_, params = {}) => {
+    try {
+      const { baseUrl, apiKey, model } = params || {}
+      if (!baseUrl) return { ok: false, message: 'baseUrl is required' }
+      if (!apiKey) return { ok: false, message: 'apiKey is required' }
+
+      const start = Date.now()
+      const { request, joinApiUrl } = require('../api/http')
+      const url = joinApiUrl(baseUrl, '/v1/chat/completions')
+      await request(url, {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer ' + String(apiKey),
+          'Content-Type': 'application/json'
+        }
+      }, {
+        model: model || 'gpt-3.5-turbo',
+        messages: [{ role: 'user', content: 'ping' }],
+        max_tokens: 1
+      })
+
+      const latencyMs = Date.now() - start
+      return { ok: true, latencyMs }
+    } catch (err) {
+      return { ok: false, message: err?.message || 'Connection test failed' }
+    }
+  })
+
   // ──────────────────────────────────────────────────────────────────────────────
   // Legacy IPC compatibility wrappers — kept for renderer clients that have not
   // yet migrated to `provider:call`. Each handler normalises its params and then

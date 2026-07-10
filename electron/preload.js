@@ -29,7 +29,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   providerAPI: {
     call: (params) => ipcRenderer.invoke('provider:call', params),
     list: (action) => ipcRenderer.invoke('provider:list', action),
-    test: (params) => ipcRenderer.invoke('provider:test', params)
+    test: (params) => ipcRenderer.invoke('provider:test', params),
+    fetchModels: (params) => ipcRenderer.invoke('provider:fetchModels', params),
+    testConnection: (params) => ipcRenderer.invoke('provider:testConnection', params)
   },
 
   saveAssetToDisk: (params) => ipcRenderer.invoke('api:saveAsset', params),
