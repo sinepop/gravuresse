@@ -28,7 +28,7 @@ import {
   updateConversationTask
 } from '../src/utils/conversationStore.js'
 import { normalizeProviderList } from '../src/hooks/useConfig.js'
-import { createProviderClearPatch, createProviderProfilePatch, createProviderSelectionPatch, defaultProviderTemplatePreset, normalizeProviderTemplate, providerNeedsTemplatePaths, providerTemplatePathStatus, providerTemplatePresets } from '../src/utils/providerConfig.js'
+import { buildConfigProviderProfiles, createProviderClearPatch, createProviderProfilePatch, createProviderSelectionPatch, defaultProviderTemplatePreset, normalizeProviderTemplate, providerNeedsTemplatePaths, providerTemplatePathStatus, providerTemplatePresets } from '../src/utils/providerConfig.js'
 import { migrateProviderAccounts, providerPatchFromAccount, findProviderAccount, normalizeProviderAccount, providerGatewayPresetPatch, OPENAI_COMPATIBLE_GATEWAY_PRESETS } from '../src/utils/providerAccounts.js'
 import modelCapabilities from '../shared/modelCapabilities.cjs'
 
@@ -65,6 +65,7 @@ const providerRegistry = require('../electron/providers/registry.js')
 const registryUtils = require('../electron/providers/registry-utils.js')
 const providerAccountResolver = require('../electron/providers/account-resolver.js')
 const configResolver = require('../electron/providers/config-resolver.js')
+const providerPipeline = require('../electron/providers/pipeline.js')
 const { validateGenerationRequest } = require('../electron/providers/validation.js')
 const { buildProviderImageTestPayload } = require('../electron/providers/image-test.js')
 const mainSanitize = require('../electron/security/sanitize.js')
@@ -81,6 +82,66 @@ const mergedPollutedConfig = configModule._test.deepMerge(configModule.DEFAULT_C
 assert.equal(mergedPollutedConfig.providers.image.id, 'custom-image')
 assert.equal(mergedPollutedConfig.providers.template, undefined)
 assert.equal(Object.hasOwn(mergedPollutedConfig.general, 'constructor'), false)
+assert.equal(Array.isArray(configModule.DEFAULT_CONFIG.providers), false, 'runtime providers must remain a track map')
+assert.equal(configModule.DEFAULT_CONFIG.providers.chat.id, 'custom-chat')
+assert.equal(configModule.DEFAULT_CONFIG.providers.image.id, 'openai')
+assert.equal(configModule.DEFAULT_CONFIG.providers.video.id, 'volcengine')
+assert.ok(Array.isArray(configModule.DEFAULT_CONFIG.chatProviders), 'custom chat provider candidates use a separate list')
+const migratedArrayConfig = configModule._test.migrateOldProviderFormat({
+  providers: [
+    { name: 'First', baseUrl: 'https://first.example.com/v1', apiKey: 'first-secret', defaultModel: 'first-model', enabled: false },
+    { name: 'Second', baseUrl: 'https://second.example.com/v1', apiKey: 'second-secret', defaultModel: 'second-model', models: ['second-model'], enabled: true }
+  ],
+  savedChatModel: 'saved-model'
+})
+assert.equal(Array.isArray(migratedArrayConfig.providers), false)
+assert.equal(migratedArrayConfig.providers.chat.id, 'custom-chat')
+assert.equal(migratedArrayConfig.providers.chat.baseUrl, 'https://second.example.com/v1')
+assert.equal(migratedArrayConfig.providers.chat.apiKey, 'second-secret')
+assert.equal(migratedArrayConfig.providers.chat.model, 'saved-model')
+assert.equal(migratedArrayConfig.providers.image.id, 'openai')
+assert.equal(migratedArrayConfig.chatProviders.length, 2)
+const migratedProfiles = buildConfigProviderProfiles(migratedArrayConfig)
+assert.deepEqual(migratedProfiles.map(profile => profile.model), ['second-model'])
+const migratedRuntime = configResolver.resolveRuntimeProviderConfig(
+  migratedArrayConfig,
+  'chat',
+  {
+    action: 'chat',
+    providerId: 'custom-chat',
+    baseUrl: 'https://second.example.com/v1',
+    model: 'saved-model'
+  },
+  providerRegistry.getProvider,
+  () => async () => ({ text: 'ok' })
+)
+assert.equal(migratedRuntime.ok, true)
+assert.equal(migratedRuntime.config.baseUrl, 'https://second.example.com/v1')
+assert.equal(migratedRuntime.config.credentials.apiKey, 'second-secret')
+
+const customChatSecretConfig = {
+  providers: {
+    chat: { id: 'custom-chat', apiKey: 'candidate-secret', baseUrl: 'https://relay.example.com/v1', model: 'relay-model' }
+  },
+  chatProviders: [
+    { name: 'Relay', baseUrl: 'https://relay.example.com/v1', apiKey: 'candidate-secret', defaultModel: 'relay-model', enabled: true }
+  ],
+  providerProfiles: { chat: [], image: [], video: [] },
+  providerAccounts: []
+}
+const redactedCustomChat = configModule.redactApiKeys(customChatSecretConfig)
+assert.equal(redactedCustomChat.providers.chat.apiKey, configModule.REDACTED_API_KEY)
+assert.equal(redactedCustomChat.chatProviders[0].apiKey, configModule.REDACTED_API_KEY)
+const mergedCustomChat = configModule.mergeRedactedApiKeys(redactedCustomChat, customChatSecretConfig)
+assert.equal(mergedCustomChat.providers.chat.apiKey, 'candidate-secret')
+assert.equal(mergedCustomChat.chatProviders[0].apiKey, 'candidate-secret')
+const redirectedCustomChat = configModule.mergeRedactedApiKeys({
+  ...redactedCustomChat,
+  providers: { chat: { ...redactedCustomChat.providers.chat, baseUrl: 'https://attacker.example.com/v1' } },
+  chatProviders: [{ ...redactedCustomChat.chatProviders[0], baseUrl: 'https://attacker.example.com/v1' }]
+}, customChatSecretConfig)
+assert.equal(redirectedCustomChat.providers.chat.apiKey, '', 'saved active secret must not follow a changed endpoint')
+assert.equal(redirectedCustomChat.chatProviders[0].apiKey, '', 'saved candidate secret must not follow a changed endpoint')
 const accountSecretConfig = {
   providers: { chat: { id: 'deepseek', apiKey: 'track-secret', baseUrl: 'https://api.deepseek.com', model: 'deepseek-chat' } },
   providerProfiles: { chat: [], image: [], video: [] },
@@ -189,6 +250,42 @@ const migratedDeepSeek = findProviderAccount(migratedAccountsConfig, migratedAcc
 assert.equal(migratedDeepSeek.apiKey, 'chat-secret')
 assert.equal(providerPatchFromAccount(migratedDeepSeek).baseUrl, 'https://api.deepseek.com')
 assert.equal(providerPatchFromAccount(migratedDeepSeek).apiKey, '')
+const redactedProviderMigration = migrateProviderAccounts({
+  providers: {
+    chat: { id: 'custom-chat', apiKey: configModule.REDACTED_API_KEY, baseUrl: 'https://relay.example.com/v1', model: 'relay-model' }
+  },
+  providerProfiles: { chat: [], image: [], video: [] },
+  providerAccounts: []
+}, {
+  chat: [{ id: 'custom-chat', name: 'Custom Chat API', defaultUrl: '', authType: { type: 'bearer' } }],
+  image: [],
+  video: []
+})
+assert.equal(redactedProviderMigration.providerAccounts.length, 0, 'redacted placeholders must not create credential accounts')
+assert.equal(redactedProviderMigration.providers.chat.apiKey, configModule.REDACTED_API_KEY)
+const selectedCustomProfile = buildConfigProviderProfiles(redactedCustomChat)[0]
+const selectedCustomPrepared = migrateProviderAccounts({
+  ...redactedCustomChat,
+  providers: { ...redactedCustomChat.providers, chat: createProviderProfilePatch(selectedCustomProfile) }
+}, {
+  chat: [{ id: 'custom-chat', name: 'Custom Chat API', defaultUrl: '', authType: { type: 'bearer' } }],
+  image: [],
+  video: []
+})
+const selectedCustomStored = configModule.mergeRedactedApiKeys(selectedCustomPrepared, customChatSecretConfig)
+assert.equal(selectedCustomStored.providerAccounts.length, 0)
+assert.equal(selectedCustomStored.providers.chat.apiKey, 'candidate-secret', 'selected custom profile restores its saved secret on the same endpoint')
+const listOnlyCustomSecretConfig = {
+  ...customChatSecretConfig,
+  providers: { chat: { ...customChatSecretConfig.providers.chat, apiKey: '' } }
+}
+const listOnlyRedacted = configModule.redactApiKeys(listOnlyCustomSecretConfig)
+const listOnlyProfile = buildConfigProviderProfiles(listOnlyRedacted)[0]
+const listOnlySelected = configModule.mergeRedactedApiKeys({
+  ...listOnlyRedacted,
+  providers: { chat: createProviderProfilePatch(listOnlyProfile) }
+}, listOnlyCustomSecretConfig)
+assert.equal(listOnlySelected.providers.chat.apiKey, 'candidate-secret', 'first custom selection falls back to the candidate secret')
 const migratedGatewayConfig = migrateProviderAccounts({
   providers: {
     chat: { id: 'openai', accountId: 'acct_gateway', accountKind: 'gateway', apiKey: '', baseUrl: 'https://relay.example.com', model: 'gpt-5.1' }
@@ -386,6 +483,9 @@ assert.deepEqual(configResolver.requestOptionsFromConfig({ general: { apiTimeout
 // REDACTED_API_KEY constant matches config module
 assert.equal(configResolver.REDACTED_API_KEY, '********', 'REDACTED_API_KEY matches expected value')
 assert.equal(configResolver.REDACTED_API_KEY, configModule.REDACTED_API_KEY, 'REDACTED_API_KEY matches config module')
+const customSecretError = providerPipeline.redactSecrets('Relay rejected key short-custom-key.', ['short-custom-key'])
+assert.equal(customSecretError.includes('short-custom-key'), false)
+assert.equal(customSecretError.includes('[redacted]'), true)
 
 // --- end config-resolver security tests ---
 

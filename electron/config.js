@@ -9,7 +9,12 @@ const BLOCKED_OBJECT_KEYS = new Set(['__proto__', 'constructor', 'prototype'])
 const hasOwn = Object.hasOwn || ((obj, key) => Object.prototype.hasOwnProperty.call(obj, key))
 
 const DEFAULT_CONFIG = {
-  providers: [
+  providers: {
+    chat: { id: 'custom-chat', apiKey: '', sessionToken: '', baseUrl: 'https://opencode.ai/zen/go/v1', model: 'deepseek-v4-flash' },
+    image: { id: 'openai', apiKey: '', sessionToken: '', baseUrl: 'https://api.openai.com', model: 'gpt-image-2' },
+    video: { id: 'volcengine', apiKey: '', sessionToken: '', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3', model: 'doubao-seedance-2-0-pro-250528' }
+  },
+  chatProviders: [
     {
       name: 'OpenCode Go',
       baseUrl: 'https://opencode.ai/zen/go/v1',
@@ -77,35 +82,22 @@ function deepMerge(target, source) {
 // Unified secret field names used across providers, profiles, and accounts.
 const SECRET_FIELDS = ['apiKey', 'sessionToken', 'token', 'accessKey', 'secretKey']
 
-// Provider secret field paths (static, for the default config snapshot).
+// Active runtime provider secret paths.
 const SECRET_PATHS = []
-for (let i = 0; i < DEFAULT_CONFIG.providers.length; i++) {
+for (const track of ['chat', 'image', 'video']) {
   for (const field of SECRET_FIELDS) {
-    SECRET_PATHS.push(['providers', i, field])
+    SECRET_PATHS.push(['providers', track, field])
   }
 }
 
-// Dynamic provider secret paths based on actual config providers (array or legacy object).
-function providerSecretPaths(cfg) {
+function chatProviderSecretPaths(cfg) {
   const paths = []
-  const providers = cfg?.providers
-  if (Array.isArray(providers)) {
-    providers.forEach((_, index) => {
-      for (const field of SECRET_FIELDS) {
-        paths.push(['providers', index, field])
-      }
-    })
-  } else if (isPlainObject(providers)) {
-    // Legacy track-based format: { chat: {...}, image: {...}, video: {...} }
-    for (const track of TRACKS) {
-      const provider = providers[track]
-      if (isPlainObject(provider)) {
-        for (const field of SECRET_FIELDS) {
-          paths.push(['providers', track, field])
-        }
-      }
+  const providers = Array.isArray(cfg?.chatProviders) ? cfg.chatProviders : []
+  providers.forEach((_, index) => {
+    for (const field of SECRET_FIELDS) {
+      paths.push(['chatProviders', index, field])
     }
-  }
+  })
   return paths
 }
 
@@ -168,7 +160,7 @@ function accountSecretPaths(cfg) {
 }
 
 function allSecretPaths(cfg) {
-  return [...SECRET_PATHS, ...providerSecretPaths(cfg), ...profileSecretPaths(cfg), ...accountSecretPaths(cfg)]
+  return [...SECRET_PATHS, ...chatProviderSecretPaths(cfg), ...profileSecretPaths(cfg), ...accountSecretPaths(cfg)]
 }
 
 function getNestedValue(obj, keys) {
@@ -226,16 +218,22 @@ function redactApiKeys(cfg) {
 }
 
 function migrateOldProviderFormat(config) {
-  if (isPlainObject(config.providers) && !Array.isArray(config.providers)) {
-    const old = config.providers
-    const merged = []
-    for (const track of TRACKS) {
-      const entries = Array.isArray(old[track]) ? old[track] : []
-      for (const entry of entries) {
-        if (entry && typeof entry === 'object') merged.push(entry)
-      }
-    }
-    config.providers = merged.length > 0 ? merged : [...DEFAULT_CONFIG.providers]
+  if (!Array.isArray(config.providers)) return config
+
+  const chatProviders = config.providers.filter(isPlainObject)
+  const activeIndex = Math.max(0, chatProviders.findIndex(provider => provider.enabled !== false))
+  const active = chatProviders[activeIndex] || DEFAULT_CONFIG.chatProviders[0]
+  config.chatProviders = chatProviders.length ? chatProviders : [...DEFAULT_CONFIG.chatProviders]
+  config.providers = {
+    chat: {
+      id: 'custom-chat',
+      apiKey: active.apiKey || '',
+      sessionToken: active.sessionToken || '',
+      baseUrl: active.baseUrl || '',
+      model: config.savedChatModel || active.defaultModel || ''
+    },
+    image: { ...DEFAULT_CONFIG.providers.image },
+    video: { ...DEFAULT_CONFIG.providers.video }
   }
   return config
 }
@@ -248,21 +246,8 @@ function findMatchingProvider(cfg, name, baseUrl) {
 function mergeRedactedApiKeys(nextCfg, currentCfg) {
   const result = JSON.parse(JSON.stringify(sanitizeObjectShape(nextCfg)))
   currentCfg = sanitizeObjectShape(currentCfg)
-  // Providers: restore redacted keys; handle both array (new) and object/track (legacy) formats
-  if (Array.isArray(result.providers)) {
-    const nextProviders = result.providers
-    const currentProviders = Array.isArray(currentCfg.providers) ? currentCfg.providers : []
-    nextProviders.forEach((provider, index) => {
-      for (const field of SECRET_FIELDS) {
-        if (provider?.[field] !== REDACTED_API_KEY) continue
-        const match = currentProviders.find(
-          p => (p.name || '') === (provider.name || '') && (p.baseUrl || '') === (provider.baseUrl || '')
-        )
-        result.providers[index][field] = match?.[field] || ''
-      }
-    })
-  } else if (isPlainObject(result.providers)) {
-    // Legacy track-based format: { chat: {...}, image: {...}, video: {...} }
+  // Active providers: a redacted secret may only be restored from the same endpoint.
+  if (isPlainObject(result.providers)) {
     const currentProvidersObj = isPlainObject(currentCfg.providers) ? currentCfg.providers : {}
     for (const track of TRACKS) {
       const nextProvider = result.providers[track]
@@ -270,10 +255,32 @@ function mergeRedactedApiKeys(nextCfg, currentCfg) {
       const currentProvider = currentProvidersObj[track]
       for (const field of SECRET_FIELDS) {
         if (nextProvider[field] !== REDACTED_API_KEY) continue
-        result.providers[track][field] = currentProvider?.[field] || ''
+        const profileMatch = (currentCfg.providerProfiles?.[track] || []).find(profile => sameProviderProfile(track, nextProvider, profile))
+        const customMatch = track === 'chat'
+            ? (currentCfg.chatProviders || []).find(provider => (provider.baseUrl || '') === (nextProvider.baseUrl || ''))
+            : null
+        const currentSecret = sameProviderEndpoint(track, nextProvider, currentProvider)
+          ? currentProvider?.[field] || ''
+          : ''
+        result.providers[track][field] = currentSecret || profileMatch?.[field] || customMatch?.[field] || ''
       }
     }
   }
+  // Custom chat provider candidates keep their own secrets, separate from the active runtime selection.
+  const nextChatProviders = Array.isArray(result.chatProviders) ? result.chatProviders : []
+  const currentChatProviders = Array.isArray(currentCfg.chatProviders) ? currentCfg.chatProviders : []
+  nextChatProviders.forEach((provider, index) => {
+    for (const field of SECRET_FIELDS) {
+      if (provider?.[field] !== REDACTED_API_KEY) continue
+      const exactMatch = currentChatProviders.find(item =>
+        (item.name || '') === (provider.name || '') && (item.baseUrl || '') === (provider.baseUrl || '')
+      )
+      const indexedMatch = (currentChatProviders[index]?.baseUrl || '') === (provider.baseUrl || '')
+        ? currentChatProviders[index]
+        : null
+      result.chatProviders[index][field] = exactMatch?.[field] || indexedMatch?.[field] || ''
+    }
+  })
   // Provider profiles (legacy track-based)
   for (const track of TRACKS) {
     const nextProfiles = result.providerProfiles?.[track] || []
@@ -331,7 +338,7 @@ function load() {
     const parsed = sanitizeObjectShape(JSON.parse(raw))
     const merged = deepMerge(DEFAULT_CONFIG, migrateOldProviderFormat(parsed))
     return decryptApiKeys(merged)
-  } catch { return { ...DEFAULT_CONFIG } }
+  } catch { return JSON.parse(JSON.stringify(DEFAULT_CONFIG)) }
 }
 
 function save(cfg) {
@@ -353,5 +360,5 @@ module.exports = {
   SECRET_FIELDS,
   DEFAULT_CONFIG,
   PROVIDER_ID_ALIASES,
-  _test: { deepMerge, sanitizeObjectShape }
+  _test: { deepMerge, sanitizeObjectShape, migrateOldProviderFormat }
 }
