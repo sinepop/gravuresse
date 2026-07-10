@@ -22,13 +22,7 @@ import { OPENAI_COMPATIBLE_GATEWAY_PRESETS, normalizeProviderAccount, providerGa
 import { normalizeModelRecord, sortModelRecords } from '../utils/modelCapabilities.js'
 
 const NAV_SECTIONS = [
-  { id: 'api', labelKey: 'apiConfig', icon: 'link', children: [
-    { id: 'chat-providers', labelKey: 'chatProviders' },
-    { id: 'provider-accounts', labelKey: 'providerAccounts' },
-    { id: 'provider-api-keys', labelKey: 'providerApiKeys' },
-    { id: 'provider-gateways', labelKey: 'providerGateways' },
-    { id: 'model-pairing', labelKey: 'modelPairing' },
-  ]},
+  { id: 'api', labelKey: 'apiConfig', icon: 'link', children: [] },
   { id: 'general', labelKey: 'general', icon: 'gear', children: [
     { id: 'appearance', labelKey: 'appearance' },
     { id: 'lang', labelKey: 'language' },
@@ -2546,8 +2540,9 @@ function ChatProviderCard({ provider, index, lang, onUpdate, onDelete }) {
 
 /* ── Main Settings ── */
 function normalizeSettingsPage(page, videoEnabled) {
-  if (page === 'api' || page === 'chat' || page === 'image' || page === 'video') return 'model-pairing'
-  if (page === 'api-chat' || page === 'api-image' || page === 'api-video') return 'model-pairing'
+  if (page === 'chat' || page === 'image' || page === 'video') return 'api'
+  if (page === 'api-chat' || page === 'api-image' || page === 'api-video') return 'api'
+  if (page === 'model-pairing') return 'api'
   return page || 'appearance'
 }
 
@@ -2628,7 +2623,7 @@ export default function Settings({ config, providerLists, onSave, onClose, initi
           <div style={{ width: 170, borderRight: '1px solid var(--border-subtle)', padding: '12px 0', overflow: 'auto', flexShrink: 0 }}>
             {NAV_SECTIONS.map(section => (
               <div key={section.id}>
-                <button onClick={() => setExpanded(prev => ({ ...prev, [section.id]: !prev[section.id] }))} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '10px 16px', background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px', cursor: 'pointer', fontFamily: 'var(--font-body)', textAlign: 'left' }}>
+                <button onClick={() => section.children.length > 0 ? setExpanded(prev => ({ ...prev, [section.id]: !prev[section.id] })) : setPage(section.id)} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '10px 16px', background: page === section.id ? 'var(--accent-soft)' : 'none', border: 'none', borderRight: page === section.id ? '2px solid var(--accent)' : '2px solid transparent', color: page === section.id ? 'var(--accent)' : 'var(--text-muted)', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px', cursor: 'pointer', fontFamily: 'var(--font-body)', textAlign: 'left' }}>
                   <Ic n={section.icon} size={13} sw={2} />
                   {t(section.labelKey, lang)}
                   <span style={{ marginLeft: 'auto', fontSize: 10, transition: 'transform 0.15s', transform: expanded[section.id] ? 'rotate(0)' : 'rotate(-90deg)' }}>▼</span>
@@ -2647,7 +2642,7 @@ export default function Settings({ config, providerLists, onSave, onClose, initi
             {page === 'appearance' && <AppearancePage config={local} onChange={handleChange} lang={lang} />}
             {page === 'lang' && <LangPage config={local} onChange={handleChange} lang={lang} />}
             {page === 'other' && <OtherPage config={local} onChange={handleChange} lang={lang} />}
-            {page === 'chat-providers' && <ChatProvidersPage config={local} onChange={handleChange} onSetActive={({ baseUrl, model, savedChatModel }) => {
+            {page === 'api' && <ChatProvidersPage config={local} onChange={handleChange} onSetActive={({ baseUrl, model, savedChatModel }) => {
               setLocal(prev => ({
                 ...prev,
                 savedChatModel: savedChatModel || prev.savedChatModel || '',
