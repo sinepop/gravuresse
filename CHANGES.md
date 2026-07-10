@@ -2,6 +2,18 @@
 
 ## 中文
 
+#### v2.2.2 (2026-07-10)
+
+**API 配置安全加固**
+- Provider 运行时配置解析收口到主进程 `config-resolver`，减少分散解析逻辑。
+- 统一 API secret 字段处理，覆盖 `apiKey`、`sessionToken`、`token`、`accessKey`、`secretKey`。
+- 修复 `cpa-compatible` 网关预设漂移，恢复 CPA-compatible relay 配置入口。
+- 明确 legacy `api:*` IPC 仅作为兼容包装，运行时调用统一进入 Provider pipeline。
+
+**工具链与测试**
+- TypeScript 工具链升级为 TS7 side-by-side，保留 TS6 legacy 检查。
+- 增强 provider resolver、secret redaction、gateway preset 和 IPC wrapper 回归测试。
+
 #### v2.2.1 (2026-07-07)
 
 **设置页 UX 修复（5 项）**
