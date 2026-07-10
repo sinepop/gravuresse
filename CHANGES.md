@@ -2,6 +2,17 @@
 
 ## 中文
 
+#### v2.3.0 (2026-07-10)
+
+**Provider 架构重构（Hermes 风格）**
+- 聊天 Provider 池统一为 `chatProviders` 数组，支持多 Provider 管理。
+- 删 `_configProviderIndex`，Provider 匹配改用 `baseUrl`（消除数组索引耦合）。
+- Settings 页新增 Provider 管理卡片：名称、端点、API Key、模型列表、启用开关。
+- 新增「获取模型」按钮：调 `/v1/models` 自动拉取可用模型，无需手动配置模型名。
+- 新增「测试连接」按钮：真实 ping `/v1/chat/completions`，显示延迟或报错。
+- 新增「添加 Provider」按钮：一键添加自定义 OpenAI 兼容端点。
+- 模型选择器从 `chatProviders` 池动态生成，支持多 Provider 模型自由搭配。
+
 #### v2.2.2 (2026-07-10)
 
 **API 配置安全加固**
