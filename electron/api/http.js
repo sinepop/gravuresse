@@ -19,54 +19,58 @@ const BLOCKED_HOSTNAMES = new Set([
   'localhost', 'metadata.google.internal', 'metadata',
   '169.254.169.254', '169.254.170.2' // AWS/GCP metadata and Docker-dns
 ])
-
-function isPrivateIPv4(ip) {
-  const parts = ip.split('.').map(Number)
-  if (parts.length !== 4 || parts.some(p => !Number.isInteger(p) || p < 0 || p > 255)) return false
-  const [a, b] = parts
-  if (a === 10) return true                       // 10.0.0.0/8        RFC1918
-  if (a === 127) return true                      // 127.0.0.0/8       loopback
-  if (a === 0) return true                        // 0.0.0.0/8         "this network"
-  if (a === 169 && b === 254) return true          // 169.254.0.0/16    link-local + cloud metadata
-  if (a === 172 && b >= 16 && b <= 31) return true // 172.16.0.0/12     RFC1918
-  if (a === 192 && b === 168) return true          // 192.168.0.0/16    RFC1918
-  if (a === 100 && b >= 64 && b <= 127) return true // 100.64.0.0/10   CGNAT
-  return false
-}
-
-function isPrivateIPv6(ip) {
-  const lower = ip.toLowerCase()
-  if (lower === '::1' || lower === '::' || lower === '::ffff:0:0') return true // loopback/unspec
-  // stripped to check prefixes that map private/link-local/unique-local zones
-  if (lower.startsWith('fc') || lower.startsWith('fd')) return true // fc00::/7 unique-local
-  if (lower.startsWith('fe80')) return true                         // link-local
-  if (lower.startsWith('fe90') || lower.startsWith('fea0') || lower.startsWith('feb0')) return true // other link-local
-  // IPv4-mapped / IPv4-compatible addresses wrapping a private v4
-  const mapped = lower.match(/^(?:::ffff:|::)(\d+\.\d+\.\d+\.\d+)$/)
-  if (mapped && isPrivateIPv4(mapped[1])) return true
-  return false
-}
+const PRIVATE_ADDRESSES = new net.BlockList()
+for (const [network, prefix] of [
+  ['0.0.0.0', 8], ['10.0.0.0', 8], ['100.64.0.0', 10], ['127.0.0.0', 8],
+  ['169.254.0.0', 16], ['172.16.0.0', 12], ['192.168.0.0', 16]
+]) PRIVATE_ADDRESSES.addSubnet(network, prefix, 'ipv4')
+PRIVATE_ADDRESSES.addAddress('::', 'ipv6')
+PRIVATE_ADDRESSES.addAddress('::1', 'ipv6')
+PRIVATE_ADDRESSES.addSubnet('fc00::', 7, 'ipv6')
+PRIVATE_ADDRESSES.addSubnet('fe80::', 10, 'ipv6')
+PRIVATE_ADDRESSES.addSubnet('fec0::', 10, 'ipv6')
 
 function isPrivateHost(host) {
   // Strip surrounding brackets used for IPv6 literals in URLs (e.g. [::1])
   const unbracketed = host.replace(/^\[|]$/g, '')
   if (BLOCKED_HOSTNAMES.has(unbracketed.toLowerCase())) return true
   const ipVersion = net.isIP(unbracketed)
-  if (ipVersion === 4) return isPrivateIPv4(unbracketed)
-  if (ipVersion === 6) return isPrivateIPv6(unbracketed)
+  if (ipVersion === 4) return PRIVATE_ADDRESSES.check(unbracketed, 'ipv4')
+  if (ipVersion === 6) return PRIVATE_ADDRESSES.check(unbracketed, 'ipv6')
   return false
 }
 
-async function assertNoDnsRebind(hostname) {
-  if (net.isIP(hostname.replace(/^\[|]$/g, '')) !== 0) return
-  let addrs
-  try { addrs = await dns.lookup(hostname, { all: true }) }
-  catch { return } // resolution failure is surfaced by the request itself; not a security signal
+function createPinnedLookup(addresses) {
+  const resolved = addresses.map(({ address, family }) => ({ address, family: Number(family) }))
+  return (_hostname, options, callback) => {
+    if (typeof options === 'function') {
+      callback = options
+      options = {}
+    }
+    const opts = typeof options === 'number' ? { family: options } : (options || {})
+    const candidates = opts.family ? resolved.filter(item => item.family === Number(opts.family)) : resolved
+    if (!candidates.length) {
+      callback(new Error(`No resolved address for requested family ${opts.family}`))
+      return
+    }
+    if (opts.all) callback(null, candidates)
+    else callback(null, candidates[0].address, candidates[0].family)
+  }
+}
+
+async function resolveSafeHttpsTarget(urlStr) {
+  const parsed = assertHttpsUrl(urlStr)
+  const hostname = parsed.hostname.replace(/^\[|]$/g, '')
+  if (net.isIP(hostname) !== 0) return { url: parsed, lookup: undefined }
+
+  const addrs = await dns.lookup(hostname, { all: true, verbatim: true })
+  if (!Array.isArray(addrs) || addrs.length === 0) throw new Error('Host did not resolve to an address')
   for (const { address } of addrs) {
     if (isPrivateHost(address)) {
       throw new Error(`Blocked private/internal resolved address: ${address}`)
     }
   }
+  return { url: parsed, lookup: createPinnedLookup(addrs) }
 }
 
 function parseUrl(urlStr) {
@@ -91,12 +95,6 @@ function assertHttpsUrl(urlStr) {
   if (isPrivateHost(parsed.hostname)) {
     throw new Error(`Blocked private/internal host: ${parsed.hostname}`)
   }
-  return parsed
-}
-
-async function assertSafeHttpsUrl(urlStr) {
-  const parsed = assertHttpsUrl(urlStr)
-  await assertNoDnsRebind(parsed.hostname)
   return parsed
 }
 
@@ -153,7 +151,8 @@ function assertSameOriginRedirect(currentUrl, nextUrl) {
 
 async function downloadToFile(url, filePath, options = {}, depth = 0) {
   if (depth > MAX_REDIRECTS) throw new Error('Too many redirects')
-  const parsed = await assertSafeHttpsUrl(url)
+  const target = await resolveSafeHttpsTarget(url)
+  const parsed = target.url
   const timeout = options.timeout || DEFAULT_DOWNLOAD_TIMEOUT
   const maxBytes = options.maxBytes || DEFAULT_MAX_DOWNLOAD_BYTES
   const tmpFile = `${filePath}.tmp-${Date.now()}-${Math.random().toString(36).slice(2)}`
@@ -176,7 +175,7 @@ async function downloadToFile(url, filePath, options = {}, depth = 0) {
       reject(err)
     }
 
-    const req = https.get(parsed, { timeout }, (res) => {
+    const req = https.get(parsed, { timeout, lookup: target.lookup }, (res) => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
         res.resume()
         let nextUrl
@@ -238,10 +237,16 @@ async function httpRequest(url, options = {}, body = null, depth = 0) {
   if (depth > MAX_REDIRECTS) throw new Error('Too many redirects')
   const timeout = options.timeout || DEFAULT_TIMEOUT
   const maxResponseBytes = options.maxResponseBytes || DEFAULT_MAX_RESPONSE_BYTES
-  const { maxResponseBytes: _unusedMaxResponseBytes, ...requestOptions } = options
-  const parsedUrl = await assertSafeHttpsUrl(url)
+  const target = await resolveSafeHttpsTarget(url)
+  const parsedUrl = target.url
+  const requestOptions = {
+    method: options.method,
+    headers: options.headers,
+    timeout,
+    lookup: target.lookup
+  }
   return new Promise((resolve, reject) => {
-    const req = https.request(parsedUrl, { ...requestOptions, timeout }, (res) => {
+    const req = https.request(parsedUrl, requestOptions, (res) => {
       const collectResponse = () => {
         let data = ''
         let bytes = 0
@@ -266,13 +271,8 @@ async function httpRequest(url, options = {}, body = null, depth = 0) {
           reject(nextUrl ? new Error('Redirects to a different origin are not allowed') : new Error('Invalid URL'))
           return
         }
-        assertSafeHttpsUrl(nextUrl).then((safeNextUrl) => {
-          res.resume()
-          httpRequest(safeNextUrl, options, body, depth + 1).then(resolve, reject)
-        }, (err) => {
-          res.resume()
-          reject(err)
-        })
+        res.resume()
+        httpRequest(nextUrl, options, body, depth + 1).then(resolve, reject)
         return
       }
 
@@ -311,4 +311,4 @@ async function request(url, options = {}, body = null, { retries = 0, retryDelay
   throw lastErr
 }
 
-module.exports = { httpRequest, request, assertHttpsUrl, assertApiBaseUrl, joinApiUrl, joinCompatibleApiUrl, downloadToFile, _test: { cleanRelativeApiPath, dedupeApiPath } }
+module.exports = { httpRequest, request, assertHttpsUrl, assertApiBaseUrl, joinApiUrl, joinCompatibleApiUrl, downloadToFile, _test: { cleanRelativeApiPath, createPinnedLookup, dedupeApiPath } }

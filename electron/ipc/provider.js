@@ -31,6 +31,27 @@ function assertRequestObject(value, label) {
   return value
 }
 
+function resolveCustomChatRequestConfig(params = {}, stored = {}, realSecretFn = value => value) {
+  if (!isPlainObject(params)) return { ok: false, message: 'Request must be an object' }
+  const baseUrl = String(params.baseUrl || '').trim()
+  if (!baseUrl) return { ok: false, message: 'baseUrl is required' }
+
+  const freshApiKey = realSecretFn(params.apiKey)
+  if (freshApiKey) return { ok: true, baseUrl, apiKey: freshApiKey, model: params.model || '' }
+
+  const candidates = Array.isArray(stored.chatProviders) ? stored.chatProviders : []
+  const index = Number.isInteger(params.providerIndex) ? params.providerIndex : -1
+  const indexed = index >= 0 && candidates[index]?.baseUrl === baseUrl ? candidates[index] : null
+  const matched = indexed || candidates.find(candidate =>
+    candidate?.baseUrl === baseUrl && (!params.name || candidate.name === params.name)
+  )
+  const active = stored.providers?.chat
+  const activeMatch = active?.id === 'custom-chat' && active.baseUrl === baseUrl ? active : null
+  const apiKey = matched?.apiKey || activeMatch?.apiKey || ''
+  if (!apiKey) return { ok: false, message: 'apiKey is required' }
+  return { ok: true, baseUrl, apiKey, model: params.model || matched?.defaultModel || activeMatch?.model || '' }
+}
+
 function registerProviderIpc({
   ipcMain,
   config,
@@ -104,6 +125,7 @@ function registerProviderIpc({
   })
 
   ipcMain.handle('provider:test', async (_, params = {}) => {
+    let errorSecrets = []
     try {
       const stored = config.load()
       const track = params.track || inferProviderTrack({ id: params.providerId || params.id, protocol: params.protocol })
@@ -136,6 +158,7 @@ function registerProviderIpc({
         apiKey: params.apiKey || params.credentials?.apiKey,
         sessionToken: params.sessionToken || params.credentials?.sessionToken
       })
+      errorSecrets = Object.values(credentials)
       const { resolveAuth } = require('../providers/auth')
       const { request, joinApiUrl } = require('../api/http')
       const auth = resolveAuth(providerDef, credentials, {
@@ -150,51 +173,57 @@ function registerProviderIpc({
       }, providerDef.healthCheck.body)
       return { ok: true, message: 'Connection successful' }
     } catch (err) {
-      return { ok: false, message: require('../providers/pipeline').redactSecrets(err?.message || 'Test failed') }
+      return { ok: false, message: require('../providers/pipeline').redactSecrets(err?.message || 'Test failed', errorSecrets) }
     }
   })
 
   ipcMain.handle('provider:fetchModels', async (_, params = {}) => {
+    let requestSecret = ''
     try {
-      const { baseUrl, apiKey } = params || {}
-      if (!baseUrl) return { ok: false, message: 'baseUrl is required' }
-      if (!apiKey) return { ok: false, message: 'apiKey is required' }
+      const stored = config.load()
+      const resolved = resolveCustomChatRequestConfig(params, stored, realSecret)
+      if (!resolved.ok) return resolved
+      requestSecret = resolved.apiKey
 
-      const { request, joinApiUrl } = require('../api/http')
-      const url = joinApiUrl(baseUrl, '/v1/models')
+      const { request, joinCompatibleApiUrl } = require('../api/http')
+      const url = joinCompatibleApiUrl(resolved.baseUrl, '/v1/models')
       const res = await request(url, {
         method: 'GET',
         headers: {
-          'Authorization': 'Bearer ' + String(apiKey),
+          'Authorization': 'Bearer ' + String(resolved.apiKey),
           'Content-Type': 'application/json'
-        }
+        },
+        ...requestOptionsFromConfig(stored)
       })
 
       const data = JSON.parse(res.data || '{}')
       const models = (data.data || []).map(m => m.id || m.name || String(m)).filter(Boolean).sort()
       return { ok: true, models }
     } catch (err) {
-      return { ok: false, message: err?.message || 'Failed to fetch models' }
+      return { ok: false, message: require('../providers/pipeline').redactSecrets(err?.message || 'Failed to fetch models', [requestSecret]) }
     }
   })
 
   ipcMain.handle('provider:testConnection', async (_, params = {}) => {
+    let requestSecret = ''
     try {
-      const { baseUrl, apiKey, model } = params || {}
-      if (!baseUrl) return { ok: false, message: 'baseUrl is required' }
-      if (!apiKey) return { ok: false, message: 'apiKey is required' }
+      const stored = config.load()
+      const resolved = resolveCustomChatRequestConfig(params, stored, realSecret)
+      if (!resolved.ok) return resolved
+      requestSecret = resolved.apiKey
 
       const start = Date.now()
-      const { request, joinApiUrl } = require('../api/http')
-      const url = joinApiUrl(baseUrl, '/v1/chat/completions')
+      const { request, joinCompatibleApiUrl } = require('../api/http')
+      const url = joinCompatibleApiUrl(resolved.baseUrl, '/v1/chat/completions')
       await request(url, {
         method: 'POST',
         headers: {
-          'Authorization': 'Bearer ' + String(apiKey),
+          'Authorization': 'Bearer ' + String(resolved.apiKey),
           'Content-Type': 'application/json'
-        }
+        },
+        ...requestOptionsFromConfig(stored)
       }, {
-        model: model || 'gpt-3.5-turbo',
+        model: resolved.model || 'gpt-3.5-turbo',
         messages: [{ role: 'user', content: 'ping' }],
         max_tokens: 1
       })
@@ -202,7 +231,7 @@ function registerProviderIpc({
       const latencyMs = Date.now() - start
       return { ok: true, latencyMs }
     } catch (err) {
-      return { ok: false, message: err?.message || 'Connection test failed' }
+      return { ok: false, message: require('../providers/pipeline').redactSecrets(err?.message || 'Connection test failed', [requestSecret]) }
     }
   })
 
@@ -293,4 +322,4 @@ function registerProviderIpc({
   })
 }
 
-module.exports = { registerProviderIpc }
+module.exports = { registerProviderIpc, _test: { resolveCustomChatRequestConfig } }

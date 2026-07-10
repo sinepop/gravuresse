@@ -2276,16 +2276,18 @@ function ProviderAccountsPage({ config, providers, onChange, onOpenApiKeys, lang
 }
 
 /* ── ChatProvidersPage ── */
-function ChatProvidersPage({ config, onChange, lang }) {
-  const providers = Array.isArray(config?.providers) ? config.providers : []
+function ChatProvidersPage({ config, onChange, onSetActive, lang }) {
+  const providers = Array.isArray(config?.chatProviders) ? config.chatProviders : []
+  const activeChat = config?.providers?.chat || {}
+  const activeSavedModel = config?.savedChatModel || ''
 
   const updateProvider = (index, patch) => {
     const next = providers.map((p, i) => i === index ? { ...p, ...patch } : p)
-    onChange('providers', next)
+    onChange('chatProviders', next)
   }
 
   const addProvider = () => {
-    onChange('providers', [...providers, {
+    onChange('chatProviders', [...providers, {
       name: '',
       baseUrl: '',
       apiKey: '',
@@ -2297,7 +2299,16 @@ function ChatProvidersPage({ config, onChange, lang }) {
 
   const deleteProvider = (index) => {
     if (!window.confirm(t('deleteProviderConfirm', lang))) return
-    onChange('providers', providers.filter((_, i) => i !== index))
+    onChange('chatProviders', providers.filter((_, i) => i !== index))
+  }
+
+  const setActive = (provider) => {
+    if (!provider.baseUrl) return
+    onSetActive?.({
+      baseUrl: provider.baseUrl,
+      model: provider.defaultModel || '',
+      savedChatModel: provider.defaultModel || '',
+    })
   }
 
   return (
@@ -2310,8 +2321,10 @@ function ChatProvidersPage({ config, onChange, lang }) {
           provider={p}
           index={idx}
           lang={lang}
+          isActive={Boolean(p.baseUrl && activeChat.baseUrl === p.baseUrl && (activeSavedModel || '') === (p.defaultModel || ''))}
           onUpdate={updateProvider}
           onDelete={deleteProvider}
+          onSetActive={() => setActive(p)}
         />
       ))}
       <button onClick={addProvider} style={{ ...btnS(false), padding: '8px 16px', fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 6, alignSelf: 'flex-start' }}>
@@ -2335,7 +2348,14 @@ function ChatProviderCard({ provider, index, lang, onUpdate, onDelete }) {
     setFetching(true)
     setFetchResult(null)
     try {
-      const result = await window.electronAPI?.providerAPI?.fetchModels?.({ baseUrl: provider.baseUrl, apiKey: provider.apiKey })
+      const result = await window.electronAPI?.providerAPI?.fetchModels?.({
+        baseUrl: provider.baseUrl,
+        apiKey: provider.apiKey,
+        model: provider.defaultModel,
+        name: provider.name,
+        providerIndex: index
+      })
+      if (!result || result.ok === false) throw new Error(result?.message || 'Failed')
       const list = Array.isArray(result) ? result : result?.models || []
       patch({ models: list.map(m => typeof m === 'string' ? m : m.id || m.model || String(m)) })
       setFetchResult({ ok: true, count: list.length })
@@ -2352,7 +2372,13 @@ function ChatProviderCard({ provider, index, lang, onUpdate, onDelete }) {
     setTestResult(null)
     const start = Date.now()
     try {
-      const result = await window.electronAPI?.providerAPI?.testConnection?.({ baseUrl: provider.baseUrl, apiKey: provider.apiKey })
+      const result = await window.electronAPI?.providerAPI?.testConnection?.({
+        baseUrl: provider.baseUrl,
+        apiKey: provider.apiKey,
+        model: provider.defaultModel || provider.models?.[0],
+        name: provider.name,
+        providerIndex: index
+      })
       const latency = Date.now() - start
       setTestResult({ ok: result?.ok !== false, latency, msg: result?.message })
     } catch (e) {
@@ -2561,7 +2587,7 @@ export default function Settings({ config, providerLists, onSave, onClose, initi
     else if (track === 'providerAccounts') setLocal(prev => ({ ...prev, providerAccounts: patch }))
     else if (track === 'providerProfiles') setLocal(prev => ({ ...prev, providerProfiles: { ...prev.providerProfiles, ...patch } }))
     else if (track === '_deletedProfileKeys') setLocal(prev => ({ ...prev, _deletedProfileKeys: patch }))
-    else if (track === 'providers') setLocal(prev => ({ ...prev, providers: patch }))
+    else if (track === 'chatProviders') setLocal(prev => ({ ...prev, chatProviders: patch }))
     else setLocal(prev => ({ ...prev, providers: { ...prev.providers, [track]: { ...prev.providers[track], ...patch } } }))
   }
 
@@ -2621,7 +2647,16 @@ export default function Settings({ config, providerLists, onSave, onClose, initi
             {page === 'appearance' && <AppearancePage config={local} onChange={handleChange} lang={lang} />}
             {page === 'lang' && <LangPage config={local} onChange={handleChange} lang={lang} />}
             {page === 'other' && <OtherPage config={local} onChange={handleChange} lang={lang} />}
-            {page === 'chat-providers' && <ChatProvidersPage config={local} onChange={handleChange} lang={lang} />}
+            {page === 'chat-providers' && <ChatProvidersPage config={local} onChange={handleChange} onSetActive={({ baseUrl, model, savedChatModel }) => {
+              setLocal(prev => ({
+                ...prev,
+                savedChatModel: savedChatModel || prev.savedChatModel || '',
+                providers: {
+                  ...prev.providers,
+                  chat: { ...(prev.providers?.chat || {}), id: 'custom-chat', baseUrl, model: model || prev.providers?.chat?.model || '' }
+                }
+              }))
+            }} lang={lang} />}
             {page === 'provider-accounts' && <ProviderAccountsPage config={local} providers={providers} onChange={handleChange} onOpenApiKeys={() => setPage('provider-api-keys')} lang={lang} />}
             {page === 'provider-api-keys' && <ProviderApiKeysPage config={local} providers={providers} onChange={handleChange} lang={lang} />}
             {page === 'provider-gateways' && <ProviderGatewaysPage config={local} providers={providers} onChange={handleChange} lang={lang} />}

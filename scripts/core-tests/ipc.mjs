@@ -70,9 +70,36 @@ export async function runIpcCoreTests() {
     requestOptionsFromConfig: () => ({}),
     getModelFetchProvider: providerConfig => providerConfig || {}
   })
-  for (const channel of ['provider:call', 'provider:list', 'provider:test', 'api:models', 'api:chat', 'api:image', 'api:video', 'api:video:poll']) {
+  for (const channel of ['provider:call', 'provider:list', 'provider:test', 'provider:fetchModels', 'provider:testConnection', 'api:models', 'api:chat', 'api:image', 'api:video', 'api:video:poll']) {
     assert.equal(typeof providerIpc.handlers.get(channel), 'function', `${channel} should be registered`)
   }
+
+  const storedCustomChat = {
+    providers: { chat: { id: 'custom-chat', baseUrl: 'https://relay.example.com/v1', apiKey: 'active-secret', model: 'active-model' } },
+    chatProviders: [
+      { name: 'Relay', baseUrl: 'https://relay.example.com/v1', apiKey: 'stored-secret', defaultModel: 'stored-model' }
+    ]
+  }
+  const nonRedactedSecret = value => value && value !== '********' ? value : ''
+  const savedCustomRequest = provider._test.resolveCustomChatRequestConfig({
+    baseUrl: 'https://relay.example.com/v1', apiKey: '********', name: 'Relay', providerIndex: 0
+  }, storedCustomChat, nonRedactedSecret)
+  assert.deepEqual(savedCustomRequest, {
+    ok: true,
+    baseUrl: 'https://relay.example.com/v1',
+    apiKey: 'stored-secret',
+    model: 'stored-model'
+  })
+  const redirectedCustomRequest = provider._test.resolveCustomChatRequestConfig({
+    baseUrl: 'https://attacker.example.com/v1', apiKey: '********', name: 'Relay', providerIndex: 0
+  }, storedCustomChat, nonRedactedSecret)
+  assert.equal(redirectedCustomRequest.ok, false)
+  assert.match(redirectedCustomRequest.message, /apiKey/)
+  const freshCustomRequest = provider._test.resolveCustomChatRequestConfig({
+    baseUrl: 'https://new-relay.example.com/v1', apiKey: 'fresh-secret', model: 'fresh-model'
+  }, storedCustomChat, nonRedactedSecret)
+  assert.equal(freshCustomRequest.ok, true)
+  assert.equal(freshCustomRequest.apiKey, 'fresh-secret')
 
   // ── provider:call rejects unsupported action ─────────────────────────────
   const invalidProviderCall = await providerIpc.handlers.get('provider:call')(null, { action: 'delete_everything' })

@@ -81,6 +81,16 @@ export async function runHttpCoreTests() {
     () => assertHttpsUrl('https://user:pass@example.com/a.png'),
     /credentials/
   )
+  for (const privateUrl of [
+    'https://127.0.0.1/private',
+    'https://[::1]/private',
+    'https://[::ffff:127.0.0.1]/private',
+    'https://[::ffff:7f00:1]/private',
+    'https://[fc00::1]/private',
+    'https://[fe80::1]/private'
+  ]) {
+    assert.throws(() => assertHttpsUrl(privateUrl), /private\/internal/, privateUrl)
+  }
 
   let mock = installMockHttps({
     '/start': { status: 302, headers: { location: '/final' } },
@@ -141,6 +151,34 @@ export async function runHttpCoreTests() {
     )
     assert.deepEqual(mock.calls.map(call => call.url), ['https://93.184.216.34/private-host'])
   } finally {
+    mock.restore()
+  }
+
+  mock = installMockHttps({
+    '/pinned': { status: 200, body: '{"pinned":true}' }
+  })
+  const pinnedDns = installMockDns()
+  try {
+    const res = await httpRequest('https://relay.example.com/pinned', {
+      method: 'GET',
+      hostname: '127.0.0.1',
+      path: '/metadata',
+      lookup: () => { throw new Error('renderer lookup must not run') }
+    })
+    assert.equal(res.status, 200)
+    assert.deepEqual(pinnedDns.calls, ['relay.example.com'])
+    assert.equal(mock.calls[0].options.hostname, undefined)
+    assert.equal(mock.calls[0].options.path, undefined)
+    assert.equal(typeof mock.calls[0].options.lookup, 'function')
+    const pinnedAddress = await new Promise((resolve, reject) => {
+      mock.calls[0].options.lookup('relay.example.com', {}, (error, address, family) => {
+        if (error) reject(error)
+        else resolve({ address, family })
+      })
+    })
+    assert.deepEqual(pinnedAddress, { address: '93.184.216.35', family: 4 })
+  } finally {
+    pinnedDns.restore()
     mock.restore()
   }
 }

@@ -208,28 +208,6 @@ export function providerTemplatePresets(track, provider = {}) {
  * (useChat.js, ModelSelector, Settings) don't need to branch on format.
  */
 export function resolveChatProvider(config) {
-  // New array format
-  if (Array.isArray(config?.providers)) {
-    const arr = config.providers.filter(p => p.enabled !== false)
-    const first = arr[0]
-    if (!first) return {}
-    return {
-      id: 'custom-chat',
-      name: first.name,
-      platform: 'Custom',
-      baseUrl: first.baseUrl || '',
-      apiKey: first.apiKey || '',
-      model: config?.savedChatModel || first.defaultModel || '',
-      defaultModel: first.defaultModel || '',
-      models: first.models || [],
-      format: 'openai',
-      authType: { type: 'bearer' },
-      capabilities: { chat: { text: true, openaiCompatible: true, relay: true } },
-      _configProviderIndex: 0,
-      _configProvider: first
-    }
-  }
-  // Legacy object format: { chat: {...}, image: {...}, video: {...} }
   if (config?.providers && typeof config.providers === 'object' && !Array.isArray(config.providers)) {
     return config.providers.chat || {}
   }
@@ -242,7 +220,7 @@ export function resolveChatProvider(config) {
  * dropdown can display all models grouped by provider name.
  */
 export function buildConfigProviderProfiles(config) {
-  const providers = Array.isArray(config?.providers) ? config.providers : []
+  const providers = Array.isArray(config?.chatProviders) ? config.chatProviders : []
   const profiles = []
   for (let i = 0; i < providers.length; i++) {
     const p = providers[i]
@@ -319,7 +297,7 @@ export function applyChatProviderPatch(config, patch) {
  */
 export function getProvidersFromConfig(config) {
   const list = []
-  const arr = Array.isArray(config?.providers) ? config.providers : []
+  const arr = Array.isArray(config?.chatProviders) ? config.chatProviders : []
   for (const p of arr) {
     if (p.enabled === false) continue
     list.push({

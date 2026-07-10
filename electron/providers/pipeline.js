@@ -24,9 +24,14 @@ const KEY_PATTERNS = [
   /Bearer\s+[A-Za-z0-9_.\-]{20,}/gi,       // Authorization header echoes
   /(?:api[_-]?key|secret|token)["'\s:=]+[A-Za-z0-9_\-]{16,}/gi // "api_key":"..." etc.
 ]
-function redactSecrets(text) {
+function redactSecrets(text, secrets = []) {
   if (typeof text !== 'string' || !text) return text
   let out = text
+  const exactSecrets = Array.from(new Set(
+    (Array.isArray(secrets) ? secrets : [secrets])
+      .filter(secret => typeof secret === 'string' && secret && secret !== '********')
+  )).sort((a, b) => b.length - a.length)
+  for (const secret of exactSecrets) out = out.split(secret).join('[redacted]')
   for (const re of KEY_PATTERNS) out = out.replace(re, (m) => `${m.slice(0, Math.min(8, m.length))}…[redacted]`)
   return out
 }
@@ -117,7 +122,7 @@ async function execute(params) {
     const data = await handler(handlerParams)
     return { ok: true, data }
   } catch (err) {
-    return { ok: false, error: { code: 'PROVIDER_ERROR', message: redactSecrets(err?.message || 'Provider error') } }
+    return { ok: false, error: { code: 'PROVIDER_ERROR', message: redactSecrets(err?.message || 'Provider error', Object.values(credentials || {})) } }
   }
 }
 

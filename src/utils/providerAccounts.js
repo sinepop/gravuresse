@@ -113,7 +113,10 @@ function providerDefForAnyTrack(providerMap = {}, providerId) {
 }
 
 function credentialPresent(source = {}) {
-  return Boolean(source.apiKey || source.sessionToken)
+  return Boolean(
+    (source.apiKey && source.apiKey !== SECRET_REDACTED) ||
+    (source.sessionToken && source.sessionToken !== SECRET_REDACTED)
+  )
 }
 
 function accountFromProvider(track, source = {}, providerMap = {}, kind = 'api-key') {

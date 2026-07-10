@@ -138,21 +138,23 @@ function ModelPicker({ track, current, profiles, providerLists, onSelect, lang }
 export default function ModelSelector({ config, providerLists, activeModule = 'image', onProviderChange, lang }) {
   const mediaTrack = activeModule === 'video' ? 'video' : 'image'
   const items = ['chat', mediaTrack].map(track => {
-    let profiles
-    let current = config?.providers?.[track]
-    if (track === 'chat' && Array.isArray(config?.providers)) {
-      // New array format: collect all models from enabled config.providers
-      profiles = buildConfigProviderProfiles(config)
-      // Build a synthetic current that matches the saved model so sameProfile can highlight it
-      const savedModel = config?.savedChatModel || ''
-      const matched = profiles.find(p => p.model === savedModel) || profiles[0]
-      if (matched) {
-        current = { id: matched.id, baseUrl: matched.baseUrl, model: matched.model, _configProviderIndex: matched._configProviderIndex }
-      }
-    } else {
-      profiles = (config?.providerProfiles?.[track] || []).filter(profile => {
+    const current = config?.providers?.[track]
+    const savedProfiles = (config?.providerProfiles?.[track] || []).filter(profile => {
+      const providerDef = findProviderDef(track, providerLists, profile)
+      return isExecutableProvider(providerDef) && hasCredential(profile, providerDef) && profile.model
+    })
+    let profiles = savedProfiles
+    if (track === 'chat') {
+      const customProfiles = buildConfigProviderProfiles(config).filter(profile => {
         const providerDef = findProviderDef(track, providerLists, profile)
         return isExecutableProvider(providerDef) && hasCredential(profile, providerDef) && profile.model
+      })
+      const seen = new Set()
+      profiles = [...customProfiles, ...savedProfiles].filter(profile => {
+        const key = `${profile.providerId || profile.id}|${profile.baseUrl || ''}|${profile.model || ''}`
+        if (seen.has(key)) return false
+        seen.add(key)
+        return true
       })
     }
     return profiles.length ? { track, current, profiles } : null
