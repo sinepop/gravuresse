@@ -202,6 +202,106 @@ export function providerTemplatePresets(track, provider = {}) {
   return []
 }
 
+/**
+ * Build a single "current chat provider" object from the new providers array format.
+ * Returns something compatible with the old config.providers.chat shape so callers
+ * (useChat.js, ModelSelector, Settings) don't need to branch on format.
+ */
+export function resolveChatProvider(config) {
+  // New array format
+  if (Array.isArray(config?.providers)) {
+    const arr = config.providers.filter(p => p.enabled !== false)
+    const first = arr[0]
+    if (!first) return {}
+    return {
+      id: 'custom-chat',
+      name: first.name,
+      platform: 'Custom',
+      baseUrl: first.baseUrl || '',
+      apiKey: first.apiKey || '',
+      model: config?.savedChatModel || first.defaultModel || '',
+      defaultModel: first.defaultModel || '',
+      models: first.models || [],
+      format: 'openai',
+      authType: { type: 'bearer' },
+      capabilities: { chat: { text: true, openaiCompatible: true, relay: true } },
+      _configProviderIndex: 0,
+      _configProvider: first
+    }
+  }
+  // Legacy object format: { chat: {...}, image: {...}, video: {...} }
+  if (config?.providers && typeof config.providers === 'object' && !Array.isArray(config.providers)) {
+    return config.providers.chat || {}
+  }
+  return {}
+}
+
+/**
+ * Apply a patch to the chat provider config and return the updated config.
+ * For the new array format, "model" patches update savedChatModel; other
+ * patches (baseUrl, apiKey, etc.) are applied to the first enabled provider entry.
+ * Strips adapter-only fields (_configProvider, _configProviderIndex) from the patch
+ * before writing to the array.
+ */
+export function applyChatProviderPatch(config, patch) {
+  if (!patch || typeof patch !== 'object') return config
+  const next = { ...config }
+
+  if ('model' in patch) {
+    next.savedChatModel = patch.model || ''
+  }
+
+  // Fields that are adapter-only and must not be written to the providers array
+  const ADAPTER_KEYS = new Set(['id', 'platform', 'name', 'defaultModel', 'models', 'format', 'authType', 'capabilities', '_configProvider', '_configProviderIndex'])
+  const arrayPatch = {}
+  for (const [k, v] of Object.entries(patch)) {
+    if (!ADAPTER_KEYS.has(k)) arrayPatch[k] = v
+  }
+
+  if (Array.isArray(next.providers)) {
+    if (Object.keys(arrayPatch).length > 0) {
+      const arr = [...next.providers]
+      const idx = arr.findIndex(p => p.enabled !== false)
+      if (idx >= 0) {
+        arr[idx] = { ...arr[idx], ...arrayPatch }
+        next.providers = arr
+      }
+    }
+  } else if (next.providers && typeof next.providers === 'object' && next.providers.chat) {
+    // Legacy object format
+    const { _configProvider, _configProviderIndex, ...cleanPatch } = patch
+    next.providers = { ...next.providers, chat: { ...next.providers.chat, ...cleanPatch } }
+  }
+
+  return next
+}
+
+/**
+ * Get a list of provider defs from the new config.providers array.
+ * Each entry is shaped like a registry provider for compatibility with the
+ * existing provider selection UI, with the raw entry attached as _configProvider.
+ */
+export function getProvidersFromConfig(config) {
+  const list = []
+  const arr = Array.isArray(config?.providers) ? config.providers : []
+  for (const p of arr) {
+    if (p.enabled === false) continue
+    list.push({
+      id: 'custom-chat',
+      name: p.name,
+      platform: 'Custom',
+      defaultUrl: p.baseUrl,
+      defaultModel: p.defaultModel,
+      format: 'openai',
+      authType: { type: 'bearer' },
+      capabilities: { chat: { text: true, openaiCompatible: true, relay: true } },
+      modelCatalog: Array.isArray(p.models) ? p.models : [],
+      _configProvider: p
+    })
+  }
+  return list
+}
+
 export function defaultProviderTemplatePreset(track, provider = {}) {
   if (provider.id === 'custom-video') {
     return providerTemplatePresets(track, provider).find(preset => preset.id === 'generic-video-task')

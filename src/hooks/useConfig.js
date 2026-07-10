@@ -3,11 +3,84 @@ import { CHAT_PROVIDERS } from '../providers/chatProviders.js'
 import { IMG_PROVIDERS } from '../providers/imageProviders.js'
 import { VID_PROVIDERS } from '../providers/videoProviders.js'
 import { PROVIDER_ID_ALIASES } from '../providers/aliases.js'
-import { firstProviderModel, normalizeProviderTemplate } from '../utils/providerConfig.js'
+import { firstProviderModel, normalizeProviderTemplate, resolveChatProvider, applyChatProviderPatch, getProvidersFromConfig } from '../utils/providerConfig.js'
 import { migrateProviderAccounts, providerPatchFromAccount, findProviderAccount } from '../utils/providerAccounts.js'
 
 const PROVIDER_MAP = { chat: CHAT_PROVIDERS, image: IMG_PROVIDERS, video: VID_PROVIDERS }
 const TRACKS = ['chat', 'image', 'video']
+
+/**
+ * Build a legacy-compatible providers.chat object from the new array format.
+ * Returns null if the config doesn't use the array format (i.e. already legacy).
+ */
+function buildChatCompat(config) {
+  if (!Array.isArray(config?.providers)) return null
+  const arr = config.providers
+  const first = arr.find(p => p.enabled !== false) || arr[0]
+  if (!first) return {}
+  return {
+    id: 'custom-chat',
+    name: first.name,
+    platform: 'Custom',
+    baseUrl: first.baseUrl || '',
+    apiKey: first.apiKey || '',
+    model: config?.savedChatModel || first.defaultModel || '',
+    defaultModel: first.defaultModel || '',
+    authType: { type: 'bearer' },
+    capabilities: { chat: { text: true, openaiCompatible: true, relay: true } },
+    customSystemPrompt: first.customSystemPrompt || '',
+    _configProviderIndex: arr.indexOf(first),
+    _configProvider: first
+  }
+}
+
+/**
+ * Wrap a config object (that uses the new providers array) so that
+ * `config.providers.chat` returns a legacy-compatible object.
+ * Image and video tracks are left untouched.
+ */
+function wrapWithChatCompat(config) {
+  if (!Array.isArray(config?.providers)) return config
+  const chatCompat = buildChatCompat(config)
+  return {
+    ...config,
+    _rawProviders: config.providers,
+    providers: {
+      _isArray: true,
+      _raw: config.providers,
+      chat: chatCompat,
+      image: config.providers.image,
+      video: config.providers.video
+    }
+  }
+}
+
+/**
+ * Strip the compat wrapper from providers before saving.
+ * Restores the array format + savedChatModel from the compat chat object.
+ */
+function unwrapChatCompat(config) {
+  if (!config?.providers?._isArray) return config
+  const raw = config._rawProviders || config.providers._raw
+  if (!Array.isArray(raw)) return config
+  const { _isArray, _raw, chat, image, video, ...rest } = config.providers
+  const patch = {}
+  if (chat) {
+    if (chat.model) patch.savedChatModel = chat.model
+    if (chat.baseUrl || chat.apiKey || chat.customSystemPrompt) {
+      const arr = [...raw]
+      const idx = typeof chat._configProviderIndex === 'number' ? chat._configProviderIndex : arr.findIndex(p => p.enabled !== false)
+      if (idx >= 0 && idx < arr.length) {
+        arr[idx] = { ...arr[idx] }
+        if (chat.baseUrl) arr[idx].baseUrl = chat.baseUrl
+        if (chat.apiKey && chat.apiKey !== '********') arr[idx].apiKey = chat.apiKey
+        if (chat.customSystemPrompt !== undefined) arr[idx].customSystemPrompt = chat.customSystemPrompt
+      }
+      patch.providers = arr
+    }
+  }
+  return { ...config, ...patch, providers: patch.providers || raw }
+}
 
 function providerProfileList(cfg, track) {
   const profiles = cfg?.providerProfiles?.[track]
@@ -391,6 +464,12 @@ export default function useConfig() {
   const updateProvider = useCallback((track, patch) => {
     const current = configRef.current
     if (!current) return
+    // Chat track: new array format uses savedChatModel + providers array
+    if (track === 'chat' && Array.isArray(current.providers)) {
+      const next = applyChatProviderPatch(current, patch)
+      save(next)
+      return
+    }
     const next = {
       ...current,
       providers: { ...current.providers, [track]: { ...current.providers[track], ...patch } }
