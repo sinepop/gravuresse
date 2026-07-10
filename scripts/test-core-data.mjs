@@ -29,7 +29,7 @@ import {
 } from '../src/utils/conversationStore.js'
 import { normalizeProviderList } from '../src/hooks/useConfig.js'
 import { createProviderClearPatch, createProviderProfilePatch, createProviderSelectionPatch, defaultProviderTemplatePreset, normalizeProviderTemplate, providerNeedsTemplatePaths, providerTemplatePathStatus, providerTemplatePresets } from '../src/utils/providerConfig.js'
-import { migrateProviderAccounts, providerPatchFromAccount, findProviderAccount, normalizeProviderAccount, providerGatewayPresetPatch } from '../src/utils/providerAccounts.js'
+import { migrateProviderAccounts, providerPatchFromAccount, findProviderAccount, normalizeProviderAccount, providerGatewayPresetPatch, OPENAI_COMPATIBLE_GATEWAY_PRESETS } from '../src/utils/providerAccounts.js'
 import modelCapabilities from '../shared/modelCapabilities.cjs'
 
 const require = createRequire(import.meta.url)
@@ -64,6 +64,7 @@ const { resolveAuth } = require('../electron/providers/auth.js')
 const providerRegistry = require('../electron/providers/registry.js')
 const registryUtils = require('../electron/providers/registry-utils.js')
 const providerAccountResolver = require('../electron/providers/account-resolver.js')
+const configResolver = require('../electron/providers/config-resolver.js')
 const { validateGenerationRequest } = require('../electron/providers/validation.js')
 const { buildProviderImageTestPayload } = require('../electron/providers/image-test.js')
 const mainSanitize = require('../electron/security/sanitize.js')
@@ -91,6 +92,51 @@ assert.equal(redactedAccountConfig.providerAccounts[0].sessionToken, configModul
 const mergedRedactedAccount = configModule.mergeRedactedApiKeys(redactedAccountConfig, accountSecretConfig)
 assert.equal(mergedRedactedAccount.providerAccounts[0].apiKey, 'account-secret')
 assert.equal(mergedRedactedAccount.providerAccounts[0].sessionToken, 'session-secret')
+
+// Unified secret fields: token, accessKey, secretKey should be redacted and preserved on merge
+assert.ok(Array.isArray(configModule.SECRET_FIELDS), 'SECRET_FIELDS exported')
+assert.ok(configModule.SECRET_FIELDS.includes('token'))
+assert.ok(configModule.SECRET_FIELDS.includes('accessKey'))
+assert.ok(configModule.SECRET_FIELDS.includes('secretKey'))
+
+const extendedSecretConfig = {
+  providers: {
+    chat: { id: 's3', apiKey: '', sessionToken: '', token: '', accessKey: 'ak-123', secretKey: 'sk-456', baseUrl: 'https://s3.example.com', model: 'test' },
+    image: { id: 'openai', apiKey: '', sessionToken: '', baseUrl: 'https://api.openai.com', model: 'gpt-image-2' },
+    video: { id: 'volcengine', apiKey: '', sessionToken: '', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3', model: 'test' }
+  },
+  providerProfiles: {
+    chat: [{ id: 'minio', accessKey: 'profile-ak', secretKey: 'profile-sk', token: 'profile-token', baseUrl: 'https://minio.example.com', model: 'model-1' }],
+    image: [],
+    video: []
+  },
+  providerAccounts: [
+    { accountId: 'acct_s3', kind: 'api-key', providerId: 's3', apiKey: '', sessionToken: '', token: 'acct-token', accessKey: 'acct-ak', secretKey: 'acct-sk', baseUrl: 'https://s3.example.com' }
+  ]
+}
+const redactedExtended = configModule.redactApiKeys(extendedSecretConfig)
+assert.equal(redactedExtended.providers.chat.accessKey, configModule.REDACTED_API_KEY)
+assert.equal(redactedExtended.providers.chat.secretKey, configModule.REDACTED_API_KEY)
+assert.equal(redactedExtended.providerProfiles.chat[0].accessKey, configModule.REDACTED_API_KEY)
+assert.equal(redactedExtended.providerProfiles.chat[0].secretKey, configModule.REDACTED_API_KEY)
+assert.equal(redactedExtended.providerProfiles.chat[0].token, configModule.REDACTED_API_KEY)
+assert.equal(redactedExtended.providerAccounts[0].token, configModule.REDACTED_API_KEY)
+assert.equal(redactedExtended.providerAccounts[0].accessKey, configModule.REDACTED_API_KEY)
+assert.equal(redactedExtended.providerAccounts[0].secretKey, configModule.REDACTED_API_KEY)
+// Empty fields stay empty, not invented
+assert.equal(redactedExtended.providers.chat.token, '')
+assert.equal(redactedExtended.providers.image.apiKey, '')
+
+const mergedExtended = configModule.mergeRedactedApiKeys(redactedExtended, extendedSecretConfig)
+assert.equal(mergedExtended.providers.chat.accessKey, 'ak-123')
+assert.equal(mergedExtended.providers.chat.secretKey, 'sk-456')
+assert.equal(mergedExtended.providerProfiles.chat[0].accessKey, 'profile-ak')
+assert.equal(mergedExtended.providerProfiles.chat[0].secretKey, 'profile-sk')
+assert.equal(mergedExtended.providerProfiles.chat[0].token, 'profile-token')
+assert.equal(mergedExtended.providerAccounts[0].token, 'acct-token')
+assert.equal(mergedExtended.providerAccounts[0].accessKey, 'acct-ak')
+assert.equal(mergedExtended.providerAccounts[0].secretKey, 'acct-sk')
+assert.equal(mergedExtended.providers.chat.token, '', 'empty secret stays empty after merge')
 
 assert.equal(parseDurationSeconds('8s', 5), 8)
 assert.equal(parseDurationSeconds('bad', 5), 5)
@@ -179,6 +225,18 @@ assert.equal(newApiGatewayPreset.template.pollPath, '/v1/images/tasks/{taskId}')
 assert.deepEqual(newApiGatewayPreset.tracks, ['chat', 'image'])
 assert.equal(providerGatewayPresetPatch('sub2api').name, 'sub2api Relay')
 assert.equal(providerGatewayPresetPatch('cpa-compatible').name, 'CPA compatible Relay')
+assert.equal(providerGatewayPresetPatch('openai-compatible').name, 'OpenAI-compatible Relay')
+assert.equal(providerGatewayPresetPatch('unknown-id').name, 'OpenAI-compatible Relay', 'unknown preset id falls back to first preset')
+// All gateway presets are covered and distinct
+const presetIds = OPENAI_COMPATIBLE_GATEWAY_PRESETS.map(p => p.id)
+assert.deepEqual(presetIds, ['openai-compatible', 'newapi', 'sub2api', 'cpa-compatible'])
+for (const preset of OPENAI_COMPATIBLE_GATEWAY_PRESETS) {
+  const patch = providerGatewayPresetPatch(preset.id)
+  assert.equal(patch.name, preset.name, `preset ${preset.id} name mismatch`)
+  assert.equal(patch.kind, 'gateway')
+  assert.equal(patch.apiKey, undefined, `preset ${preset.id} should not include apiKey`)
+  assert.equal(patch.sessionToken, undefined, `preset ${preset.id} should not include sessionToken`)
+}
 assert.equal(
   { apiKey: '********', ...providerGatewayPresetPatch('sub2api') }.apiKey,
   '********'
@@ -211,6 +269,126 @@ const oauthResolvedProvider = providerAccountResolver.storedProviderForRequest({
   ]
 }, 'chat', { providerId: 'openai', accountId: 'acct_oauth' })
 assert.equal(oauthResolvedProvider.apiKey, '')
+
+// --- config-resolver security tests ---
+
+// realSecret filters redacted placeholders
+assert.equal(configResolver.realSecret(''), '', 'empty string is not a secret')
+assert.equal(configResolver.realSecret(undefined), '', 'undefined is not a secret')
+assert.equal(configResolver.realSecret(configResolver.REDACTED_API_KEY), '', 'redacted placeholder is not a real secret')
+assert.equal(configResolver.realSecret('sk-real-key-123'), 'sk-real-key-123', 'real key passes through')
+
+// credentialsFromProvider never leaks redacted placeholders as real credentials
+const credsFromRedacted = configResolver.credentialsFromProvider(
+  { apiKey: 'stored-actual-key', sessionToken: 'stored-session' },
+  { apiKey: configResolver.REDACTED_API_KEY, sessionToken: configResolver.REDACTED_API_KEY }
+)
+assert.equal(credsFromRedacted.apiKey, 'stored-actual-key', 'override redacted apiKey falls back to stored')
+assert.equal(credsFromRedacted.sessionToken, 'stored-session', 'override redacted sessionToken falls back to stored')
+
+const credsFromRealOverride = configResolver.credentialsFromProvider(
+  { apiKey: 'stored-key', sessionToken: 'stored-session' },
+  { apiKey: 'override-key', sessionToken: '' }
+)
+assert.equal(credsFromRealOverride.apiKey, 'override-key', 'real override apiKey wins over stored')
+assert.equal(credsFromRealOverride.sessionToken, 'stored-session', 'empty override sessionToken falls back to stored')
+
+const credsFromEmpty = configResolver.credentialsFromProvider({}, {})
+assert.equal(credsFromEmpty.apiKey, '', 'no stored and no override yields empty')
+assert.equal(credsFromEmpty.sessionToken, '', 'no stored and no override yields empty sessionToken')
+
+// inferProviderTrack
+assert.equal(configResolver.inferProviderTrack({ track: 'image' }), 'image', 'explicit track wins')
+assert.equal(configResolver.inferProviderTrack({ id: 'openai' }), 'chat', 'unknown id falls back to chat')
+assert.equal(configResolver.inferProviderTrack({ id: 'dalle' }), 'image', 'dalle infers image')
+assert.equal(configResolver.inferProviderTrack({ id: 'gemini_img' }), 'image', 'gemini_img infers image')
+assert.equal(configResolver.inferProviderTrack({ id: 'volcengine_vid' }), 'video', 'id with vid infers video')
+assert.equal(configResolver.inferProviderTrack({ protocol: 'runway_task' }), 'video', 'runway_task infers video')
+assert.equal(configResolver.inferProviderTrack({ protocol: 'gemini_image' }), 'image', 'gemini_image infers image')
+assert.equal(configResolver.inferProviderTrack({ protocol: 'video_poll' }), 'video', 'video in protocol infers video')
+assert.equal(configResolver.inferProviderTrack({}), 'chat', 'empty provider defaults to chat')
+
+// buildSafePayload only allows allowlisted keys, drops rogue keys
+const safePayload = configResolver.buildSafePayload(
+  { authType: { type: 'bearer' }, template: { path: '/v1' }, rogueField: 'must-not-appear' },
+  'openai',
+  'generate',
+  { prompt: 'draw', ratio: '1:1', rogueRendererKey: 'must-not-appear', headers: 'rogue-header' }
+)
+assert.equal(safePayload.providerId, 'openai')
+assert.equal(safePayload.action, 'generate')
+assert.equal(safePayload.prompt, 'draw')
+assert.equal(safePayload.ratio, '1:1')
+assert.equal(safePayload.template.path, '/v1')
+assert.equal(safePayload.authType.type, 'bearer')
+assert.equal(safePayload.rogueField, undefined, 'stored rogue field must not pass through')
+assert.equal(safePayload.rogueRendererKey, undefined, 'renderer rogue key must not pass through')
+assert.equal(safePayload.headers, undefined, 'renderer headers key must not pass through')
+
+// resolveModelFetchConfig: saved credentials not sent to renderer-supplied attacker endpoint
+// Config where apiKey lives directly on providers.chat (common simple case)
+const storedDeepseekConfig = {
+  providers: {
+    chat: { id: 'deepseek', apiKey: 'saved-deepseek-key', sessionToken: '', baseUrl: 'https://api.deepseek.com', model: 'deepseek-chat' }
+  },
+  providerProfiles: { chat: [], image: [], video: [] },
+  providerAccounts: [],
+  general: { apiTimeout: 60000 }
+}
+function mockGetProvider(id) {
+  if (id === 'deepseek') return { id: 'deepseek', authType: { type: 'bearer' }, defaults: { baseUrl: 'https://api.deepseek.com' }, chat: {} }
+  return undefined
+}
+// When renderer supplies an attacker baseUrl with no credentials, saved creds must not be used
+// and the attacker baseUrl is also not used — falls back to registry default instead
+const attackerResult = configResolver.resolveModelFetchConfig(
+  { id: 'deepseek', baseUrl: 'https://evil.attacker.com/v1', apiKey: '', sessionToken: '' },
+  storedDeepseekConfig,
+  mockGetProvider
+)
+assert.equal(attackerResult.apiKey, '', 'saved credentials must not reach attacker-supplied baseUrl')
+assert.equal(attackerResult.baseUrl, 'https://api.deepseek.com', 'attacker baseUrl rejected; falls back to registry default')
+assert.equal(attackerResult.sessionToken, '', 'saved sessionToken must not reach attacker-supplied baseUrl')
+
+// When renderer supplies matching stored baseUrl with no credentials, saved creds ARE used
+const sameEndpointResult = configResolver.resolveModelFetchConfig(
+  { id: 'deepseek', baseUrl: 'https://api.deepseek.com', apiKey: '', sessionToken: '' },
+  storedDeepseekConfig,
+  mockGetProvider
+)
+assert.equal(sameEndpointResult.apiKey, 'saved-deepseek-key', 'saved credentials used when baseUrl matches stored')
+assert.equal(sameEndpointResult.baseUrl, 'https://api.deepseek.com', 'stored baseUrl used when endpoint matches')
+
+// When renderer supplies no baseUrl at all (redacted placeholder), saved creds used on stored endpoint
+const noBaseUrlResult = configResolver.resolveModelFetchConfig(
+  { id: 'deepseek', apiKey: configResolver.REDACTED_API_KEY, sessionToken: '' },
+  storedDeepseekConfig,
+  mockGetProvider
+)
+assert.equal(noBaseUrlResult.apiKey, 'saved-deepseek-key', 'redacted placeholder does not override saved credential')
+assert.equal(noBaseUrlResult.baseUrl, 'https://api.deepseek.com', 'stored baseUrl used when no renderer baseUrl')
+
+// When renderer supplies fresh typed credentials + attacker baseUrl, typed creds used with that baseUrl
+const typedOverrideResult = configResolver.resolveModelFetchConfig(
+  { id: 'deepseek', baseUrl: 'https://relay.example.com', apiKey: 'fresh-typed-key', sessionToken: '' },
+  storedDeepseekConfig,
+  mockGetProvider
+)
+assert.equal(typedOverrideResult.apiKey, 'fresh-typed-key', 'fresh typed credential takes precedence')
+assert.equal(typedOverrideResult.baseUrl, 'https://relay.example.com', 'renderer baseUrl used when fresh credential provided')
+
+// requestOptionsFromConfig
+assert.deepEqual(configResolver.requestOptionsFromConfig({ general: { apiTimeout: 60000 } }, {}), { timeout: 60000 })
+assert.deepEqual(configResolver.requestOptionsFromConfig({ general: { apiTimeout: 60000 } }, { timeout: 120000 }), { timeout: 120000 })
+assert.deepEqual(configResolver.requestOptionsFromConfig({}, {}), {})
+assert.deepEqual(configResolver.requestOptionsFromConfig({ general: { apiTimeout: -1 } }, {}), {})
+
+// REDACTED_API_KEY constant matches config module
+assert.equal(configResolver.REDACTED_API_KEY, '********', 'REDACTED_API_KEY matches expected value')
+assert.equal(configResolver.REDACTED_API_KEY, configModule.REDACTED_API_KEY, 'REDACTED_API_KEY matches config module')
+
+// --- end config-resolver security tests ---
+
 assert.deepEqual(
   registryUtils.normalizeProviderMeta({ links: { docs: 'https://example.com' }, capabilities: { image: true } }),
   {

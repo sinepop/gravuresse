@@ -66,15 +66,16 @@ function deepMerge(target, source) {
   return result
 }
 
+// Unified secret field names used across providers, profiles, and accounts.
+const SECRET_FIELDS = ['apiKey', 'sessionToken', 'token', 'accessKey', 'secretKey']
+
 // Provider secret field paths.
-const SECRET_PATHS = [
-  ['providers', 'chat', 'apiKey'],
-  ['providers', 'chat', 'sessionToken'],
-  ['providers', 'image', 'apiKey'],
-  ['providers', 'image', 'sessionToken'],
-  ['providers', 'video', 'apiKey'],
-  ['providers', 'video', 'sessionToken']
-]
+const SECRET_PATHS = []
+for (const track of ['chat', 'image', 'video']) {
+  for (const field of SECRET_FIELDS) {
+    SECRET_PATHS.push(['providers', track, field])
+  }
+}
 
 const PROVIDER_ID_ALIASES = {
   chat: { claude: 'anthropic', gemini: 'google', qwen: 'alibaba', kimi: 'moonshot', doubao: 'volcengine' },
@@ -115,8 +116,9 @@ function profileSecretPaths(cfg) {
   for (const track of TRACKS) {
     const profiles = cfg?.providerProfiles?.[track] || []
     profiles.forEach((_, index) => {
-      paths.push(['providerProfiles', track, index, 'apiKey'])
-      paths.push(['providerProfiles', track, index, 'sessionToken'])
+      for (const field of SECRET_FIELDS) {
+        paths.push(['providerProfiles', track, index, field])
+      }
     })
   }
   return paths
@@ -126,8 +128,9 @@ function accountSecretPaths(cfg) {
   const paths = []
   const accounts = Array.isArray(cfg?.providerAccounts) ? cfg.providerAccounts : []
   accounts.forEach((_, index) => {
-    paths.push(['providerAccounts', index, 'apiKey'])
-    paths.push(['providerAccounts', index, 'sessionToken'])
+    for (const field of SECRET_FIELDS) {
+      paths.push(['providerAccounts', index, field])
+    }
   })
   return paths
 }
@@ -209,7 +212,7 @@ function mergeRedactedApiKeys(nextCfg, currentCfg) {
     const nextProfiles = result.providerProfiles?.[track] || []
     const currentProfiles = currentCfg.providerProfiles?.[track] || []
     nextProfiles.forEach((profile, index) => {
-      for (const field of ['apiKey', 'sessionToken']) {
+      for (const field of SECRET_FIELDS) {
         if (profile?.[field] !== REDACTED_API_KEY) continue
         const currentProfile = currentProfiles.find(item =>
           (profile.profileId && item.profileId === profile.profileId) ||
@@ -233,7 +236,7 @@ function mergeRedactedApiKeys(nextCfg, currentCfg) {
     return `${type}:${key}`
   }
   nextAccounts.forEach((account, index) => {
-    for (const field of ['apiKey', 'sessionToken']) {
+    for (const field of SECRET_FIELDS) {
       if (account?.[field] !== REDACTED_API_KEY) continue
       const currentAccount = currentAccounts.find(item =>
         (account.accountId && item.accountId === account.accountId) ||
@@ -278,6 +281,7 @@ module.exports = {
   redactApiKeys,
   mergeRedactedApiKeys,
   REDACTED_API_KEY,
+  SECRET_FIELDS,
   DEFAULT_CONFIG,
   PROVIDER_ID_ALIASES,
   _test: { deepMerge, sanitizeObjectShape }

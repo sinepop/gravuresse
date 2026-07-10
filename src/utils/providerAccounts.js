@@ -4,7 +4,8 @@ const SECRET_REDACTED = '********'
 export const OPENAI_COMPATIBLE_GATEWAY_PRESETS = [
   { id: 'openai-compatible', label: 'OpenAI-compatible', name: 'OpenAI-compatible Relay' },
   { id: 'newapi', label: 'New API / One API', name: 'New API / One API Relay' },
-  { id: 'sub2api', label: 'sub2api', name: 'sub2api Relay' }
+  { id: 'sub2api', label: 'sub2api', name: 'sub2api Relay' },
+  { id: 'cpa-compatible', label: 'CPA compatible', name: 'CPA compatible Relay' }
 ]
 
 function hashString(value) {

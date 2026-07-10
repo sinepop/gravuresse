@@ -1,6 +1,21 @@
+/**
+ * Renderer-side provider call helpers.
+ *
+ * Prefers the canonical `provider:call` IPC channel (routes through
+ * config-resolver → provider pipeline). Falls back to legacy `api:*` channels
+ * only when the main-process provider API is unavailable or the provider is
+ * unknown / unsupported (codes in FALLBACK_CODES).
+ *
+ * Legacy fallbacks are kept for packaged-app compatibility; new call sites
+ * should use callProvider / callChatProvider directly and rely on the primary
+ * path.
+ */
 import { resolveProviderId } from '../providers/aliases'
 import type { ProviderCallParams, ProviderCallResult, ProviderProfile } from '../types/domain'
 
+// Error codes that trigger legacy API fallback. These indicate the provider
+// pipeline could not resolve a handler (e.g. custom-image without native
+// protocol), so the older direct IPC channels may still work.
 const FALLBACK_CODES = new Set(['UNKNOWN_PROVIDER', 'UNSUPPORTED_ACTION', 'NO_HANDLER'])
 
 type Fallback<T> = () => Promise<T>

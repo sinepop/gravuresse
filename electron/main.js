@@ -17,6 +17,11 @@ const { registerAssetIpc } = require('./ipc/assets')
 const { registerProviderIpc } = require('./ipc/provider')
 const { MEDIA_CACHE_SCHEME, cacheAssetPreview, mediaCacheMime, parseMediaCacheUrl } = require('./media-cache')
 const { canUseStoredCredentials, resolveProviderIdByTrack, storedProviderForRequest } = require('./providers/account-resolver')
+const {
+  realSecret, credentialsFromProvider, inferProviderTrack, defaultProviderBaseUrl: getDefaultBaseUrl,
+  requestOptionsFromConfig, hasTemplatePath, isTemplateConfigurableProvider: isTemplateConfigurable,
+  resolveRuntimeProviderConfig, resolveModelFetchConfig
+} = require('./providers/config-resolver')
 // Wire handler side-effects (registerHandler): must be required so the
 // HANDLER_MAP is populated before any provider:call / api:* dispatch.
 require('./providers')
@@ -50,18 +55,6 @@ const ASSET_TYPE_MIMES = {
 }
 const VIDEO_POLL_SESSION_TTL_MS = 6 * 60 * 60 * 1000
 const videoPollSessions = new Map()
-const ALLOWED_PROVIDER_PAYLOAD_KEYS = [
-  'messages', 'system', 'thinking', 'model',
-  'prompt', 'ratio', 'resolution', 'negative_prompt', 'source_image_id',
-  'negativePrompt', 'duration', 'sourceImageUrl', 'source_image_url', 'taskId', 'mode', 'generationMode'
-]
-const STORED_PROVIDER_PAYLOAD_KEYS = [
-  'authType', 'customAuth', 'authConfig', 'template', 'customTemplate', 'generationOptions',
-  'pathPrefix', 'modelListPath', 'modelsPath', 'path', 'submitPath', 'pollPath', 'taskIdPath', 'statusPath',
-  'videoUrlPath', 'progressPath', 'errorPath', 'imageUrlPath', 'responsePath',
-  'body', 'requestBody', 'submitBody', 'pollBody', 'method', 'submitMethod',
-  'pollMethod', 'pollInterval'
-]
 
 function applyQueryParams(url, queryParams = {}) {
   for (const [key, value] of Object.entries(queryParams || {})) {
@@ -72,90 +65,13 @@ function applyQueryParams(url, queryParams = {}) {
   return url
 }
 
-function normalizeAuthType(type) {
-  return String(type || '').toLowerCase().replace(/_/g, '-')
-}
-
-function providerAuthType(providerDef = {}, current = {}, storedProvider = {}) {
-  const customType = normalizeAuthType(current.customAuth?.type || storedProvider.customAuth?.type)
-  if (customType) return customType
-  return normalizeAuthType(current.authType?.type || storedProvider.authType?.type || providerDef.authType?.type || 'bearer')
-}
-
-function providerRequiresCredential(providerDef = {}, current = {}, storedProvider = {}) {
-  return providerAuthType(providerDef, current, storedProvider) !== 'none'
-}
-
-function hasTemplatePath(providerConfig = {}, track) {
-  const template = providerConfig.template || providerConfig.customTemplate || {}
-  if (track === 'image') return Boolean(template.path || template.submitPath || providerConfig.path || providerConfig.submitPath)
-  if (track === 'video') return Boolean(template.submitPath || providerConfig.submitPath)
-  return false
+function getModelFetchProvider(provider = {}) {
+  const storedConfig = config.load()
+  return resolveModelFetchConfig(provider, storedConfig, getProvider)
 }
 
 function isTemplateConfigurableProvider(providerDef = {}, track) {
-  if (!['image', 'video'].includes(track) || !providerDef?.[track]) return false
-  if (resolveHandler(providerDef[track]?.protocol)) return false
-  const custom = providerDef.customizable?.[track] || providerDef.meta?.customizable?.[track] || {}
-  const caps = providerDef.capabilities?.[track] || providerDef.meta?.capabilities?.[track] || {}
-  return Boolean(custom.baseUrl || custom.model || custom.submitPath || caps.customBaseUrl || caps.customTemplate || caps.relay)
-}
-
-function realSecret(value) {
-  return value && value !== config.REDACTED_API_KEY ? value : ''
-}
-
-function credentialsFromProvider(storedProvider = {}, override = {}) {
-  return {
-    apiKey: realSecret(override.apiKey) || storedProvider.apiKey || '',
-    sessionToken: realSecret(override.sessionToken) || storedProvider.sessionToken || ''
-  }
-}
-
-function getModelFetchProvider(provider = {}) {
-  const track = inferProviderTrack(provider)
-  const storedConfig = config.load()
-  const stored = storedProviderForRequest(storedConfig, track, provider)
-  // SECURITY: never trust a renderer-supplied baseUrl; a compromised renderer
-  // could pair saved credentials with an attacker-controlled baseUrl and
-  // exfiltrate the credential. Newly typed plaintext credentials may be tested
-  // against the typed endpoint; saved/redacted credentials stay on the stored
-  // endpoint below.
-  const providerId = provider.id || stored.id || ''
-  const canonicalProviderId = resolveProviderIdByTrack(track, providerId)
-  const providerDef = getProvider(canonicalProviderId)
-  const sameEndpoint = canUseStoredCredentials(track, { id: providerId, baseUrl: provider.baseUrl || stored.baseUrl || '' }, stored)
-  const hasRendererCredential = Boolean(realSecret(provider.apiKey) || realSecret(provider.sessionToken))
-  const baseUrl = hasRendererCredential && provider.baseUrl
-    ? provider.baseUrl
-    : sameEndpoint && stored.baseUrl
-      ? stored.baseUrl
-      : defaultProviderBaseUrl(canonicalProviderId)
-  const rendererFields = {
-    id: provider.id || stored.id,
-    model: provider.model || stored.model,
-    protocol: provider.protocol || stored.protocol,
-    format: provider.format || stored.format,
-    pathPrefix: provider.pathPrefix || stored.pathPrefix || providerDef?.[track]?.pathPrefix || providerDef?.pathPrefix,
-    modelListPath: provider.modelListPath || stored.modelListPath || stored.modelsPath || providerDef?.[track]?.modelListPath || providerDef?.modelListPath || providerDef?.[track]?.modelsPath || providerDef?.modelsPath,
-    authType: provider.authType || stored.authType || providerDef?.authType
-  }
-  const credentials = credentialsFromProvider(!hasRendererCredential && sameEndpoint ? stored : {}, provider)
-  return {
-    ...stored,
-    ...rendererFields,
-    apiKey: credentials.apiKey,
-    sessionToken: credentials.sessionToken,
-    customAuth: provider.customAuth || stored.customAuth,
-    baseUrl
-  }
-}
-
-function inferProviderTrack(provider = {}) {
-  if (provider.track) return provider.track
-  if (['runway_task', 'happyhorse_task'].includes(provider.protocol) || provider.protocol?.includes('video') || provider.id?.includes('vid')) return 'video'
-  if (['dalle', 'gemini_img', 'jimeng_img'].includes(provider.id) || provider.protocol?.includes('image') || provider.id?.includes('img')) return 'image'
-  return 'chat'
+  return isTemplateConfigurable(providerDef, track, resolveHandler)
 }
 
 function normalizeAssetLabel(label) {
@@ -371,7 +287,7 @@ registerConversationIpc({
 
 async function executeProviderCall(params = {}) {
   const stored = config.load()
-  const { providerId, action } = params
+  const { action } = params
   const track = action === 'chat' ? 'chat' : action === 'generate' ? 'image' : 'video'
 
   if (track === 'video' && action === 'poll') {
@@ -379,10 +295,11 @@ async function executeProviderCall(params = {}) {
     if (sessionResult) return sessionResult
   }
 
-  const activeProviderConfig = stored.providers?.[track] || {}
-  const effectiveActiveProvider = storedProviderForRequest(stored, track, activeProviderConfig)
-  const requestedProviderId = resolveProviderIdByTrack(track, providerId)
+  // Video poll mismatch detection (before resolver, uses stored config)
   if (track === 'video' && action === 'poll') {
+    const activeProviderConfig = stored.providers?.[track] || {}
+    const effectiveActiveProvider = storedProviderForRequest(stored, track, activeProviderConfig)
+    const requestedProviderId = resolveProviderIdByTrack(track, params.providerId)
     const storedProviderId = resolveProviderIdByTrack(track, effectiveActiveProvider.id)
     if (requestedProviderId && storedProviderId && requestedProviderId !== storedProviderId) {
       return {
@@ -395,69 +312,11 @@ async function executeProviderCall(params = {}) {
     }
   }
 
-  const activeProviderId = resolveProviderIdByTrack(track, effectiveActiveProvider.id)
-  const requestTargetsActiveProvider = !requestedProviderId || requestedProviderId === activeProviderId
-  const activeMatchesRequestedProfile = requestTargetsActiveProvider &&
-    (!params.baseUrl || (params.baseUrl || '') === (effectiveActiveProvider.baseUrl || '')) &&
-    (!params.model || (params.model || '') === (effectiveActiveProvider.model || ''))
-  const hasProfileSelector = Boolean(requestedProviderId && (params.baseUrl || params.model))
-  const requestedProfile = hasProfileSelector
-    ? storedProviderForRequest(stored, track, { accountId: params.accountId, providerId: requestedProviderId, baseUrl: params.baseUrl, model: params.model })
-    : null
-  const requestedProfileId = requestedProfile ? resolveProviderIdByTrack(track, requestedProfile.id || requestedProfile.providerId) : ''
-  if (requestedProviderId && activeProviderId && !activeMatchesRequestedProfile && (!requestedProfile || requestedProfileId !== requestedProviderId)) {
-    return {
-      ok: false,
-      error: {
-        code: 'PROVIDER_CONFIG_SYNC_PENDING',
-        message: 'The selected provider profile has not been saved yet. Wait a moment, then try again.'
-      }
-    }
-  }
-  const providerConfig = storedProviderForRequest(stored, track, {
-    accountId: params.accountId || (!activeMatchesRequestedProfile && requestedProfile ? requestedProfile.accountId : effectiveActiveProvider.accountId),
-    providerId: requestedProviderId || activeProviderId,
-    baseUrl: params.baseUrl,
-    model: params.model
-  })
-  const canonicalProviderId = resolveProviderIdByTrack(track, providerConfig.id || providerId)
-  const providerDef = getProvider(canonicalProviderId)
-  if (!providerDef) {
-    return { ok: false, error: { code: 'UNKNOWN_PROVIDER', message: `Unknown provider: ${canonicalProviderId}` } }
-  }
-  if (!providerDef[track]) {
-    return { ok: false, error: { code: 'UNSUPPORTED_ACTION', message: `${canonicalProviderId} does not support ${track}` } }
-  }
-  const hasNativeHandler = Boolean(resolveHandler(providerDef[track]?.protocol))
-  const canUseTemplateHandler = hasTemplatePath(providerConfig, track) && (track === 'image' || !hasNativeHandler)
-  if (!hasNativeHandler && !canUseTemplateHandler) {
-    return {
-      ok: false,
-      error: {
-        code: 'PROVIDER_NOT_EXECUTABLE',
-        message: `${providerDef.name || canonicalProviderId} is listed for links and setup guidance, but this build does not include a direct ${track} handler yet. Configure request paths and JSON templates in Advanced, or use a Custom API entry for compatible relay endpoints.`
-      }
-    }
-  }
-  const baseUrl = providerConfig.baseUrl || defaultProviderBaseUrl(canonicalProviderId)
-  if (!baseUrl) {
-    return { ok: false, error: { code: 'PRECHECK_FAILED', message: 'Base URL is required for this provider.' } }
-  }
-  // SECURITY: never trust a renderer-supplied baseUrl; a compromised renderer
-  // could redirect credentials to an attacker host. Source baseUrl only from the
-  // stored config (which holds the user's legitimate custom/proxy endpoint).
-  const credentials = credentialsFromProvider(providerConfig)
-  // SECURITY: explicitly pick only the fields a handler is allowed to consume.
-  // Spreading the raw renderer `params` would forward arbitrary keys (e.g. a
-  // rogue `headers` / `httpAgent`) into the handler, which could influence its
-  // request behaviour. Keep this list in sync with the handler signatures.
-  const safePayload = { providerId: canonicalProviderId, action }
-  for (const key of STORED_PROVIDER_PAYLOAD_KEYS) {
-    if (Object.hasOwn(providerConfig || {}, key)) safePayload[key] = providerConfig[key]
-  }
-  for (const key of ALLOWED_PROVIDER_PAYLOAD_KEYS) {
-    if (Object.hasOwn(params || {}, key)) safePayload[key] = params[key]
-  }
+  const resolved = resolveRuntimeProviderConfig(stored, track, params, getProvider, resolveHandler)
+  if (!resolved.ok) return resolved
+
+  const { providerConfig, canonicalProviderId, providerDef, credentials, baseUrl, safePayload } = resolved.config
+
   if (track !== 'chat' && action !== 'poll') {
     const validation = validateGenerationRequest(track, providerDef, safePayload)
     if (!validation.ok) {
@@ -514,16 +373,6 @@ registerProviderIpc({
   requestOptionsFromConfig,
   getModelFetchProvider
 })
-
-function defaultProviderBaseUrl(providerId) {
-  const def = require('./providers/registry').getProvider(providerId)
-  return def?.defaults?.baseUrl || ''
-}
-
-function requestOptionsFromConfig(stored = config.load(), providerConfig = {}) {
-  const timeout = Number(providerConfig.timeout || stored.general?.apiTimeout)
-  return Number.isFinite(timeout) && timeout > 0 ? { timeout } : {}
-}
 
 function cleanupVideoPollSessions() {
   const now = Date.now()

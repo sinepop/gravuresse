@@ -73,20 +73,101 @@ export async function runIpcCoreTests() {
   for (const channel of ['provider:call', 'provider:list', 'provider:test', 'api:models', 'api:chat', 'api:image', 'api:video', 'api:video:poll']) {
     assert.equal(typeof providerIpc.handlers.get(channel), 'function', `${channel} should be registered`)
   }
+
+  // ── provider:call rejects unsupported action ─────────────────────────────
   const invalidProviderCall = await providerIpc.handlers.get('provider:call')(null, { action: 'delete_everything' })
   assert.equal(invalidProviderCall.ok, false)
   assert.equal(invalidProviderCall.error.code, 'PRECHECK_FAILED')
   assert.equal(executeCalls, 0)
+
+  // ── provider:call passes valid action through to executeProviderCall ─────
+  const validProviderCall = await providerIpc.handlers.get('provider:call')(null, { action: 'chat', messages: [] })
+  assert.equal(validProviderCall.ok, true)
+  assert.equal(executeCalls, 1)
+
+  // ── provider:call rejects missing action ─────────────────────────────────
+  const missingAction = await providerIpc.handlers.get('provider:call')(null, {})
+  assert.equal(missingAction.ok, false)
+  assert.equal(missingAction.error.code, 'PRECHECK_FAILED')
+  assert.match(missingAction.error.message, /Unsupported provider action/)
+
+  // ── api:chat rejects invalid messages ────────────────────────────────────
   await assert.rejects(
     () => providerIpc.handlers.get('api:chat')(null, { notHistory: true }, {}),
     /history array/
   )
-  await providerIpc.handlers.get('api:chat')(null, { history: [{ role: 'user', content: 'hi', extra: 'drop' }] }, { id: 'openai' })
+  assert.equal(executeCalls, 1) // no increment from rejected call
+
+  // ── api:chat: message normalization drops rogue fields ───────────────────
+  await providerIpc.handlers.get('api:chat')(null, { history: [{ role: 'user', content: 'hi', extra: 'drop', headers: { bad: true } }] }, { id: 'openai' })
+  assert.equal(executeCalls, 2)
+  assert.equal(lastProviderParams.action, 'chat')
   assert.deepEqual(lastProviderParams.messages, [{ role: 'user', content: 'hi' }])
+  // Rogue fields from the message items are not forwarded
+  assert.equal(lastProviderParams.extra, undefined)
+  assert.equal(lastProviderParams.headers, undefined)
+
+  // ── api:chat: does not forward rogue provider fields ─────────────────────
+  await providerIpc.handlers.get('api:chat')(null, { history: [{ role: 'user', content: 'test' }] }, { id: 'openai', credentials: { apiKey: 'leak' }, headers: { bad: true }, httpAgent: {} })
+  assert.equal(executeCalls, 3)
+  // Legacy wrapper only forwards id, model, baseUrl, accountId from provider — not credentials/headers/httpAgent
+  assert.equal(lastProviderParams.credentials, undefined)
+  assert.equal(lastProviderParams.headers, undefined)
+  assert.equal(lastProviderParams.httpAgent, undefined)
+
+  // ── api:video:poll rejects empty taskId ──────────────────────────────────
   await assert.rejects(
     () => providerIpc.handlers.get('api:video:poll')(null, '', {}),
     /taskId is required/
   )
+  assert.equal(executeCalls, 3) // no increment
+
+  // ── api:video:poll passes correct params ─────────────────────────────────
+  await providerIpc.handlers.get('api:video:poll')(null, 'task-123', { id: 'runway', model: 'gen3', baseUrl: 'https://x.example.com' })
+  assert.equal(executeCalls, 4)
+  assert.equal(lastProviderParams.action, 'poll')
+  assert.equal(lastProviderParams.taskId, 'task-123')
+  assert.equal(lastProviderParams.providerId, 'runway')
+
+  // ── api:image forwards only allowlisted keys ─────────────────────────────
+  await providerIpc.handlers.get('api:image')(null, {
+    id: 'dalle',
+    prompt: 'a cat',
+    ratio: '1:1',
+    model: 'dall-e-3',
+    headers: { bad: true },
+    httpAgent: {},
+    credentials: { apiKey: 'leak' },
+    arbitraryKey: 'should not pass'
+  })
+  assert.equal(executeCalls, 5)
+  assert.equal(lastProviderParams.action, 'generate')
+  assert.equal(lastProviderParams.prompt, 'a cat')
+  assert.equal(lastProviderParams.providerId, 'dalle')
+  // Rogue keys are not forwarded by the legacy wrapper
+  assert.equal(lastProviderParams.headers, undefined)
+  assert.equal(lastProviderParams.httpAgent, undefined)
+  assert.equal(lastProviderParams.credentials, undefined)
+  assert.equal(lastProviderParams.arbitraryKey, undefined)
+
+  // ── api:video forwards only allowlisted keys ─────────────────────────────
+  await providerIpc.handlers.get('api:video')(null, {
+    id: 'runway',
+    prompt: 'a dog running',
+    ratio: '16:9',
+    duration: 5,
+    headers: { bad: true },
+    credentials: { apiKey: 'leak' }
+  })
+  assert.equal(executeCalls, 6)
+  assert.equal(lastProviderParams.action, 'submit')
+  assert.equal(lastProviderParams.prompt, 'a dog running')
+  assert.equal(lastProviderParams.providerId, 'runway')
+  assert.equal(lastProviderParams.headers, undefined)
+  assert.equal(lastProviderParams.credentials, undefined)
+
+  // ── Verify total executeCalls confirms all legacy wrappers route through ─
+  assert.equal(executeCalls, 6, 'All 6 legacy wrapper calls should route through executeProviderCall')
 
   const conversationIpc = createIpcMain()
   let exportedText = ''

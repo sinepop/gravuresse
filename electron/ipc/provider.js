@@ -54,6 +54,11 @@ function registerProviderIpc({
   requestOptionsFromConfig,
   getModelFetchProvider
 }) {
+  // ──────────────────────────────────────────────────────────────────────────────
+  // New provider API — canonical entry points for all provider operations.
+  // Renderer uses `provider:call` with an explicit `action` field.
+  // ──────────────────────────────────────────────────────────────────────────────
+
   ipcMain.handle('provider:call', async (_, params = {}) => {
     if (!isPlainObject(params)) return precheckFailed('Provider call request must be an object.')
     if (!PROVIDER_ACTIONS.has(params.action)) return precheckFailed(`Unsupported provider action: ${params.action || 'missing'}.`)
@@ -149,6 +154,13 @@ function registerProviderIpc({
     }
   })
 
+  // ──────────────────────────────────────────────────────────────────────────────
+  // Legacy IPC compatibility wrappers — kept for renderer clients that have not
+  // yet migrated to `provider:call`. Each handler normalises its params and then
+  // delegates to the shared `executeProviderCall` pipeline. Do NOT add new logic
+  // here; new features belong in `provider:call` / config-resolver.
+  // ──────────────────────────────────────────────────────────────────────────────
+
   ipcMain.handle('api:models', (_, provider) => {
     const stored = config.load()
     return modelsApi.fetch({
@@ -158,6 +170,8 @@ function registerProviderIpc({
     })
   })
 
+  // Legacy wrapper: normalises chat messages then delegates to executeProviderCall.
+  // Extra renderer fields (e.g. `extra`) are intentionally NOT forwarded.
   ipcMain.handle('api:chat', async (_, messages, provider) => {
     const normalized = normalizeLegacyChatMessages(messages)
     if (!normalized.ok) throw normalized.error
@@ -175,6 +189,9 @@ function registerProviderIpc({
     return result.data
   })
 
+  // Legacy wrapper: extracts only the image-relevant keys from the renderer
+  // params object and delegates to executeProviderCall. Rogue keys (headers,
+  // httpAgent, credentials, etc.) are not forwarded.
   ipcMain.handle('api:image', async (_, params) => {
     params = assertRequestObject(params, 'Image generation')
     const result = await executeProviderCall({
@@ -192,6 +209,7 @@ function registerProviderIpc({
     return result.data
   })
 
+  // Legacy wrapper: extracts video-submit keys and delegates to executeProviderCall.
   ipcMain.handle('api:video', async (_, params) => {
     params = assertRequestObject(params, 'Video submit')
     const result = await executeProviderCall({
@@ -207,6 +225,7 @@ function registerProviderIpc({
     return result.data
   })
 
+  // Legacy wrapper: forwards taskId + provider identity to executeProviderCall poll action.
   ipcMain.handle('api:video:poll', async (_, taskId, provider) => {
     if (!taskId) throw new Error('Video poll taskId is required')
     const result = await executeProviderCall({
