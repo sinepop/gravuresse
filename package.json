@@ -18,9 +18,11 @@
     "typecheck": "tsc --noEmit",
     "typecheck:legacy": "tsc6 --noEmit",
     "preview": "electron-vite preview --config electron.vite.config.mjs",
+    "release:clean": "node scripts/clean-release-metadata.mjs",
     "release:checksums": "node scripts/release-checksums.mjs",
-    "package": "electron-vite build --config electron.vite.config.mjs && npm run check:runtime && electron-builder --win && npm run check:asar && npm run release:checksums",
-    "package:dir": "electron-vite build --config electron.vite.config.mjs && npm run check:runtime && electron-builder --win dir --publish=never && npm run check:asar"
+    "release:audit": "node scripts/audit-release-secrets.mjs",
+    "package": "electron-vite build --config electron.vite.config.mjs && npm run check:runtime && electron-builder --win && npm run release:clean && npm run check:asar && npm run release:checksums && npm run release:audit",
+    "package:dir": "electron-vite build --config electron.vite.config.mjs && npm run check:runtime && electron-builder --win dir --publish=never && npm run release:clean && npm run check:asar && npm run release:audit"
   },
   "dependencies": {
     "@electron-toolkit/utils": "^3.0.0",
