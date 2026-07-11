@@ -11,7 +11,7 @@
   "scripts": {
     "dev": "electron-vite dev --config electron.vite.config.mjs",
     "build": "electron-vite build --config electron.vite.config.mjs",
-    "test:core": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-core-data.mjs && node --test scripts/test-auth-invariants.mjs scripts/core-tests/runtime-contracts.test.mjs scripts/core-tests/relay-protocol-detection.test.mjs scripts/core-tests/relay-ui-contract.test.mjs && node scripts/check-entrypoint-globals.mjs",
+    "test:core": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-core-data.mjs && node --test scripts/test-auth-invariants.mjs scripts/core-tests/inference-evidence.test.mjs scripts/core-tests/runtime-contracts.test.mjs scripts/core-tests/relay-protocol-detection.test.mjs scripts/core-tests/relay-ui-contract.test.mjs scripts/core-tests/provider-validation-strategies.test.mjs && node scripts/check-entrypoint-globals.mjs",
     "check:runtime": "node scripts/check-runtime-packaging.mjs --dist",
     "check:asar": "node scripts/check-runtime-packaging.mjs --asar",
     "smoke:packaged": "node scripts/smoke-packaged-win.mjs",

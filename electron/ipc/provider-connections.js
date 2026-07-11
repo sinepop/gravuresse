@@ -238,7 +238,7 @@ async function saveDetectedRelay({ params, config, requestOptionsFromConfig, rel
   }
 }
 
-function registerProviderConnectionsIpc({ ipcMain, config, modelsApi, requestOptionsFromConfig, relayDetector = detectRelayProtocol }) {
+function registerProviderConnectionsIpc({ ipcMain, config, modelsApi, requestOptionsFromConfig, relayDetector = detectRelayProtocol, validationRequest }) {
   const runExclusive = createExclusiveRunner()
   ipcMain.handle('providerConnection:list', () => {
     const stored = config.load()
@@ -293,13 +293,28 @@ function registerProviderConnectionsIpc({ ipcMain, config, modelsApi, requestOpt
     if (collection !== 'accounts') {
       const tracks = params.track ? [refreshTrack(saved, params.track)] : [...(saved.capabilities || [])]
       for (const track of tracks.filter(Boolean)) try {
-        const refreshed = await refreshModels({
-          connection: saved,
-          track,
-          modelsApi,
-          requestOptions: requestOptionsFor(requestOptionsFromConfig, stored, saved)
-        })
-        const verified = { ...refreshed.result, track, inventoryRevision: saved.revision }
+        let refreshedModels = []
+        let validation
+        if (collection === 'apiKeys') {
+          validation = await validateConnection({
+            connection: saved,
+            track,
+            modelsApi,
+            requestOptions: requestOptionsFor(requestOptionsFromConfig, stored, saved),
+            ...(validationRequest ? { requestFn: validationRequest } : {}),
+            onModels: models => { refreshedModels = models }
+          })
+        } else {
+          const refreshed = await refreshModels({
+            connection: saved,
+            track,
+            modelsApi,
+            requestOptions: requestOptionsFor(requestOptionsFromConfig, stored, saved)
+          })
+          refreshedModels = refreshed.models
+          validation = refreshed.result
+        }
+        const verified = { ...validation, track, inventoryRevision: saved.revision }
         let applied = false
         await mutateConfig(config, current => {
           const next = JSON.parse(JSON.stringify(current))
@@ -308,7 +323,7 @@ function registerProviderConnectionsIpc({ ipcMain, config, modelsApi, requestOpt
           if (sameRevision(item, saved)) {
             item.models = [
               ...(item.models || []).filter(model => model.capability !== track),
-              ...refreshed.models.filter(model => model.capability === track)
+              ...refreshedModels.filter(model => model.capability === track)
             ]
             item.inventoryRevision = saved.revision
             item.validation = verified
@@ -411,6 +426,7 @@ function registerProviderConnectionsIpc({ ipcMain, config, modelsApi, requestOpt
       modelId: String(params.modelId || ''),
       modelsApi,
       requestOptions: requestOptionsFor(requestOptionsFromConfig, stored, connection),
+      ...(validationRequest ? { requestFn: validationRequest } : {}),
       onModels: models => { refreshedModels = models }
     })
     const authFailure = !result.ok && ['HTTP_401', 'HTTP_403'].includes(result.errorCode)
@@ -436,6 +452,7 @@ function registerProviderConnectionsIpc({ ipcMain, config, modelsApi, requestOpt
           modelId: String(params.modelId || ''),
           modelsApi,
           requestOptions: requestOptionsFor(requestOptionsFromConfig, stored, connection),
+          ...(validationRequest ? { requestFn: validationRequest } : {}),
           onModels: models => { refreshedModels = models }
         })
       } catch (error) {
@@ -574,6 +591,7 @@ function registerProviderConnectionsIpc({ ipcMain, config, modelsApi, requestOpt
             track: 'chat',
             modelsApi,
             requestOptions: requestOptionsFor(requestOptionsFromConfig, config.load(), savedAccount),
+            ...(validationRequest ? { requestFn: validationRequest } : {}),
             onModels: models => { refreshedModels = models }
           })
         }

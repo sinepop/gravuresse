@@ -3,11 +3,10 @@ import Ic from '../icons'
 import {
   REDACTED_API_KEY, TRACKS, inputS, btnS, chipS,
   SectionHeading, providerDisplayName, billingLabel, localText,
+  regionLabel, validationEvidenceLabel,
   StatusBadge, LatencyBadge, ProviderLinkButtons, EmptyState
 } from './shared.jsx'
 import { providerInfo } from './settingsHelpers.js'
-
-const CHINA_IDS = new Set(['alibaba', 'moonshot', 'zhipu', 'lingyi', 'siliconflow', 'volcengine', 'alibaba-wan', 'baidu-qianfan', 'tencent-tokenhub'])
 
 function standardProviderIds(providerLists) {
   const ids = []
@@ -43,6 +42,10 @@ function providerCapabilities(providerLists, providerId) {
   return TRACKS.filter(track => (providerLists?.[track] || []).some?.(item => item.id === providerId))
 }
 
+function validationAvailability(providerLists, providerId, track) {
+  return (providerLists?.[track] || []).find?.(item => item.id === providerId)?.validationAvailability || 'unsupported'
+}
+
 function validationFor(connection, track) {
   return connection?.validations?.[track] || null
 }
@@ -59,6 +62,7 @@ function ApiKeyCard({ providerId, providerLists, connections, onRefresh, onReque
   const [saving, setSaving] = useState(false)
   const [busyTrack, setBusyTrack] = useState('')
   const [error, setError] = useState('')
+  const cardBusy = saving || Boolean(busyTrack)
 
   const save = useCallback(async () => {
     const key = draft.trim()
@@ -79,7 +83,8 @@ function ApiKeyCard({ providerId, providerLists, connections, onRefresh, onReque
           apiKey: key || REDACTED_API_KEY
         }
       })
-      if (result?.modelsResult && result.modelsResult.ok !== true) setError(result.modelsResult.message || localText(lang, '模型拉取失败', 'Model discovery failed'))
+      const failed = Object.values(result?.modelsResults || {}).find(item => item?.ok !== true) || (result?.modelsResult?.ok !== true ? result?.modelsResult : null)
+      if (failed) setError(failed.message || localText(lang, '模型拉取或验证失败', 'Model discovery or validation failed'))
       await onRefresh?.()
     } catch (err) {
       setError(err?.message || localText(lang, '保存失败', 'Save failed'))
@@ -112,10 +117,11 @@ function ApiKeyCard({ providerId, providerLists, connections, onRefresh, onReque
 
   const remove = useCallback(async () => {
     if (!existing) return
+    setBusyTrack('remove'); setError('')
     onRequestStart?.()
     try { await window.electronAPI?.providerConnection?.remove({ collection: 'apiKeys', id: existing.id }); await onRefresh?.() }
     catch (err) { setError(err?.message || localText(lang, '删除失败', 'Remove failed')) }
-    finally { onRequestEnd?.() }
+    finally { setBusyTrack(''); onRequestEnd?.() }
   }, [existing, lang, onRefresh, onRequestStart, onRequestEnd])
 
   return (
@@ -127,24 +133,28 @@ function ApiKeyCard({ providerId, providerLists, connections, onRefresh, onReque
       </div>
       <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
         {capabilities.map(track => <span key={track} style={chipS()}>{track}</span>)}
+        <span style={chipS()}>{regionLabel(info.region, lang)}</span>
         {info.billing && <span style={chipS()}>{billingLabel(info.billing.mode, lang)}</span>}
       </div>
       <div style={{ display: 'flex', gap: 6 }}>
-        <input type="password" value={draft} onChange={e => setDraft(e.target.value)} placeholder={existing ? REDACTED_API_KEY : localText(lang, '粘贴 API 密钥', 'Paste API key')} style={{ ...inputS(), flex: 1 }} />
-        <button onClick={save} disabled={saving} style={{ ...btnS(true), opacity: saving ? 0.6 : 1 }}>{saving ? localText(lang, '保存中…', 'Saving…') : localText(lang, '保存并拉取', 'Save & Discover')}</button>
+        <input type="password" value={draft} onChange={e => setDraft(e.target.value)} disabled={cardBusy} placeholder={existing ? REDACTED_API_KEY : localText(lang, '粘贴 API 密钥', 'Paste API key')} style={{ ...inputS(), flex: 1 }} />
+        <button onClick={save} disabled={cardBusy} style={{ ...btnS(true), opacity: cardBusy ? 0.6 : 1 }}>{saving ? localText(lang, '保存中…', 'Saving…') : localText(lang, '保存并拉取', 'Save & Discover')}</button>
       </div>
-      {existing && capabilities.map(track => { const trackValidation = validationFor(existing, track); return <div key={track} style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', paddingTop: 6, borderTop: '1px solid var(--border-subtle)' }}>
+      {existing && capabilities.map(track => { const trackValidation = validationFor(existing, track); const availability = validationAvailability(providerLists, providerId, track); const unsupported = availability === 'unsupported'; return <div key={track} style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', paddingTop: 6, borderTop: '1px solid var(--border-subtle)' }}>
         <span style={chipS()}>{track}</span>
         <StatusBadge status={trackValidation?.status || 'pending_configuration'} lang={lang} />
         <LatencyBadge latencyMs={trackValidation?.latencyMs} />
-        <button onClick={() => refreshModels(track)} disabled={Boolean(busyTrack)} style={{ ...btnS(false), padding: '5px 10px', fontSize: 11 }}>{busyTrack === track ? localText(lang, '处理中…', 'Working…') : localText(lang, '刷新模型', 'Refresh models')}</button>
-        <button onClick={() => validate(track)} disabled={Boolean(busyTrack)} style={{ ...btnS(false), padding: '5px 10px', fontSize: 11 }}>{busyTrack === track ? localText(lang, '验证中…', 'Validating…') : localText(lang, '真实测试连接', 'Test Connection')}</button>
+        {validationEvidenceLabel(trackValidation, lang) && <span style={chipS('var(--accent)')}>{validationEvidenceLabel(trackValidation, lang)}</span>}
+        <button onClick={() => refreshModels(track)} disabled={cardBusy || unsupported} title={unsupported ? localText(lang, '该提供商没有可靠的远端模型目录', 'No reliable remote model directory is available') : ''} style={{ ...btnS(false), padding: '5px 10px', fontSize: 11, opacity: unsupported ? 0.55 : 1 }}>{busyTrack === track ? localText(lang, '处理中…', 'Working…') : localText(lang, '刷新模型', 'Refresh models')}</button>
+        <button onClick={() => validate(track)} disabled={cardBusy || unsupported} title={unsupported ? localText(lang, '该提供商没有可靠的无成本验证方式', 'No reliable no-cost validation is available') : ''} style={{ ...btnS(false), padding: '5px 10px', fontSize: 11, opacity: unsupported ? 0.55 : 1 }}>{busyTrack === track ? localText(lang, '验证中…', 'Validating…') : availability === 'directory' ? localText(lang, '验证模型目录', 'Verify Directory') : localText(lang, '真实测试连接', 'Test Connection')}</button>
+        {unsupported && <span style={chipS()}>{localText(lang, '不支持无成本验证', 'No no-cost validation')}</span>}
         {trackValidation?.level && <span style={chipS()}>{trackValidation.level}</span>}
         {trackValidation?.checkedAt && <span style={chipS()}>{new Date(trackValidation.checkedAt).toLocaleString(lang === 'en' ? 'en-US' : 'zh-CN')}</span>}
         {trackValidation?.endpointHost && <span style={chipS()}>{trackValidation.endpointHost}</span>}
+        {trackValidation?.ok === false && <div style={{ flexBasis: '100%', color: 'var(--danger)', fontSize: 11, lineHeight: 1.4 }}>{trackValidation.errorCode && <strong>{trackValidation.errorCode}: </strong>}{trackValidation.message}</div>}
       </div>})}
       {existing && <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-        <button onClick={remove} style={{ ...btnS(false), padding: '5px 10px', fontSize: 11, color: 'var(--danger)' }}><Ic n="trash" size={12} /> {localText(lang, '移除', 'Remove')}</button>
+        <button onClick={remove} disabled={cardBusy} style={{ ...btnS(false), padding: '5px 10px', fontSize: 11, color: 'var(--danger)', opacity: cardBusy ? 0.55 : 1 }}><Ic n="trash" size={12} /> {localText(lang, '移除', 'Remove')}</button>
       </div>}
       {existing?.models?.length > 0 && <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>{existing.models.map(model => <span key={model.id} style={chipS('var(--accent)')}>{model.id}</span>)}</div>}
       {error && <div style={{ color: 'var(--danger)', fontSize: 11, lineHeight: 1.4 }}>{error}</div>}
@@ -174,17 +184,21 @@ export default function ApiKeysPage({ providerLists, lang, onCanonicalChange, on
     finally { setLoading(false) }
   }, [lang, onCanonicalChange])
   useEffect(() => { refresh() }, [refresh])
-  const providerIds = useMemo(() => standardProviderIds(providerLists), [providerLists])
-  const china = providerIds.filter(id => CHINA_IDS.has(id))
-  const global = providerIds.filter(id => !CHINA_IDS.has(id))
+  const providerIds = useMemo(() => {
+    const configured = new Set(connections.map(item => item.providerId))
+    return standardProviderIds(providerLists).sort((left, right) => {
+      const configuredOrder = Number(configured.has(right)) - Number(configured.has(left))
+      if (configuredOrder) return configuredOrder
+      const leftName = providerDisplayName(providerEntry(providerLists, left), lang, 'chat') || left
+      const rightName = providerDisplayName(providerEntry(providerLists, right), lang, 'chat') || right
+      return leftName.localeCompare(rightName, lang === 'en' ? 'en' : 'zh-CN')
+    })
+  }, [connections, providerLists, lang])
   if (loading) return <div style={{ padding: 24, color: 'var(--text-muted)' }}>{localText(lang, '正在加载…', 'Loading…')}</div>
   return <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
     <SectionHeading labelKey="providerApiKeys" lang={lang} />
     {error && <div style={{ color: 'var(--danger)', fontSize: 12 }}>{error}</div>}
-    {[['China Providers', china], ['Global Providers', global]].map(([title, ids]) => <section key={title}>
-      <div style={{ color: 'var(--text-secondary)', fontSize: 12, fontWeight: 600, marginBottom: 8 }}>{title} <span style={chipS()}>{ids.length}</span></div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(100%,340px),1fr))', gap: 12 }}>{ids.map(id => <ApiKeyCard key={id} providerId={id} providerLists={providerLists} connections={connections} onRefresh={refresh} onRequestStart={onRequestStart} onRequestEnd={onRequestEnd} lang={lang} />)}</div>
-    </section>)}
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(100%,340px),1fr))', gap: 12 }}>{providerIds.map(id => <ApiKeyCard key={id} providerId={id} providerLists={providerLists} connections={connections} onRefresh={refresh} onRequestStart={onRequestStart} onRequestEnd={onRequestEnd} lang={lang} />)}</div>
     {!providerIds.length && <EmptyState message={localText(lang, '暂无标准提供商', 'No standard providers')} />}
   </div>
 }

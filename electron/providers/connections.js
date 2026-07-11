@@ -7,7 +7,8 @@ const { spawnSync } = require('child_process')
 const { request, assertApiBaseUrl, joinCompatibleApiUrl, cleanRelativeApiPath } = require('../api/http')
 const { buildModelAuth, applyQueryParams } = require('../api/models')
 const { redactSecrets } = require('./pipeline')
-const { getProvider } = require('./registry')
+const { getProvider, getValidationStrategy, VALIDATION_STRATEGIES } = require('./registry')
+const { analyzeInferenceResponse, assertSuccessfulResponse, buildMinimalInferenceBody } = require('./inference-evidence')
 const { normalizeModelRecord, sortModelRecords } = require('../../shared/modelCapabilities.cjs')
 
 const TRACKS = ['chat', 'image', 'video']
@@ -50,7 +51,9 @@ function statusResult(input = {}) {
     endpointHost: input.endpointHost || '',
     modelId: input.modelId || '',
     errorCode: input.errorCode || '',
-    message: input.message || ''
+    message: input.message || '',
+    evidence: input.evidence || 'none',
+    outputVerified: input.outputVerified === true
   }
 }
 
@@ -225,6 +228,7 @@ function runtimeProviderId(connection, track) {
 function modelProvider(connection, track, requestOptions) {
   const resolvedProviderId = runtimeProviderId(connection, track)
   const providerDef = getProvider(resolvedProviderId)
+  const protocol = providerDef?.[track]?.protocol || providerDef?.chat?.protocol || ''
   return {
     ...connection,
     id: resolvedProviderId,
@@ -234,7 +238,7 @@ function modelProvider(connection, track, requestOptions) {
     authType: connection.authType || providerDef?.authType,
     apiKey: usableSecret(connection.apiKey) || usableSecret(connection.credentials?.apiKey) || usableSecret(connection.sessionToken) || usableSecret(connection.credentials?.sessionToken),
     sessionToken: usableSecret(connection.sessionToken) || usableSecret(connection.credentials?.sessionToken),
-    format: providerDef?.[track]?.format || providerDef?.chat?.format || '',
+    format: providerDef?.[track]?.format || providerDef?.chat?.format || (protocol === 'gemini' || protocol === 'anthropic' ? protocol : ''),
     pathPrefix: connection.pathPrefix || providerDef?.[track]?.pathPrefix || '',
     modelListPath: connection.detectedEndpoints?.models || connection.modelsPath || providerDef?.[track]?.modelListPath || providerDef?.modelListPath || '',
     reportErrors: true,
@@ -256,8 +260,7 @@ function relayProbeDefinitions(baseUrl, apiKey) {
       modelUrl: () => joinCompatibleApiUrl(baseUrl, '/v1/models'),
       chatUrl: () => joinCompatibleApiUrl(baseUrl, '/v1/chat/completions'),
       headers: { ...RELAY_PROBE_HEADERS, Authorization: `Bearer ${apiKey}` },
-      body: model => ({ model, messages: [{ role: 'user', content: 'ping' }], max_tokens: 1 }),
-      hasOutput: json => Boolean(json?.choices?.some(choice => typeof choice?.message?.content === 'string' && choice.message.content.length > 0))
+      body: model => buildMinimalInferenceBody('openai', model)
     },
     {
       protocol: 'anthropic',
@@ -267,8 +270,7 @@ function relayProbeDefinitions(baseUrl, apiKey) {
       modelUrl: () => joinCompatibleApiUrl(baseUrl, '/v1/models'),
       chatUrl: () => joinCompatibleApiUrl(baseUrl, '/v1/messages'),
       headers: { ...RELAY_PROBE_HEADERS, 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-      body: model => ({ model, messages: [{ role: 'user', content: 'ping' }], max_tokens: 1 }),
-      hasOutput: json => Boolean(json?.content?.some(item => typeof item?.text === 'string' && item.text.length > 0))
+      body: model => buildMinimalInferenceBody('anthropic', model)
     },
     {
       protocol: 'gemini',
@@ -278,8 +280,7 @@ function relayProbeDefinitions(baseUrl, apiKey) {
       modelUrl: () => applyQueryParams(joinCompatibleApiUrl(baseUrl, '/v1beta/models'), { key: apiKey }),
       chatUrl: model => applyQueryParams(joinCompatibleApiUrl(baseUrl, `/v1beta/models/${encodeURIComponent(model)}:generateContent`), { key: apiKey }),
       headers: { ...RELAY_PROBE_HEADERS },
-      body: () => ({ contents: [{ role: 'user', parts: [{ text: 'ping' }] }], generationConfig: { maxOutputTokens: 1 } }),
-      hasOutput: json => Boolean(json?.candidates?.some(candidate => candidate?.content?.parts?.some(part => typeof part?.text === 'string' && part.text.length > 0)))
+      body: model => buildMinimalInferenceBody('gemini', model)
     }
   ]
 }
@@ -313,7 +314,7 @@ function relayProbeFailure(error, context = {}) {
   if (/response is too large/i.test(message)) return { ...details, errorCode: 'RESPONSE_TOO_LARGE', message: 'Response is too large' }
   if (/invalid JSON/i.test(message)) return { ...details, errorCode: 'INVALID_RESPONSE', message }
   if (/no discoverable models|no valid model identifiers/i.test(message)) return { ...details, errorCode: 'EMPTY_MODEL_DIRECTORY', message }
-  if (/no assistant output|no text model/i.test(message)) return { ...details, errorCode: 'MINIMAL_INFERENCE_FAILED', message }
+  if (/no assistant output|no valid protocol response|no text model/i.test(message)) return { ...details, errorCode: 'MINIMAL_INFERENCE_FAILED', message }
   if (/ENOTFOUND|ECONNREFUSED|ECONNRESET|network|socket/i.test(message)) return { ...details, errorCode: 'NETWORK_UNAVAILABLE', message: 'Network unavailable' }
   return { ...details, errorCode: 'PROBE_FAILED', message: 'Probe failed' }
 }
@@ -346,10 +347,12 @@ async function detectRelayProtocol({ baseUrl, apiKey, requestOptions = {}, reque
     let failureContext = { stage: 'directory', endpointHost: endpointHost(safeBase), endpointPath: probe.modelsPath }
     try {
       const directoryResponse = await requestFn(probe.modelUrl(), { method: 'GET', ...requestOptions, headers: probe.headers })
+      assertSuccessfulResponse(directoryResponse)
       const parsed = parseRelayModelDirectory(directoryResponse?.data, probe.protocol)
       const candidates = relayTextProbeCandidates(parsed)
       if (!candidates.length) throw new Error('No text model is available for minimal inference')
       let verifiedModel = ''
+      let inferenceEvidence = null
       let lastInferenceError = null
       failureContext = { stage: 'inference', endpointHost: endpointHost(safeBase), endpointPath: probe.chatPath }
       for (const candidate of candidates) {
@@ -357,9 +360,8 @@ async function detectRelayProtocol({ baseUrl, apiKey, requestOptions = {}, reque
           const response = await requestFn(probe.chatUrl(candidate.id), {
             method: 'POST', ...requestOptions, headers: { ...probe.headers, 'Content-Type': 'application/json' }
           }, probe.body(candidate.id))
-          let json
-          try { json = JSON.parse(String(response?.data || '')) } catch { throw new Error('Minimal inference returned invalid JSON') }
-          if (!probe.hasOutput(json)) throw new Error('Minimal inference returned no assistant output')
+          assertSuccessfulResponse(response)
+          inferenceEvidence = analyzeInferenceResponse(probe.protocol, response?.data)
           verifiedModel = candidate.id
           break
         } catch (error) { lastInferenceError = error }
@@ -380,7 +382,10 @@ async function detectRelayProtocol({ baseUrl, apiKey, requestOptions = {}, reque
         validation: statusResult({
           ok: true, status: 'verified', level: 'minimal_inference', checkedAt,
           latencyMs: Date.now() - started, endpointHost: endpointHost(safeBase), modelId: verifiedModel,
-          message: `Detected ${probe.protocol} protocol, remote model directory, and minimal text inference`
+          evidence: inferenceEvidence.evidence, outputVerified: inferenceEvidence.outputVerified,
+          message: inferenceEvidence.outputVerified
+            ? `Detected ${probe.protocol} protocol, remote model directory, and minimal text inference output`
+            : `Detected ${probe.protocol} protocol and verified a minimal inference response without text output`
         })
       }
     } catch (error) {
@@ -412,6 +417,9 @@ async function refreshModels({ connection, track: requestedTrackInput, modelsApi
   const requestedTrack = TRACKS.includes(requestedTrackInput) ? requestedTrackInput : capabilities[0]
   if (!requestedTrack || !capabilities.includes(requestedTrack)) throw new Error('A supported model refresh track is required')
   const track = requestedTrack
+  if (connection.kind === 'api-key' && getValidationStrategy(connection.providerId, track) === VALIDATION_STRATEGIES.UNSUPPORTED) {
+    throw new Error('This provider does not expose a reliable remote model directory')
+  }
   const provider = modelProvider(connection, track, requestOptions)
   if (!provider.baseUrl) throw new Error('Provider base URL is not configured')
   const auth = buildModelAuth(provider)
@@ -441,7 +449,7 @@ function validationErrorCode(message = '') {
   if (/\b429\b|rate limit/i.test(message)) return 'HTTP_429'
   if (/timeout|timed out|ETIMEDOUT/i.test(message)) return 'NETWORK_TIMEOUT'
   if (/ENOTFOUND|ECONNREFUSED|ECONNRESET|network|socket/i.test(message)) return 'NETWORK_UNAVAILABLE'
-  if (/invalid JSON|not valid JSON|empty response|no assistant output/i.test(message)) return 'INVALID_RESPONSE'
+  if (/invalid JSON|not valid JSON|empty response|no assistant output|no valid protocol response/i.test(message)) return 'INVALID_RESPONSE'
   return 'VALIDATION_FAILED'
 }
 
@@ -464,15 +472,21 @@ async function validateConnection({ connection, track, modelId, modelsApi, reque
   const secrets = SECRET_FIELDS.flatMap(field => [connection[field], connection.credentials?.[field]]).filter(Boolean)
   try {
     if (!normalizeCapabilities(connection.capabilities).includes(track)) throw new Error(`Connection does not declare ${track} capability`)
+    const strategy = connection.kind === 'api-key'
+      ? getValidationStrategy(connection.providerId, track)
+      : null
+    if (strategy === VALIDATION_STRATEGIES.UNSUPPORTED) {
+      throw new Error('This provider does not support a reliable no-cost validation request')
+    }
     const refreshed = await refreshModels({ connection, track, modelsApi, requestOptions })
     if (typeof onModels === 'function') onModels(refreshed.models)
     const trackModels = refreshed.models.filter(item => item.capability === track)
-    const model = modelId || trackModels[0]?.id
+    const selectedModel = modelId || trackModels[0]?.id
     if (modelId && !trackModels.some(item => item.id === modelId)) {
       throw new Error(`Requested ${track} model is not in the remote model inventory`)
     }
-    if (track !== 'chat') {
-      if (!model || !trackModels.some(item => item.id === model)) {
+    if (track !== 'chat' || strategy === VALIDATION_STRATEGIES.DIRECTORY_ONLY) {
+      if (!selectedModel || !trackModels.some(item => item.id === selectedModel)) {
         throw new Error(`No remotely discovered ${track} model is available for validation`)
       }
       return statusResult({
@@ -481,49 +495,64 @@ async function validateConnection({ connection, track, modelId, modelsApi, reque
         level: 'model_directory',
         latencyMs: Date.now() - started,
         endpointHost: endpointHost(connection.baseUrl),
-        modelId: model || '',
+        modelId: selectedModel || '',
+        evidence: 'model_directory',
         message: 'Remote model directory verified only; billable generation was not run to avoid billing'
       })
     }
-    if (!model) throw new Error('No remotely discovered text model is available for minimal inference')
+    const candidates = modelId
+      ? trackModels.filter(item => item.id === modelId)
+      : relayTextProbeCandidates(trackModels)
+    if (!candidates.length) throw new Error('No remotely discovered text model is available for minimal inference')
     const provider = modelProvider(connection, 'chat', requestOptions)
     const auth = buildModelAuth(provider)
-    let url
-    let headers = { ...auth.headers, 'Content-Type': 'application/json' }
-    let body
     const providerId = runtimeProviderId(connection, track)
-    if (providerId === 'google' || providerId === 'gemini') {
-      url = applyQueryParams(joinCompatibleApiUrl(provider.baseUrl, `/v1beta/models/${encodeURIComponent(model)}:generateContent`), auth.queryParams)
-      body = { contents: [{ role: 'user', parts: [{ text: 'ping' }] }], generationConfig: { maxOutputTokens: 1 } }
-    } else if (providerId === 'anthropic' || providerId === 'claude') {
-      url = applyQueryParams(joinCompatibleApiUrl(provider.baseUrl, connection.endpoints?.chat || '/v1/messages'), auth.queryParams)
-      headers['anthropic-version'] ||= '2023-06-01'
-      body = { model, messages: [{ role: 'user', content: 'ping' }], max_tokens: 1 }
-    } else {
-      url = applyQueryParams(joinCompatibleApiUrl(provider.baseUrl, connection.endpoints?.chat || '/v1/chat/completions'), auth.queryParams)
-      body = { model, messages: [{ role: 'user', content: 'ping' }], max_tokens: 1 }
+    const protocol = strategy === VALIDATION_STRATEGIES.GEMINI_GENERATE_CONTENT
+      ? 'gemini'
+      : strategy === VALIDATION_STRATEGIES.ANTHROPIC_MESSAGES
+        ? 'anthropic'
+        : strategy === VALIDATION_STRATEGIES.OPENAI_CHAT
+          ? 'openai'
+          : providerId
+    let lastInferenceError = null
+    for (const candidate of candidates) {
+      try {
+        const model = candidate.id
+        let url
+        const headers = { ...auth.headers, 'Content-Type': 'application/json' }
+        let body
+        if (protocol === 'google' || protocol === 'gemini') {
+          url = applyQueryParams(joinCompatibleApiUrl(provider.baseUrl, `/v1beta/models/${encodeURIComponent(model)}:generateContent`), auth.queryParams)
+          body = buildMinimalInferenceBody('gemini', model)
+        } else if (protocol === 'anthropic' || protocol === 'claude') {
+          url = applyQueryParams(joinCompatibleApiUrl(provider.baseUrl, connection.endpoints?.chat || '/v1/messages'), auth.queryParams)
+          headers['anthropic-version'] ||= '2023-06-01'
+          body = buildMinimalInferenceBody('anthropic', model)
+        } else {
+          url = applyQueryParams(joinCompatibleApiUrl(provider.baseUrl, connection.endpoints?.chat || '/v1/chat/completions'), auth.queryParams)
+          body = buildMinimalInferenceBody('openai', model)
+        }
+        const response = await requestFn(url, { method: 'POST', headers, ...requestOptions }, body)
+        assertSuccessfulResponse(response)
+        const inference = analyzeInferenceResponse(protocol, response?.data)
+        return statusResult({
+          ok: true,
+          status: 'verified',
+          level: 'minimal_inference',
+          latencyMs: Date.now() - started,
+          endpointHost: endpointHost(provider.baseUrl),
+          modelId: model,
+          evidence: inference.evidence,
+          outputVerified: inference.outputVerified,
+          message: inference.outputVerified
+            ? 'Remote model directory and minimal text inference output verified'
+            : 'Remote model directory and minimal inference response verified without text output'
+        })
+      } catch (error) {
+        lastInferenceError = error
+      }
     }
-    const response = await requestFn(url, { method: 'POST', headers, ...requestOptions }, body)
-    let json
-    try { json = JSON.parse(response?.data || '') } catch { throw new Error('Minimal inference returned invalid JSON') }
-    let hasOutput = false
-    if (providerId === 'google' || providerId === 'gemini') {
-      hasOutput = Boolean(json?.candidates?.some(candidate => candidate?.content?.parts?.some(part => typeof part?.text === 'string' && part.text.length > 0)))
-    } else if (providerId === 'anthropic' || providerId === 'claude') {
-      hasOutput = Boolean(json?.content?.some(item => typeof item?.text === 'string' && item.text.length > 0))
-    } else {
-      hasOutput = Boolean(json?.choices?.some(choice => typeof choice?.message?.content === 'string' && choice.message.content.length > 0))
-    }
-    if (!hasOutput) throw new Error('Minimal inference returned no assistant output')
-    return statusResult({
-      ok: true,
-      status: 'verified',
-      level: 'minimal_inference',
-      latencyMs: Date.now() - started,
-      endpointHost: endpointHost(provider.baseUrl),
-      modelId: model,
-      message: 'Remote model directory and minimal text inference verified'
-    })
+    throw lastInferenceError || new Error('Minimal inference failed for every text model candidate')
   } catch (error) {
     return validationError(error, connection, started, secrets)
   }

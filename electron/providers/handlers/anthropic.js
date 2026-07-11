@@ -1,5 +1,6 @@
 const { registerHandler } = require('../handler')
 const { request, joinCompatibleApiUrl } = require('../../api/http')
+const { extractPrimaryInferenceOutput } = require('../inference-evidence')
 
 async function anthropicHandler(params) {
   const payload = {
@@ -27,9 +28,8 @@ async function anthropicHandler(params) {
   const json = JSON.parse(res.data)
   if (json.error) throw new Error(json.error.message)
 
-  const thinking = json.content?.filter(block => block.type === 'thinking').map(block => block.text).join('') || ''
-  const text = json.content?.filter(block => block.type === 'text').map(block => block.text).join('') || ''
-  return { text, thinking, model: json.model }
+  const output = extractPrimaryInferenceOutput('anthropic', json)
+  return { ...output, model: json.model }
 }
 
 registerHandler('anthropic', anthropicHandler)

@@ -101,6 +101,8 @@ export interface ProviderValidationStatus {
   modelId: string
   errorCode: string
   message: string
+  evidence?: 'assistant_output' | 'protocol_response' | 'model_directory' | 'capability' | 'none'
+  outputVerified?: boolean
   track?: Track
   inventoryRevision?: string
 }

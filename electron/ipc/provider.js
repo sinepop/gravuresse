@@ -1,5 +1,8 @@
 const PROVIDER_ACTIONS = new Set(['chat', 'generate', 'submit', 'poll'])
 
+const { analyzeInferenceResponse, assertSuccessfulResponse, buildMinimalInferenceBody } = require('../providers/inference-evidence')
+const { getValidationStrategy, VALIDATION_STRATEGIES } = require('../providers/registry')
+
 function isPlainObject(value) {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value))
 }
@@ -19,6 +22,8 @@ function providerTestResult(input = {}) {
     modelId: input.modelId || '',
     errorCode: input.errorCode || '',
     message: input.message || '',
+    evidence: input.evidence || 'none',
+    outputVerified: input.outputVerified === true,
     ...(input.imageUrl ? { imageUrl: input.imageUrl } : {}),
     ...(input.details ? { details: input.details } : {}),
     ...(input.warnings ? { warnings: input.warnings } : {})
@@ -28,6 +33,13 @@ function providerTestResult(input = {}) {
 function providerEndpointHost(value) {
   try { return new URL(value).host }
   catch { return '' }
+}
+
+function validationAvailability(providerId, track) {
+  const strategy = getValidationStrategy(providerId, track)
+  if (strategy === VALIDATION_STRATEGIES.DIRECTORY_ONLY) return 'directory'
+  if (strategy === VALIDATION_STRATEGIES.UNSUPPORTED) return 'unsupported'
+  return 'inference'
 }
 
 function normalizeLegacyChatMessages(messages) {
@@ -96,21 +108,16 @@ function registerProviderIpc({
   applyQueryParams,
   requestOptionsFromConfig,
   getModelFetchProvider,
-  relayDetector
+  relayDetector,
+  providerValidationRequest
 }) {
-  function hasAssistantOutput(providerId, responseData) {
-    let json
-    try { json = JSON.parse(responseData || '') } catch { return false }
-    if (providerId === 'google') return Boolean(json?.candidates?.some(candidate => candidate?.content?.parts?.some(part => typeof part?.text === 'string' && part.text.length > 0)))
-    if (providerId === 'anthropic') return Boolean(json?.content?.some(item => typeof item?.text === 'string' && item.text.length > 0))
-    return Boolean(json?.choices?.some(choice => typeof choice?.message?.content === 'string' && choice.message.content.length > 0))
-  }
   require('./provider-connections').registerProviderConnectionsIpc({
     ipcMain,
     config,
     modelsApi,
     requestOptionsFromConfig,
-    relayDetector
+    relayDetector,
+    validationRequest: providerValidationRequest
   })
   // ──────────────────────────────────────────────────────────────────────────────
   // New provider API — canonical entry points for all provider operations.
@@ -156,7 +163,8 @@ function registerProviderIpc({
         integrationStatus,
         executable,
         callMode: templateExecutable && !nativeExecutable ? 'custom-api' : getProviderCallMode(p.id, track, executable),
-        setupMode: templateExecutable && !nativeExecutable ? 'custom-api' : getProviderSetupMode(p.id, track, executable)
+        setupMode: templateExecutable && !nativeExecutable ? 'custom-api' : getProviderSetupMode(p.id, track, executable),
+        validationAvailability: validationAvailability(p.id, track)
       }
     })
   })
@@ -191,12 +199,15 @@ function registerProviderIpc({
         if (!result.ok) return providerTestResult({ ok: false, errorCode: result.error?.code || 'IMAGE_GENERATION_FAILED', message: result.error?.message || 'Image generation test failed', latencyMs: Date.now() - started })
         return providerTestResult({ ok: true, level: 'generation', message: 'Image generation succeeded', imageUrl: result.data, latencyMs: Date.now() - started })
       }
-      if (!providerDef.healthCheck) return providerTestResult({
+      const validationStrategy = getValidationStrategy(providerId, track)
+      if (validationStrategy === VALIDATION_STRATEGIES.UNSUPPORTED || validationStrategy === VALIDATION_STRATEGIES.DIRECTORY_ONLY) return providerTestResult({
         ok: false,
         status: 'unsupported',
         level: 'none',
         errorCode: 'HEALTH_CHECK_UNAVAILABLE',
-        message: 'No real health check is available for this provider',
+        message: validationStrategy === VALIDATION_STRATEGIES.DIRECTORY_ONLY
+          ? 'This provider supports model directory validation only'
+          : 'No reliable no-cost validation is available for this provider',
         latencyMs: Date.now() - started
       })
       const requestedBaseUrl = params.baseUrl || storedProvider.baseUrl || providerDef.defaults.baseUrl
@@ -213,22 +224,39 @@ function registerProviderIpc({
       })
       errorSecrets = Object.values(credentials)
       const { resolveAuth } = require('../providers/auth')
-      const { request, joinApiUrl } = require('../api/http')
+      const { request, joinCompatibleApiUrl } = require('../api/http')
       const auth = resolveAuth(providerDef, credentials, {
         authType: params.authType || storedProvider.authType,
         customAuth: params.customAuth || storedProvider.customAuth
       })
-      const url = applyQueryParams(joinApiUrl(testBaseUrl, providerDef.healthCheck.url), auth.queryParams)
+      const model = params.model || storedProvider.model || providerDef.chat?.defaultModel || providerDef.healthCheck?.body?.model || ''
+      const protocol = validationStrategy === VALIDATION_STRATEGIES.ANTHROPIC_MESSAGES
+        ? 'anthropic'
+        : validationStrategy === VALIDATION_STRATEGIES.GEMINI_GENERATE_CONTENT
+          ? 'gemini'
+          : 'openai'
+      const path = protocol === 'anthropic'
+        ? '/v1/messages'
+        : protocol === 'gemini'
+          ? `/v1beta/models/${encodeURIComponent(model)}:generateContent`
+          : '/v1/chat/completions'
+      const url = applyQueryParams(joinCompatibleApiUrl(testBaseUrl, path), auth.queryParams)
       endpoint = url
-      const response = await request(url, {
-        method: providerDef.healthCheck.method,
-        headers: { ...auth.headers, 'Content-Type': 'application/json' },
+      const headers = { ...auth.headers, 'Content-Type': 'application/json' }
+      if (protocol === 'anthropic') headers['anthropic-version'] ||= '2023-06-01'
+      const requestFn = providerValidationRequest || request
+      const response = await requestFn(url, {
+        method: 'POST',
+        headers,
         ...requestOptionsFromConfig(stored)
-      }, providerDef.healthCheck.body)
-      if (!hasAssistantOutput(providerId, response?.data)) {
-        return providerTestResult({ ok: false, errorCode: 'INVALID_HEALTH_RESPONSE', message: 'Health check returned no assistant output', latencyMs: Date.now() - started, endpointHost: providerEndpointHost(url) })
-      }
-      return providerTestResult({ ok: true, level: 'minimal_inference', message: 'Connection successful', latencyMs: Date.now() - started, endpointHost: providerEndpointHost(url), modelId: params.model || storedProvider.model || '' })
+      }, buildMinimalInferenceBody(protocol, model))
+      assertSuccessfulResponse(response)
+      const inference = analyzeInferenceResponse(protocol, response?.data)
+      return providerTestResult({
+        ok: true, level: 'minimal_inference', evidence: inference.evidence, outputVerified: inference.outputVerified,
+        message: inference.outputVerified ? 'Connection and assistant output verified' : 'Connection response verified without text output',
+        latencyMs: Date.now() - started, endpointHost: providerEndpointHost(url), modelId: model
+      })
     } catch (err) {
       return providerTestResult({
         ok: false,
@@ -288,16 +316,13 @@ function registerProviderIpc({
           'Content-Type': 'application/json'
         },
         ...requestOptionsFromConfig(stored)
-      }, {
-        model: resolved.model || 'gpt-3.5-turbo',
-        messages: [{ role: 'user', content: 'ping' }],
-        max_tokens: 1
-      })
+      }, buildMinimalInferenceBody('openai', resolved.model || 'gpt-3.5-turbo'))
+      assertSuccessfulResponse(response)
 
-      if (!hasAssistantOutput('openai', response?.data)) throw new Error('Connection test returned no assistant output')
+      const inference = analyzeInferenceResponse('openai', response?.data)
 
       const latencyMs = Date.now() - start
-      return { ok: true, latencyMs }
+      return { ok: true, latencyMs, evidence: inference.evidence, outputVerified: inference.outputVerified }
     } catch (err) {
       return { ok: false, message: require('../providers/pipeline').redactSecrets(err?.message || 'Connection test failed', [requestSecret]) }
     }

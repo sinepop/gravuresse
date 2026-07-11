@@ -81,6 +81,29 @@ export function billingLabel(mode, lang) {
   return t('billingUnknown', lang)
 }
 
+export function regionLabel(region, lang) {
+  const key = {
+    global: 'regionGlobal',
+    china: 'regionChina',
+    both: 'regionBoth'
+  }[region] || 'regionUnknown'
+  return t(key, lang)
+}
+
+export function validationEvidenceLabel(validation, lang) {
+  if (!validation) return ''
+  if (validation.evidence === 'assistant_output' || validation.outputVerified === true) {
+    return t('validationOutputVerified', lang)
+  }
+  if (validation.evidence === 'protocol_response') return t('validationRequestVerified', lang)
+  if (
+    validation.evidence === 'model_directory' ||
+    validation.status === 'directory_verified' ||
+    validation.level === 'model_directory'
+  ) return t('validationDirectoryOnly', lang)
+  return ''
+}
+
 export function statusLabel(status, lang) {
   const map = {
     verified: { zh: '已验证', en: 'Verified' },

@@ -294,7 +294,7 @@ async function request(url, options = {}, body = null, { retries = 0, retryDelay
   for (let i = 0; i <= retries; i++) {
     try {
       const res = await httpRequest(url, options, body)
-      if (res.status >= 400) {
+      if (res.status < 200 || res.status >= 300) {
         let detail = ''
         try {
           const json = JSON.parse(res.data)

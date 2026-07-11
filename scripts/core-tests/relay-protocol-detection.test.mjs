@@ -32,8 +32,40 @@ test('relay detection verifies OpenAI protocol and preserves only explicit media
   assert.equal(calls[0].options.headers.Authorization, 'Bearer secret')
   assert.equal(calls[0].options.headers.Accept, 'application/json')
   assert.equal(calls[0].options.headers['User-Agent'], 'Gravuresse/2.4.0')
+  assert.equal(calls[1].body.messages[0].content, 'Reply only with OK')
+  assert.equal(calls[1].body.max_tokens, 16)
+  assert.equal(result.validation.evidence, 'assistant_output')
+  assert.equal(result.validation.outputVerified, true)
   assert.equal(result.models.find(model => model.id === 'flux-by-name-only').capability, 'unknown')
   assert.equal(result.models.find(model => model.id === 'actual-image').capability, 'image')
+})
+
+test('relay detection accepts a valid truncated response without claiming assistant output', async () => {
+  const result = await detectRelayProtocol({
+    baseUrl: 'https://relay.example.com', apiKey: 'secret',
+    requestFn: async (_url, options) => options.method === 'GET'
+      ? response({ data: [{ id: 'deepseek-reasoner' }] })
+      : response({
+          choices: [{ message: { role: 'assistant', content: '' }, finish_reason: 'length' }],
+          usage: { completion_tokens: 16 }
+        })
+  })
+  assert.equal(result.validation.status, 'verified')
+  assert.equal(result.validation.level, 'minimal_inference')
+  assert.equal(result.validation.evidence, 'protocol_response')
+  assert.equal(result.validation.outputVerified, false)
+})
+
+test('relay detection never accepts a non-2xx transport response', async () => {
+  await assert.rejects(() => detectRelayProtocol({
+    baseUrl: 'https://relay.example.com', apiKey: 'secret',
+    requestFn: async (_url, options) => ({
+      status: 302,
+      data: JSON.stringify(options.method === 'GET'
+        ? { data: [{ id: 'chat-model' }] }
+        : { choices: [{ message: { content: 'OK' }, finish_reason: 'stop' }] })
+    })
+  }), error => error?.failures?.every(failure => failure.statusCode === 302))
 })
 
 test('relay detection falls through to Anthropic and Gemini with protocol-specific auth', async () => {

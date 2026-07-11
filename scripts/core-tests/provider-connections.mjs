@@ -187,6 +187,42 @@ export async function runProviderConnectionCoreTests(configModule) {
   assert.deepEqual(lockedStandard.models, [], 'renderer-supplied inventories are ignored')
   assert.equal(lockedStandard.validation, null, 'renderer-supplied validation is ignored')
 
+  for (const fixture of [
+    {
+      providerId: 'deepseek', model: 'deepseek-reasoner', format: '', path: '/v1/chat/completions', authHeader: 'Authorization',
+      response: { choices: [{ message: { content: '', reasoning_content: 'OK' }, finish_reason: 'stop' }], usage: { completion_tokens: 2 } }
+    },
+    {
+      providerId: 'anthropic', model: 'claude-test', format: 'anthropic', path: '/v1/messages', authHeader: 'x-api-key',
+      response: { content: [{ type: 'text', text: 'OK' }], stop_reason: 'end_turn', usage: { output_tokens: 1 } }
+    },
+    {
+      providerId: 'google', model: 'gemini-test', format: 'gemini', path: '/v1beta/models/gemini-test:generateContent', authQuery: 'key',
+      response: { candidates: [{ content: { parts: [{ text: 'OK' }] }, finishReason: 'STOP' }] }
+    }
+  ]) {
+    const standard = connections.sanitizeConnection({ id: `key-${fixture.providerId}`, providerId: fixture.providerId, apiKey: 'protocol-secret' }, 'apiKeys')
+    const validation = await connections.validateConnection({
+      connection: standard,
+      track: 'chat',
+      modelsApi: { fetch: async provider => {
+        assert.equal(provider.format, fixture.format)
+        return [{ id: fixture.model, capability: 'chat', source: 'remote' }]
+      } },
+      requestOptions: {},
+      requestFn: async (url, options, body) => {
+        assert.equal(url.pathname, fixture.path)
+        if (fixture.authHeader) assert.ok(options.headers[fixture.authHeader])
+        if (fixture.authQuery) assert.equal(url.searchParams.get(fixture.authQuery), 'protocol-secret')
+        const tokenLimit = body.max_tokens ?? body.generationConfig?.maxOutputTokens
+        assert.equal(tokenLimit, 16)
+        return { status: 200, data: JSON.stringify(fixture.response) }
+      }
+    })
+    assert.equal(validation.ok, true, `${fixture.providerId} validates with its declared protocol`)
+    assert.equal(validation.evidence, 'assistant_output')
+  }
+
   const modelsApi = {
     fetch: async () => [
       { id: 'chat-model', capability: 'chat', source: 'remote' },
@@ -217,6 +253,22 @@ export async function runProviderConnectionCoreTests(configModule) {
     requestFn: async () => ({ status: 200, data: '{}' })
   })
   assert.equal(forgedChatValidation.ok, false, 'an arbitrary 2xx response is not a successful inference')
+
+  let candidateAttempts = 0
+  const laterCandidateValidation = await connections.validateConnection({
+    connection: relay,
+    track: 'chat',
+    modelsApi: { fetch: async () => Array.from({ length: 8 }, (_, index) => ({ id: `chat-model-${index + 1}`, capability: 'chat', source: 'remote' })) },
+    requestOptions: {},
+    requestFn: async () => {
+      candidateAttempts += 1
+      if (candidateAttempts < 4) throw new Error('candidate unavailable')
+      return { status: 200, data: '{"choices":[{"message":{"content":"OK"},"finish_reason":"stop"}]}' }
+    }
+  })
+  assert.equal(laterCandidateValidation.ok, true)
+  assert.equal(laterCandidateValidation.modelId, 'chat-model-4')
+  assert.equal(candidateAttempts, 4)
 
   const imageValidation = await connections.validateConnection({
     connection: relay,

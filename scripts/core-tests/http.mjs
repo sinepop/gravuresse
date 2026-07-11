@@ -5,7 +5,7 @@ import dns from 'node:dns'
 import { createRequire } from 'node:module'
 
 const require = createRequire(import.meta.url)
-const { assertHttpsUrl, httpRequest, joinCompatibleApiUrl } = require('../../electron/api/http.js')
+const { assertHttpsUrl, httpRequest, joinCompatibleApiUrl, request } = require('../../electron/api/http.js')
 
 function installMockHttps(routes) {
   const originalRequest = https.request
@@ -105,6 +105,18 @@ export async function runHttpCoreTests() {
     assert.equal(res.data, '{"ok":true}')
     assert.deepEqual(mock.calls.map(call => new URL(call.url).pathname), ['/start', '/final'])
     assert.equal(mock.calls[1].options.headers.Authorization, 'Bearer test-token')
+  } finally {
+    mock.restore()
+  }
+
+  mock = installMockHttps({
+    '/redirect-without-location': { status: 304, body: '{"choices":[{"message":{"content":"OK"}}]}' }
+  })
+  try {
+    await assert.rejects(
+      () => request('https://93.184.216.34/redirect-without-location'),
+      error => error?.status === 304
+    )
   } finally {
     mock.restore()
   }

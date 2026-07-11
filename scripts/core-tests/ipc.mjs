@@ -79,6 +79,8 @@ export async function runIpcCoreTests() {
     connections: { accounts: [], apiKeys: [], relays: [], defaults: { chat: null, image: null, video: null } }
   }
   let modelsFetch = async () => [{ id: 'remote-chat', capability: 'chat', source: 'remote' }]
+  let validationResponse = { status: 200, data: '{"choices":[{"message":{"content":"OK"},"finish_reason":"stop"}],"usage":{"completion_tokens":1}}' }
+  let lastValidationRequest = null
   let detectionRevision = 0
   const configMock = {
     REDACTED_API_KEY: '********',
@@ -103,6 +105,12 @@ export async function runIpcCoreTests() {
     ipcMain: providerIpc,
     config: configMock,
     modelsApi: { fetch: providerConfig => modelsFetch(providerConfig) },
+    providerValidationRequest: async (url, options, body) => {
+      lastValidationRequest = { url, options, body }
+      assert.equal(options.method, 'POST')
+      assert.equal(body.max_tokens ?? body.generationConfig?.maxOutputTokens, 16)
+      return validationResponse
+    },
     relayDetector: async ({ baseUrl, apiKey }) => {
       const models = await modelsFetch({ baseUrl, apiKey })
       const checkedAt = new Date().toISOString()
@@ -132,8 +140,11 @@ export async function runIpcCoreTests() {
     resolveProviderIdByTrack: (_, id) => id,
     canUseStoredCredentials: () => false,
     realSecret: value => value,
-    credentialsFromProvider: () => ({}),
-    applyQueryParams: url => url,
+    credentialsFromProvider: (_, incoming) => incoming,
+    applyQueryParams: (url, params = {}) => {
+      for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value)
+      return url
+    },
     requestOptionsFromConfig: () => ({}),
     getModelFetchProvider: providerConfig => providerConfig || {}
   })
@@ -141,7 +152,7 @@ export async function runIpcCoreTests() {
     assert.equal(typeof providerIpc.handlers.get(channel), 'function', `${channel} should be registered`)
   }
 
-  const unsupportedHealthCheck = await providerIpc.handlers.get('provider:test')(null, { providerId: 'openai', track: 'chat' })
+  const unsupportedHealthCheck = await providerIpc.handlers.get('provider:test')(null, { providerId: 'runway', track: 'video' })
   assert.equal(unsupportedHealthCheck.ok, false)
   assert.equal(unsupportedHealthCheck.status, 'unsupported')
   assert.equal(unsupportedHealthCheck.level, 'none')
@@ -150,7 +161,31 @@ export async function runIpcCoreTests() {
   assert.equal(Number.isFinite(unsupportedHealthCheck.latencyMs), true)
   assert.equal(unsupportedHealthCheck.endpointHost, '')
   assert.equal(unsupportedHealthCheck.modelId, '')
-  assert.match(unsupportedHealthCheck.message, /No real health check/)
+  assert.match(unsupportedHealthCheck.message, /No reliable no-cost validation/)
+
+  const legacyDeepSeekTest = await providerIpc.handlers.get('provider:test')(null, {
+    providerId: 'deepseek', track: 'chat', apiKey: 'deepseek-secret', model: 'deepseek-chat'
+  })
+  assert.equal(legacyDeepSeekTest.ok, true)
+  assert.equal(legacyDeepSeekTest.evidence, 'assistant_output')
+  assert.equal(lastValidationRequest.url.pathname, '/v1/chat/completions')
+
+  validationResponse = { status: 200, data: '{"content":[{"type":"text","text":"OK"}],"stop_reason":"end_turn","usage":{"output_tokens":1}}' }
+  const legacyAnthropicTest = await providerIpc.handlers.get('provider:test')(null, {
+    providerId: 'anthropic', track: 'chat', apiKey: 'anthropic-secret', model: 'claude-test'
+  })
+  assert.equal(legacyAnthropicTest.ok, true)
+  assert.equal(lastValidationRequest.url.pathname, '/v1/messages')
+  assert.equal(lastValidationRequest.options.headers['anthropic-version'], '2023-06-01')
+
+  validationResponse = { status: 200, data: '{"candidates":[{"content":{"parts":[{"text":"OK"}]},"finishReason":"STOP"}]}' }
+  const legacyGeminiTest = await providerIpc.handlers.get('provider:test')(null, {
+    providerId: 'google', track: 'chat', apiKey: 'gemini-secret', model: 'gemini-test'
+  })
+  assert.equal(legacyGeminiTest.ok, true)
+  assert.equal(lastValidationRequest.url.pathname, '/v1beta/models/gemini-test:generateContent')
+  assert.equal(lastValidationRequest.url.searchParams.get('key'), 'gemini-secret')
+  validationResponse = { status: 200, data: '{"choices":[{"message":{"content":"OK"},"finish_reason":"stop"}],"usage":{"completion_tokens":1}}' }
 
   const savedRelay = await providerIpc.handlers.get('providerConnection:save')(null, {
     collection: 'relays',
@@ -191,6 +226,17 @@ export async function runIpcCoreTests() {
   assert.equal(savedStandard.connection.baseUrl, 'https://api.openai.com')
   assert.equal(savedStandard.connection.models.some(model => model.id === 'forged'), false)
   assert.deepEqual(Object.keys(providerConfigState.connections.apiKeys.find(item => item.id === 'openai-standard').validations).sort(), ['chat', 'image'], 'save refreshes every declared capability instead of only the first')
+  assert.equal(savedStandard.modelsResults.chat.status, 'verified', 'saving a chat API key runs minimal inference after discovery')
+  assert.equal(savedStandard.modelsResults.chat.evidence, 'assistant_output')
+
+  validationResponse = { status: 200, data: '{}' }
+  const failedInference = await providerIpc.handlers.get('providerConnection:save')(null, {
+    collection: 'apiKeys',
+    connection: { id: 'deepseek-standard', providerId: 'deepseek', apiKey: 'deepseek-secret' }
+  })
+  assert.equal(failedInference.modelsResult.ok, false)
+  assert.equal(failedInference.connection.models.some(model => model.id === 'remote-chat'), true, 'a failed inference preserves the verified remote directory')
+  validationResponse = { status: 200, data: '{"choices":[{"message":{"content":"OK"},"finish_reason":"stop"}],"usage":{"completion_tokens":1}}' }
   await assert.rejects(() => providerIpc.handlers.get('providerConnection:save')(null, {
     collection: 'apiKeys', connection: { id: 'relay-one', providerId: 'openai', apiKey: 'x', capabilities: ['chat'] }
   }), /unique across all collections/)

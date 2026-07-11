@@ -117,7 +117,7 @@ export interface ElectronAPI {
     list(action: string): Promise<unknown>
     test(params: ProviderProfile & Record<string, unknown>): Promise<unknown>
     fetchModels(params: ProviderProfile & Record<string, unknown>): Promise<{ ok: boolean; models?: string[]; message?: string }>
-    testConnection(params: ProviderProfile & Record<string, unknown>): Promise<{ ok: boolean; latencyMs?: number; message?: string }>
+    testConnection(params: ProviderProfile & Record<string, unknown>): Promise<{ ok: boolean; latencyMs?: number; message?: string; evidence?: ProviderValidationStatus['evidence']; outputVerified?: boolean }>
   }
 
   providerConnection?: {
