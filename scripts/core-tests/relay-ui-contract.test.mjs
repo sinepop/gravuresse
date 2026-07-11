@@ -5,6 +5,9 @@ import test from 'node:test'
 const source = await readFile(new URL('../../src/components/settings/RelaysPage.jsx', import.meta.url), 'utf8')
 const apiKeysSource = await readFile(new URL('../../src/components/settings/ApiKeysPage.jsx', import.meta.url), 'utf8')
 const sharedSource = await readFile(new URL('../../src/components/settings/shared.jsx', import.meta.url), 'utf8')
+const modelSelectorSource = await readFile(new URL('../../src/components/ModelSelector.jsx', import.meta.url), 'utf8')
+const defaultsSource = await readFile(new URL('../../src/components/settings/DefaultsPage.jsx', import.meta.url), 'utf8')
+const chatHookSource = await readFile(new URL('../../src/hooks/useChat.js', import.meta.url), 'utf8')
 const settingsSource = await readFile(new URL('../../src/components/Settings.jsx', import.meta.url), 'utf8')
 const canvasSource = await readFile(new URL('../../src/components/CanvasPanel.jsx', import.meta.url), 'utf8')
 const i18nSource = await readFile(new URL('../../src/i18n.js', import.meta.url), 'utf8')
@@ -37,7 +40,7 @@ test('canvas uses product language for batch actions and source relationships', 
   assert.doesNotMatch(canvasSource, />[^<{]*\p{Script=Han}[^<{]*</u)
 })
 
-test('relay UI exposes only Base URL, API Key, connect, test and delete controls', () => {
+test('relay UI exposes only Base URL, API Key, discover and delete controls', () => {
   assert.match(source, />Base URL\s*</)
   assert.match(source, />API Key\s*</)
   assert.match(source, /连接并拉取模型/)
@@ -63,9 +66,8 @@ test('API keys use one localized provider list with region and validation eviden
   assert.match(apiKeysSource, /localeCompare/)
   assert.match(apiKeysSource, /regionLabel\(info\.region, lang\)/)
   assert.match(apiKeysSource, /validationEvidenceLabel\(trackValidation, lang\)/)
-  assert.match(apiKeysSource, /validationAvailability\(providerLists, providerId, track\)/)
-  assert.match(apiKeysSource, /disabled=\{cardBusy \|\| unsupported\}/)
-  assert.match(apiKeysSource, /不支持无成本验证/)
+  assert.doesNotMatch(apiKeysSource, /providerValidation\?\.run|真实测试连接|validationAvailability/)
+  assert.match(apiKeysSource, /providerModels\?\.refresh/)
   assert.match(apiKeysSource, /trackValidation\.errorCode/)
   assert.match(apiKeysSource, /trackValidation\.message/)
   for (const key of ['regionGlobal', 'regionChina', 'regionBoth', 'regionUnknown']) assert.match(i18nSource, new RegExp(`${key}:`))
@@ -80,12 +82,34 @@ test('provider links have localized user-facing labels', () => {
   for (const phrase of ['文档', '获取密钥', '价格', 'Docs', 'Get API Key', 'Pricing']) assert.match(i18nSource, new RegExp(phrase))
 })
 
+test('composer model selector uses current canonical remote inventories without changing defaults', () => {
+  assert.match(modelSelectorSource, /function canonicalProfiles/)
+  assert.match(modelSelectorSource, /connection\.models \|\| \[\]/)
+  assert.match(modelSelectorSource, /model\.capability !== track/)
+  assert.match(modelSelectorSource, /onConnectionModelChange/)
+  assert.doesNotMatch(modelSelectorSource, /providerDefaults\?\.save/)
+  assert.doesNotMatch(modelSelectorSource, /buildConfigProviderProfiles|createProviderProfilePatch|providerProfiles/)
+  assert.doesNotMatch(modelSelectorSource, /onProviderChange|config\?\.providers/)
+  assert.doesNotMatch(modelSelectorSource, /profiles\[0\]\?\.model/)
+  assert.match(chatHookSource, /function canonicalModelSelection/)
+  assert.match(chatHookSource, /item\.capability === track/)
+  assert.match(chatHookSource, /activeSelection \|\| connections\.defaults\?\.\[track\]/)
+  assert.doesNotMatch(chatHookSource, /canonical(?:Chat|Image|Video)\?\.provider \|\| config\?\.providers/)
+  assert.doesNotMatch(chatHookSource, /function hasProviderCredential/)
+  assert.match(chatHookSource, /connectionId: canonicalChat\?\.connection\.id/)
+  assert.match(chatHookSource, /connectionId: canonicalImage\?\.connection\.id/)
+  assert.match(chatHookSource, /connectionId: canonicalVideo\?\.connection\.id/)
+})
+
+test('default model selectors only expose exact capability matches', () => {
+  assert.match(defaultsSource, /model\.capability !== track/)
+})
+
 test('relay save submits only renderer-owned intent fields', () => {
   assert.match(source, /connection:\s*\{\s*id:\s*relay\.id,\s*baseUrl:\s*relay\.baseUrl\.trim\(\),\s*apiKey:\s*credential\s*\}/)
   assert.doesNotMatch(source, /connection:\s*\{\s*\.\.\./)
-  assert.doesNotMatch(source, /providerModels\?\.refresh/)
-  assert.match(source, /providerValidation\?\.run\(\{ connectionId: relay\.id, track: 'chat' \}\)/)
-  assert.match(source, /真实测试连接/)
+  assert.doesNotMatch(source, /providerModels\?\.refresh|providerValidation\?\.run/)
+  assert.doesNotMatch(source, /真实测试连接/)
   assert.match(source, /validationEvidenceLabel/)
 })
 

@@ -56,6 +56,34 @@ test('relay detection accepts a valid truncated response without claiming assist
   assert.equal(result.validation.outputVerified, false)
 })
 
+test('directory-only relay discovery accepts a pure OpenAI-compatible image inventory', async () => {
+  let postCalls = 0
+  const result = await detectRelayProtocol({
+    baseUrl: 'https://image-relay.example.com/v1', apiKey: 'secret', requireInference: false,
+    requestFn: async (_url, options) => {
+      if (options.method === 'POST') postCalls += 1
+      return response({ data: [{ id: 'gpt-image-1' }, { id: 'flux-1.1-pro' }] })
+    }
+  })
+  assert.equal(postCalls, 0)
+  assert.equal(result.detectedProtocol, 'openai')
+  assert.equal(result.validation.status, 'directory_verified')
+  assert.equal(result.validation.evidence, 'model_directory')
+  assert.equal(result.detectedEndpoints.image, '/v1/images/generations')
+  assert.equal(result.detectedEndpoints.chat, undefined)
+  assert.deepEqual(result.models.map(model => model.capability), ['image', 'image'])
+})
+
+test('directory-only relay discovery keeps video models without inventing an execution endpoint', async () => {
+  const result = await detectRelayProtocol({
+    baseUrl: 'https://video-relay.example.com/v1', apiKey: 'secret', requireInference: false,
+    requestFn: async () => response({ data: [{ id: 'sora-2' }] })
+  })
+  assert.equal(result.validation.status, 'directory_verified')
+  assert.equal(result.models[0].capability, 'video')
+  assert.deepEqual(result.detectedEndpoints, { models: '/v1/models' })
+})
+
 test('relay detection never accepts a non-2xx transport response', async () => {
   await assert.rejects(() => detectRelayProtocol({
     baseUrl: 'https://relay.example.com', apiKey: 'secret',

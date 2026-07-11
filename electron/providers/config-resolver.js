@@ -137,9 +137,7 @@ function verifiedTrackInventory(connection = {}, track) {
   // mistaken for a freshly fetched remote inventory.
   if (!connection.inventoryRevision || !validation.inventoryRevision || validation.inventoryRevision !== connection.inventoryRevision) return false
   if (validation.track !== track) return false
-  if (track === 'chat' && validation.level !== 'minimal_inference') return false
-  if (track === 'chat' && validation.status !== 'verified') return false
-  if (track !== 'chat' && !['model_directory', 'capability'].includes(validation.level)) return false
+  if (!['minimal_inference', 'model_directory', 'capability'].includes(validation.level)) return false
   if (!Array.isArray(connection.models) || !connection.models.some(model => model?.source === 'remote' && model?.capability === track)) return false
   return true
 }

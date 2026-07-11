@@ -285,7 +285,7 @@ function relayProbeDefinitions(baseUrl, apiKey) {
   ]
 }
 
-function parseRelayModelDirectory(data, protocol) {
+function parseRelayModelDirectory(data, protocol, options = {}) {
   let json
   try { json = JSON.parse(String(data || '')) } catch { throw new Error('Model directory returned invalid JSON') }
   const list = Array.isArray(json) ? json : Array.isArray(json?.data) ? json.data : Array.isArray(json?.models) ? json.models : null
@@ -293,7 +293,11 @@ function parseRelayModelDirectory(data, protocol) {
   const raw = list.map(item => protocol === 'gemini' && isPlainObject(item)
     ? { ...item, id: String(item.name || item.id || '').replace(/^models\//, '') }
     : item)
-  const models = raw.map(item => normalizeModelRecord(item, { source: 'remote' })).filter(Boolean)
+  const models = raw.map(item => normalizeModelRecord(item, {
+    source: 'remote',
+    allowDirectoryNameHints: options.allowDirectoryNameHints === true,
+    defaultUnknownTrack: options.defaultUnknownTrack
+  })).filter(Boolean)
   if (!models.length) throw new Error('The provider returned no valid model identifiers')
   return models
 }
@@ -342,7 +346,7 @@ class RelayDetectionError extends Error {
   }
 }
 
-async function detectRelayProtocol({ baseUrl, apiKey, requestOptions = {}, requestFn = request }) {
+async function detectRelayProtocol({ baseUrl, apiKey, requestOptions = {}, requestFn = request, requireInference = true }) {
   const started = Date.now()
   const safeBase = normalizeRelayBaseUrl(baseUrl)
   if (!usableSecret(apiKey)) throw new Error('Relay API key is required')
@@ -352,7 +356,41 @@ async function detectRelayProtocol({ baseUrl, apiKey, requestOptions = {}, reque
     try {
       const directoryResponse = await requestFn(probe.modelUrl(), { method: 'GET', ...requestOptions, headers: probe.headers })
       assertSuccessfulResponse(directoryResponse)
-      const parsed = parseRelayModelDirectory(directoryResponse?.data, probe.protocol)
+      const parsed = parseRelayModelDirectory(directoryResponse?.data, probe.protocol, requireInference ? {} : {
+        allowDirectoryNameHints: true,
+        defaultUnknownTrack: 'chat'
+      })
+      if (!requireInference) {
+        const models = parsed.sort(sortModelRecords('chat'))
+        const checkedAt = new Date().toISOString()
+        const firstModel = models.find(model => ['chat', 'image', 'video'].includes(model.capability)) || models[0]
+        const hasChat = models.some(model => model.capability === 'chat')
+        const hasImage = models.some(model => model.capability === 'image')
+        return {
+          detectedProtocol: probe.protocol,
+          detectedAt: checkedAt,
+          detectedEndpoints: {
+            models: probe.modelsPath,
+            ...(hasChat ? { chat: probe.chatPath } : {}),
+            ...(hasImage && probe.protocol === 'openai' ? { image: '/v1/images/generations' } : {}),
+            ...(hasImage && probe.protocol === 'gemini' ? { image: '/v1beta/models/{model}:generateContent' } : {})
+          },
+          detectionRevision: crypto.randomUUID(),
+          authType: probe.authType,
+          models,
+          validation: statusResult({
+            ok: true,
+            status: 'directory_verified',
+            level: 'model_directory',
+            checkedAt,
+            latencyMs: Date.now() - started,
+            endpointHost: endpointHost(safeBase),
+            modelId: firstModel?.id || '',
+            evidence: 'model_directory',
+            message: `Authenticated remote directory and discovered ${models.length} models`
+          })
+        }
+      }
       failureContext = { stage: 'inference', endpointHost: endpointHost(safeBase), endpointPath: probe.chatPath }
       const candidates = relayTextProbeCandidates(parsed)
       if (!candidates.length) throw new Error(`No callable text candidate among ${parsed.length} directory models`)
@@ -441,6 +479,7 @@ async function refreshModels({ connection, track: requestedTrackInput, modelsApi
       level: 'model_directory',
       latencyMs: Date.now() - started,
       endpointHost: endpointHost(provider.baseUrl),
+      evidence: 'model_directory',
       message: `Discovered ${models.length} models from the provider for ${track}`
     })
   }

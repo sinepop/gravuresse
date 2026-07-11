@@ -147,21 +147,35 @@ async function saveDetectedRelay({ params, config, requestOptionsFromConfig, rel
     const detected = await relayDetector({
       baseUrl: candidate.baseUrl,
       apiKey: candidate.apiKey,
-      requestOptions: requestOptionsFor(requestOptionsFromConfig, current, candidate)
+      requestOptions: requestOptionsFor(requestOptionsFromConfig, current, candidate),
+      requireInference: false
     })
     const revision = detected.detectionRevision
-    const capabilities = [...new Set(['chat', ...(detected.models || []).map(model => model.capability)])]
-      .filter(track => ['chat', 'image', 'video'].includes(track))
-    const chatValidation = { ...detected.validation, track: 'chat', inventoryRevision: revision }
-    const validations = { chat: chatValidation }
-    for (const track of capabilities.filter(track => track !== 'chat')) {
-      const model = detected.models.find(item => item.capability === track)
+    const capabilities = ['chat', 'image', 'video'].filter(track => {
+      const hasEndpoint = Boolean(detected.detectedEndpoints?.[track] || (track === 'video' && detected.detectedEndpoints?.submit))
+      return hasEndpoint && detected.models.some(model => model.source === 'remote' && model.capability === track)
+    })
+    const validations = {}
+    for (const track of capabilities) {
+      const model = detected.models.find(item => item.source === 'remote' && item.capability === track)
       validations[track] = {
         ok: true, status: 'directory_verified', level: 'model_directory', checkedAt: detected.detectedAt,
         latencyMs: detected.validation.latencyMs, endpointHost: detected.validation.endpointHost,
         modelId: model?.id || '', errorCode: '', track, inventoryRevision: revision,
-        message: `Remote directory explicitly declares ${track} output capability; billable generation was not run`
+        evidence: 'model_directory', outputVerified: false,
+        message: `Remote directory discovered ${track} models; billable execution was not run`
       }
+    }
+    const primaryValidation = validations.chat || validations.image || validations.video || {
+      ...detected.validation,
+      ok: true,
+      status: 'directory_verified',
+      level: 'model_directory',
+      track: '',
+      inventoryRevision: revision,
+      evidence: 'model_directory',
+      outputVerified: false,
+      message: 'Remote model directory discovered; no executable protocol is available for its classified models'
     }
     const committed = {
       ...candidate,
@@ -176,7 +190,7 @@ async function saveDetectedRelay({ params, config, requestOptionsFromConfig, rel
       models: detected.models,
       revision,
       inventoryRevision: revision,
-      validation: chatValidation,
+      validation: primaryValidation,
       validations,
       updatedAt: new Date().toISOString()
     }
@@ -196,9 +210,9 @@ async function saveDetectedRelay({ params, config, requestOptionsFromConfig, rel
     })
     return {
       connection: publicConnection(config, committed),
-      modelsResult: chatValidation,
+      modelsResult: primaryValidation,
       modelsResults: validations,
-      detectionResult: chatValidation,
+      detectionResult: primaryValidation,
       detection: {
         protocol: detected.detectedProtocol,
         modelCount: detected.models.length,
@@ -277,7 +291,7 @@ function registerProviderConnectionsIpc({ ipcMain, config, modelsApi, requestOpt
       const merged = mergeConnectionSecret(existing, normalized, config.REDACTED_API_KEY)
       // Remote inventories and validation are main-process-owned and are
       // invalidated by every saved connection revision.
-      merged.models = Array.isArray(existing?.models) ? existing.models : []
+      merged.models = []
       merged.validation = null
       merged.validations = {}
       delete merged.inventoryRevision
@@ -293,28 +307,14 @@ function registerProviderConnectionsIpc({ ipcMain, config, modelsApi, requestOpt
     if (collection !== 'accounts') {
       const tracks = params.track ? [refreshTrack(saved, params.track)] : [...(saved.capabilities || [])]
       for (const track of tracks.filter(Boolean)) try {
-        let refreshedModels = []
-        let validation
-        if (collection === 'apiKeys') {
-          validation = await validateConnection({
-            connection: saved,
-            track,
-            modelsApi,
-            requestOptions: requestOptionsFor(requestOptionsFromConfig, stored, saved),
-            ...(validationRequest ? { requestFn: validationRequest } : {}),
-            onModels: models => { refreshedModels = models }
-          })
-        } else {
-          const refreshed = await refreshModels({
-            connection: saved,
-            track,
-            modelsApi,
-            requestOptions: requestOptionsFor(requestOptionsFromConfig, stored, saved)
-          })
-          refreshedModels = refreshed.models
-          validation = refreshed.result
-        }
-        const verified = { ...validation, track, inventoryRevision: saved.revision }
+        const refreshed = await refreshModels({
+          connection: saved,
+          track,
+          modelsApi,
+          requestOptions: requestOptionsFor(requestOptionsFromConfig, stored, saved)
+        })
+        const refreshedModels = refreshed.models
+        const verified = { ...refreshed.result, track, inventoryRevision: saved.revision }
         let applied = false
         await mutateConfig(config, current => {
           const next = JSON.parse(JSON.stringify(current))
@@ -471,7 +471,7 @@ function registerProviderConnectionsIpc({ ipcMain, config, modelsApi, requestOpt
         const stamped = { ...result, track, inventoryRevision: found.connection.revision || '' }
         item.validation = stamped
         item.validations = { ...(item.validations || {}), [track]: stamped }
-        if (found.collection === 'accounts') item.status = result.ok ? 'verified' : 'connected_unverified'
+        if (found.collection === 'accounts') item.status = result.ok ? result.status : 'connected_unverified'
         if (refreshedModels) {
           item.models = [
             ...(item.models || []).filter(model => model.capability !== track),
@@ -502,18 +502,15 @@ function registerProviderConnectionsIpc({ ipcMain, config, modelsApi, requestOpt
         if (!(found.connection.capabilities || []).includes(track)) throw new Error(`Connection does not support ${track}`)
         const model = (found.connection.models || []).find(item => item.id === selection.modelId && item.source === 'remote')
         const validation = found.connection.validations?.[track]
-        const allowedStatus = track === 'chat' ? validation?.status === 'verified' : ['verified', 'directory_verified'].includes(validation?.status)
+        const allowedStatus = ['verified', 'directory_verified'].includes(validation?.status)
         if (!validation?.ok || !allowedStatus || validation.track !== track || validation.inventoryRevision !== found.connection.inventoryRevision || validation.inventoryRevision !== found.connection.revision) {
           throw new Error(`Default ${track} connection must have a current verified remote inventory`)
         }
-        if (track === 'chat' && validation.level !== 'minimal_inference') {
-          throw new Error('Default chat connection must pass minimal inference validation')
-        }
-        if (track !== 'chat' && !['model_directory', 'capability'].includes(validation.level)) {
-          throw new Error(`Default ${track} connection must pass a non-billable capability validation`)
+        if (!['minimal_inference', 'model_directory', 'capability'].includes(validation.level)) {
+          throw new Error(`Default ${track} connection must have a current remote model directory`)
         }
         if (!model || model.capability !== track) {
-          throw new Error(`Default ${track} model must come from the verified remote model list`)
+          throw new Error(`Default ${track} model must come from the current remote model list and match its capability`)
         }
         normalized[track] = {
           connectionId: found.connection.id,
@@ -586,14 +583,14 @@ function registerProviderConnectionsIpc({ ipcMain, config, modelsApi, requestOpt
             message: 'Account authentication completed, but this connector has no executable provider mapping'
           }
         } else {
-          validation = await validateConnection({
+          const refreshed = await refreshModels({
             connection: savedAccount,
             track: 'chat',
             modelsApi,
-            requestOptions: requestOptionsFor(requestOptionsFromConfig, config.load(), savedAccount),
-            ...(validationRequest ? { requestFn: validationRequest } : {}),
-            onModels: models => { refreshedModels = models }
+            requestOptions: requestOptionsFor(requestOptionsFromConfig, config.load(), savedAccount)
           })
+          refreshedModels = refreshed.models
+          validation = refreshed.result
         }
         if (typeof lifecycle.isActive === 'function' && !lifecycle.isActive()) return { status: 'cancelled', validation: { ...validation, ok: false, status: 'cancelled', errorCode: 'OAUTH_CANCELLED' } }
         const stamped = { ...validation, track: 'chat', inventoryRevision: savedAccount.revision }
@@ -606,7 +603,7 @@ function registerProviderConnectionsIpc({ ipcMain, config, modelsApi, requestOpt
           const existingIndex = next.connections.accounts.findIndex(item => item.connectorId === connector.id || item.id === savedAccount.id)
           const finalAccount = {
             ...savedAccount,
-            status: !savedAccount.runtimeProviderId ? 'authenticated_unavailable' : validation.ok ? 'verified' : 'connected_unverified',
+            status: !savedAccount.runtimeProviderId ? 'authenticated_unavailable' : validation.ok ? validation.status : 'connected_unverified',
             validation: stamped,
             validations: savedAccount.capabilities.includes('chat') ? { chat: stamped } : {},
             models: refreshedModels ? refreshedModels.filter(model => model.capability === 'chat') : [],
@@ -618,7 +615,7 @@ function registerProviderConnectionsIpc({ ipcMain, config, modelsApi, requestOpt
           return next
         })
         if (!applied) return { status: 'cancelled', validation: { ...stamped, ok: false, status: 'cancelled', errorCode: 'OAUTH_CANCELLED' } }
-        return { status: !savedAccount.runtimeProviderId ? 'authenticated_unavailable' : validation.ok ? 'verified' : 'connected_unverified', validation: stamped }
+        return { status: !savedAccount.runtimeProviderId ? 'authenticated_unavailable' : validation.ok ? validation.status : 'connected_unverified', validation: stamped }
       }
     })
   })

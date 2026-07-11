@@ -4,7 +4,7 @@ import { TRACKS, selectS, btnS, chipS, SectionHeading, providerDisplayName, loca
 
 const ICONS = { chat: 'chat', image: 'image', video: 'film' }
 const label = (track, lang) => ({ chat: localText(lang, '文本模型', 'Text model'), image: localText(lang, '图片模型', 'Image model'), video: localText(lang, '视频模型', 'Video model') }[track])
-function verifiedFor(conn, track) { const validation = conn?.validations?.[track]; const allowed = track === 'chat' ? validation?.status === 'verified' : ['verified', 'directory_verified'].includes(validation?.status); return Boolean(validation?.ok === true && allowed && validation.track === track && validation.inventoryRevision && validation.inventoryRevision === conn.inventoryRevision && validation.inventoryRevision === conn.revision) }
+function verifiedFor(conn, track) { const validation = conn?.validations?.[track]; const allowed = ['verified', 'directory_verified'].includes(validation?.status); return Boolean(validation?.ok === true && allowed && validation.track === track && validation.inventoryRevision && validation.inventoryRevision === conn.inventoryRevision && validation.inventoryRevision === conn.revision) }
 function options(connections, track, lang) { const result = []; for (const conn of connections) { if (!conn.capabilities?.includes(track) || !verifiedFor(conn, track)) continue; for (const model of (conn.models || [])) { if (model.source !== 'remote' || model.capability !== track) continue; result.push({ value: `${conn.id}|${model.id}`, connectionId: conn.id, providerId: conn.providerId, modelId: model.id, label: `${providerDisplayName({ id: conn.providerId, name: conn.name }, lang, track)} · ${model.id}` }) } } return result }
 
 export default function DefaultsPage({ lang, onCanonicalChange, onBusyChange }) {

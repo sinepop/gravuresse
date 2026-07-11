@@ -69,17 +69,35 @@ function coerceTaskForProvider(track, providerDef, task = {}) {
   }
 }
 
-function normalizeAuthType(type) {
-  return String(type || '').toLowerCase().replace(/_/g, '-')
+function canonicalProviderId(connection, track) {
+  if (connection?.kind === 'relay' && connection.detectedProtocol === 'gemini') return 'google'
+  if (connection?.kind === 'relay' && track === 'chat' && connection.detectedProtocol === 'anthropic') return 'anthropic'
+  if (connection?.kind === 'relay' && connection.providerId === 'custom-relay') return `custom-${track}`
+  return connection?.runtimeProviderId || connection?.providerId || ''
 }
 
-function hasProviderCredential(provider = {}, providerDef = {}) {
-  if (provider.accountId && provider.accountKind !== 'oauth-placeholder') return true
-  const customType = normalizeAuthType(provider.customAuth?.type)
-  const type = customType || normalizeAuthType(provider.authType?.type || providerDef?.authType?.type)
-  if (type === 'none') return Boolean(provider?.id || providerDef?.id)
-  if (type === 'session') return Boolean(provider.sessionToken)
-  return Boolean(provider.apiKey)
+function canonicalModelSelection(config, activeSelections, track) {
+  const connections = config?.connections || {}
+  const all = [...(connections.accounts || []), ...(connections.apiKeys || []), ...(connections.relays || [])]
+  const activeSelection = activeSelections?.[track]
+  const candidates = [activeSelection || connections.defaults?.[track]].filter(Boolean)
+  for (const selection of candidates) {
+    const connection = all.find(item => item.id === selection.connectionId)
+    const model = connection?.models?.find(item => item.id === selection.modelId && item.source === 'remote' && item.capability === track)
+    if (!connection || !model || !connection.capabilities?.includes(track)) continue
+    return {
+      connection,
+      selection,
+      provider: {
+        id: canonicalProviderId(connection, track),
+        providerId: connection.providerId,
+        connectionId: connection.id,
+        model: model.id,
+        name: connection.name
+      }
+    }
+  }
+  return null
 }
 
 function taskAllowedInMode(task, generationMode) {
@@ -107,7 +125,7 @@ function appendStyleToPrompt(prompt, style) {
   return `${base}\n\nVisual style direction: ${selectedStyle}.`
 }
 
-export default function useChat(config, canvas, onVideoTaskCreated, activeConversationId, isActiveConversation, conversationBridge, providerLists) {
+export default function useChat(config, canvas, onVideoTaskCreated, activeConversationId, isActiveConversation, conversationBridge, providerLists, activeSelections = {}) {
   const [messages, setMessages] = useState([])
   const [loading, setLoading] = useState(false)
   const [thinking, setThinking] = useState(false)
@@ -231,10 +249,11 @@ export default function useChat(config, canvas, onVideoTaskCreated, activeConver
     setLoading(true)
     loadingRef.current = true
 
-    const provider = config?.providers?.chat
+    const canonicalChat = canonicalModelSelection(config, activeSelections, 'chat')
+    const provider = canonicalChat?.provider
     const lang = config?.general?.language || 'zh'
     const chatProviderDef = findProviderDef('chat', providerLists, provider?.id)
-    if (!hasProviderCredential(provider, chatProviderDef)) {
+    if (!canonicalChat) {
       appendMessage(originConversationId, { role: 'assistant', content: t('configApiFirst', lang), id: nextId() })
       setLoading(false)
       loadingRef.current = false
@@ -325,6 +344,7 @@ ${modeRule}
       const result = await callChatProvider({
         action: 'chat',
         providerId: resolveProviderId('chat', provider.id),
+        connectionId: canonicalChat?.connection.id,
         messages: history,
         system,
         thinking,
@@ -395,7 +415,7 @@ ${modeRule}
       if (mountedRef.current) setLoading(false)
     }
     return true
-  }, [config, canvas, appendMessage, canWriteToCurrentConversation, thinking, providerLists])
+  }, [config, canvas, appendMessage, canWriteToCurrentConversation, thinking, providerLists, activeSelections])
 
   const doGenerate = useCallback(async (msgId, task, lang, placeholderId, taskIndex, originConversationId) => {
     const startTime = Date.now()
@@ -403,9 +423,10 @@ ${modeRule}
     const updateTask = (patch) => patchTask(originConversationId, msgId, idx, patch)
 
     if (task.type === 'image') {
-      const imgProvider = config?.providers?.image
+      const canonicalImage = canonicalModelSelection(config, activeSelections, 'image')
+      const imgProvider = canonicalImage?.provider
+      if (!canonicalImage || !imgProvider?.id) throw new Error(t('configImageApi', lang))
       const providerDef = findProviderDef('image', providerLists, imgProvider.id) || IMG_PROVIDERS.find(p => p.id === imgProvider.id)
-      if (!imgProvider?.id || !hasProviderCredential(imgProvider, providerDef)) throw new Error(t('configImageApi', lang))
       const protocol = imgProvider.protocol || providerDef?.protocol || 'openai_image'
       const safeTask = coerceTaskForProvider('image', providerDef, task)
       const negativePrompt = task.negative_prompt || imgProvider.defaultNegPrompt || ''
@@ -421,6 +442,7 @@ ${modeRule}
       const url = await generateImageProvider({
         action: 'generate',
         providerId: resolveProviderId('image', imgProvider.id),
+        connectionId: canonicalImage?.connection.id,
         prompt: imageParams.prompt,
         ratio: imageParams.ratio,
         resolution: imageParams.resolution,
@@ -480,9 +502,10 @@ ${modeRule}
       }
     } else if (task.type === 'video') {
       if (config?.general?.enableVideo !== true) throw new Error(t('videoDisabled', lang))
-      const vidProvider = config?.providers?.video
+      const canonicalVideo = canonicalModelSelection(config, activeSelections, 'video')
+      const vidProvider = canonicalVideo?.provider
+      if (!canonicalVideo || !vidProvider?.id) throw new Error(t('configVideoApi', lang))
       const providerDef = findProviderDef('video', providerLists, vidProvider.id) || VID_PROVIDERS.find(p => p.id === vidProvider.id)
-      if (!vidProvider?.id || !hasProviderCredential(vidProvider, providerDef)) throw new Error(t('configVideoApi', lang))
       const protocol = vidProvider.protocol || providerDef?.protocol || 'ark_video_task'
       const provider = { ...vidProvider, protocol }
       const sourceAsset = task.source_image_id ? getAssetFromConversation(originConversationId, task.source_image_id) : null
@@ -497,6 +520,7 @@ ${modeRule}
       const result = await submitVideoProvider({
         action: 'submit',
         providerId: resolveProviderId('video', provider.id),
+        connectionId: canonicalVideo?.connection.id,
         prompt: videoParams.prompt,
         ratio: videoParams.ratio,
         duration: videoParams.duration,
@@ -548,7 +572,7 @@ ${modeRule}
       const elapsed = Math.round((Date.now() - startTime) / 1000)
       updateTask({ status, taskId: result.taskId, queueId: queuedTask?.id, elapsed })
     }
-  }, [config, canvas, onVideoTaskCreated, canWriteToConversation, canWriteToCurrentConversation, addAssetToConversation, updateAssetInConversation, patchTask, providerLists, getAssetFromConversation])
+  }, [config, canvas, onVideoTaskCreated, canWriteToConversation, canWriteToCurrentConversation, addAssetToConversation, updateAssetInConversation, patchTask, providerLists, getAssetFromConversation, activeSelections])
 
   const regenerateDirectly = useCallback(async (asset, lang, options = {}) => {
     const originConversationId = options.conversationId || activeConversationIdRef.current
@@ -661,7 +685,7 @@ ${modeRule}
         return
       }
       const duration = `${parseDurationSeconds(task.duration, parseDurationSeconds(config?.general?.defaultDuration, 5))}s`
-      const model = config?.providers?.video?.model || t('noConfig', lang)
+      const model = canonicalModelSelection(config, activeSelections, 'video')?.provider.model || t('noConfig', lang)
       const ratio = task.ratio || '1:1'
       const message = t('videoCostConfirm', lang)
         .replace('{model}', model)
@@ -682,7 +706,7 @@ ${modeRule}
       if (placeholderId) removeAssetFromConversation(originConversationId, placeholderId)
       patchTask(originConversationId, msgId, idx, { status: 'error', error: e.message })
     }
-  }, [config, doGenerate, addPlaceholderToConversation, canWriteToConversation, removeAssetFromConversation, patchTask])
+  }, [config, activeSelections, doGenerate, addPlaceholderToConversation, canWriteToConversation, removeAssetFromConversation, patchTask])
 
   const batchGenerate = useCallback(async (msgId, task, count, taskIndex) => {
     const originConversationId = activeConversationIdRef.current

@@ -137,10 +137,28 @@ function normalizeModelRecord(model = {}, options = {}) {
   const id = modelId(model)
   if (!id) return null
   const classified = classifyModel(model)
+  if (classified.capability === 'unknown' && options.allowDirectoryNameHints === true) {
+    const imageMatch = IMAGE_PATTERNS.find(pattern => pattern.test(id))
+    const videoMatch = VIDEO_PATTERNS.find(pattern => pattern.test(id))
+    if (videoMatch) {
+      classified.capability = 'video'
+      classified.routeHint = 'video-generation'
+      classified.reason = `directory-name:${videoMatch.source}`
+    } else if (imageMatch) {
+      classified.capability = 'image'
+      classified.routeHint = /\bnano[-_ ]?banana|\bgemini\b/i.test(id) ? 'openai-compatible-image' : 'openai-image'
+      classified.reason = `directory-name:${imageMatch.source}`
+    }
+  }
   if (classified.capability === 'unknown' && options.track === 'chat') {
     classified.capability = 'chat'
     classified.routeHint = 'openai-chat'
     classified.reason = 'track:chat'
+  }
+  if (classified.capability === 'unknown' && options.defaultUnknownTrack === 'chat') {
+    classified.capability = 'chat'
+    classified.routeHint = 'openai-chat'
+    classified.reason = 'directory-default:chat'
   }
   return {
     id,

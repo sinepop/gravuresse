@@ -117,7 +117,11 @@ export async function runIpcCoreTests() {
       const revision = `detected-${++detectionRevision}`
       return {
         detectedProtocol: 'openai', detectedAt: checkedAt,
-        detectedEndpoints: { models: '/v1/models', chat: '/v1/vendor/chat/completions' },
+        detectedEndpoints: {
+          models: '/v1/models',
+          chat: '/v1/vendor/chat/completions',
+          ...(models.some(model => model.capability === 'image') ? { image: '/v1/images/generations' } : {})
+        },
         detectionRevision: revision, authType: { type: 'bearer' }, models,
         validation: { ok: true, status: 'verified', level: 'minimal_inference', checkedAt, latencyMs: 1, endpointHost: new URL(baseUrl).host, modelId: models[0]?.id || '', errorCode: '', message: 'verified' }
       }
@@ -196,7 +200,8 @@ export async function runIpcCoreTests() {
   })
   assert.equal(savedRelay.connection.apiKey, '********')
   assert.equal(savedRelay.modelsResult.ok, true)
-  assert.equal(savedRelay.modelsResult.status, 'verified', 'relay save requires both a model directory and minimal inference')
+  assert.equal(savedRelay.modelsResult.status, 'directory_verified', 'relay save requires an authenticated remote directory')
+  assert.equal(savedRelay.modelsResult.evidence, 'model_directory')
   assert.equal(providerConfigState.connections.relays[0].models[0].source, 'remote')
   await providerIpc.handlers.get('providerConnection:save')(null, {
     collection: 'relays', refreshModels: false,
@@ -208,6 +213,29 @@ export async function runIpcCoreTests() {
   assert.equal(providerConfigState.connections.relays[0].apiKey, 'relay-one-secret')
   assert.equal(providerConfigState.connections.relays[1].apiKey, 'relay-two-secret')
   assert.equal(providerConfigState.connections.relays[1].models[0].id, 'remote-chat', 'refreshModels:false cannot bypass real refresh')
+  modelsFetch = async () => [{ id: 'gpt-image-1', capability: 'image', source: 'remote', reason: 'directory-name:image' }]
+  const savedImageRelay = await providerIpc.handlers.get('providerConnection:save')(null, {
+    collection: 'relays',
+    connection: { id: 'relay-image', baseUrl: 'https://relay-image.example.com/v1', apiKey: 'relay-image-secret' }
+  })
+  assert.deepEqual(savedImageRelay.connection.capabilities, ['image'])
+  assert.equal(savedImageRelay.connection.detectedEndpoints.image, '/v1/images/generations')
+  assert.equal(savedImageRelay.connection.validations.image.status, 'directory_verified')
+  assert.equal(savedImageRelay.connection.validations.chat, undefined, 'a pure image directory cannot create a chat validation')
+  const imageDefault = await providerIpc.handlers.get('providerDefaults:save')(null, {
+    defaults: { image: { connectionId: 'relay-image', providerId: 'custom-relay', modelId: 'gpt-image-1' } }
+  })
+  assert.equal(imageDefault.image.modelId, 'gpt-image-1')
+  await providerIpc.handlers.get('providerDefaults:save')(null, { defaults: { image: null } })
+  modelsFetch = async () => [{ id: 'sora-2', capability: 'video', source: 'remote', reason: 'directory-name:video' }]
+  const savedVideoCatalog = await providerIpc.handlers.get('providerConnection:save')(null, {
+    collection: 'relays',
+    connection: { id: 'relay-video-catalog', baseUrl: 'https://relay-video.example.com/v1', apiKey: 'relay-video-secret' }
+  })
+  assert.deepEqual(savedVideoCatalog.connection.capabilities, [])
+  assert.equal(savedVideoCatalog.connection.models[0].capability, 'video')
+  assert.equal(savedVideoCatalog.modelsResult.status, 'directory_verified')
+  modelsFetch = async () => [{ id: 'remote-chat', capability: 'chat', source: 'remote' }]
   const connectionList = await providerIpc.handlers.get('providerConnection:list')()
   assert.equal(connectionList.connections.relays[0].apiKey, '********')
   assert.equal(connectionList.connections.relays[1].apiKey, '********')
@@ -232,32 +260,31 @@ export async function runIpcCoreTests() {
   assert.equal(savedStandard.connection.baseUrl, 'https://api.openai.com')
   assert.equal(savedStandard.connection.models.some(model => model.id === 'forged'), false)
   assert.deepEqual(Object.keys(providerConfigState.connections.apiKeys.find(item => item.id === 'openai-standard').validations).sort(), ['chat', 'image'], 'save refreshes every declared capability instead of only the first')
-  assert.equal(savedStandard.modelsResults.chat.status, 'verified', 'saving a chat API key runs minimal inference after discovery')
-  assert.equal(savedStandard.modelsResults.chat.evidence, 'assistant_output')
+  assert.equal(savedStandard.modelsResults.chat.status, 'directory_verified', 'saving an API key only discovers the remote directory')
+  assert.equal(savedStandard.modelsResults.chat.evidence, 'model_directory')
 
-  validationResponse = { status: 200, data: '{}' }
-  const failedInference = await providerIpc.handlers.get('providerConnection:save')(null, {
+  const savedDeepSeek = await providerIpc.handlers.get('providerConnection:save')(null, {
     collection: 'apiKeys',
     connection: { id: 'deepseek-standard', providerId: 'deepseek', apiKey: 'deepseek-secret' }
   })
-  assert.equal(failedInference.modelsResult.ok, false)
-  assert.equal(failedInference.connection.models.some(model => model.id === 'remote-chat'), true, 'a failed inference preserves the verified remote directory')
-  validationResponse = { status: 200, data: '{"choices":[{"message":{"content":"OK"},"finish_reason":"stop"}],"usage":{"completion_tokens":1}}' }
+  assert.equal(savedDeepSeek.modelsResult.ok, true)
+  assert.equal(savedDeepSeek.connection.models.some(model => model.id === 'remote-chat'), true)
   await assert.rejects(() => providerIpc.handlers.get('providerConnection:save')(null, {
     collection: 'apiKeys', connection: { id: 'relay-one', providerId: 'openai', apiKey: 'x', capabilities: ['chat'] }
   }), /unique across all collections/)
 
   const relayOneForDefault = providerConfigState.connections.relays.find(item => item.id === 'relay-one')
   const chatValidation = {
-    ...relayOneForDefault.validation,
-    ok: true,
-    status: 'verified',
-    level: 'minimal_inference',
-    track: 'chat',
-    inventoryRevision: relayOneForDefault.inventoryRevision
+    ...relayOneForDefault.validations.chat,
+    status: 'directory_verified',
+    level: 'model_directory',
+    evidence: 'model_directory',
+    outputVerified: false
   }
   relayOneForDefault.validation = chatValidation
   relayOneForDefault.validations = { chat: chatValidation }
+  assert.equal(chatValidation.status, 'directory_verified')
+  assert.equal(chatValidation.level, 'model_directory')
   const defaults = await providerIpc.handlers.get('providerDefaults:save')(null, {
     defaults: { chat: { connectionId: 'relay-one', providerId: 'custom-chat', modelId: 'remote-chat' }, image: null, video: null }
   })
@@ -281,7 +308,7 @@ export async function runIpcCoreTests() {
   assert.equal(providerConfigState.providers.chat.model, '', 'clearing a canonical default also clears the legacy runtime model')
   await assert.rejects(() => providerIpc.handlers.get('providerDefaults:save')(null, {
     defaults: { chat: { connectionId: 'relay-one', providerId: 'custom-chat', modelId: 'unknown-model' }, image: null, video: null }
-  }), /verified remote model list/)
+  }), /current remote model list/)
 
   const relayWithoutTrackValidation = providerConfigState.connections.relays.find(item => item.id === 'relay-one')
   relayWithoutTrackValidation.validation = chatValidation

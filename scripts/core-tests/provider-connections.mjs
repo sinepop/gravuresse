@@ -318,7 +318,7 @@ export async function runProviderConnectionCoreTests(configModule) {
     revision: 'revision-1',
     inventoryRevision: 'revision-1',
     models: [{ id: 'chat-model', capability: 'chat', source: 'remote' }],
-    validations: { chat: { ok: true, status: 'verified', level: 'minimal_inference', track: 'chat', inventoryRevision: 'revision-1' } }
+    validations: { chat: { ok: true, status: 'directory_verified', level: 'model_directory', track: 'chat', inventoryRevision: 'revision-1' } }
   }
   const runtime = configResolver.resolveRuntimeProviderConfig({
     connections: {
@@ -330,6 +330,14 @@ export async function runProviderConnectionCoreTests(configModule) {
   assert.equal(runtime.config.providerConfig.connectionId, runtimeConnection.id)
   assert.equal(runtime.config.providerConfig.model, 'chat-model')
   assert.equal(runtime.config.credentials.apiKey, 'secret')
+  const temporaryRuntime = configResolver.resolveRuntimeProviderConfig({
+    connections: {
+      accounts: [], apiKeys: [], relays: [runtimeConnection],
+      defaults: { chat: null, image: null, video: null }
+    }
+  }, 'chat', { action: 'chat', connectionId: runtimeConnection.id, model: 'chat-model' }, registry.getProvider, () => async () => ({}))
+  assert.equal(temporaryRuntime.ok, true, 'a composer selection can use a current directory model without changing defaults')
+  assert.equal(temporaryRuntime.config.providerConfig.model, 'chat-model')
   const customRelayRuntime = configResolver.resolveRuntimeProviderConfig({
     connections: {
       accounts: [], apiKeys: [], relays: [{ ...runtimeConnection, providerId: 'custom-relay', kind: 'relay' }],
@@ -345,7 +353,7 @@ export async function runProviderConnectionCoreTests(configModule) {
       defaults: { chat: { connectionId: 'account_codex', providerId: 'openai', modelId: 'chat-model' }, image: null, video: null }
     }
   }, 'chat', { action: 'chat' }, registry.getProvider, () => async () => ({}))
-  assert.equal(accountRuntime.ok, true, 'verified OAuth accounts participate in runtime resolution')
+  assert.equal(accountRuntime.ok, true, 'directory-verified OAuth accounts participate in runtime resolution')
   assert.equal(accountRuntime.config.credentials.apiKey, 'oauth-session-token', 'OAuth bearer token is supplied only by the stored account')
   const unknownRuntime = configResolver.resolveRuntimeProviderConfig({
     connections: {
@@ -354,6 +362,39 @@ export async function runProviderConnectionCoreTests(configModule) {
     }
   }, 'chat', { action: 'chat' }, registry.getProvider, () => async () => ({}))
   assert.equal(unknownRuntime.ok, false, 'unknown model capability cannot cross into a runtime track')
+  assert.equal(unknownRuntime.error.code, 'CONNECTION_NOT_VERIFIED')
+
+  const videoAsChatRuntime = configResolver.resolveRuntimeProviderConfig({
+    connections: {
+      accounts: [], apiKeys: [], relays: [{ ...runtimeConnection, models: [{ id: 'video-model', capability: 'video', source: 'remote' }] }],
+      defaults: { chat: { connectionId: runtimeConnection.id, providerId: runtimeConnection.providerId, modelId: 'video-model' }, image: null, video: null }
+    }
+  }, 'chat', { action: 'chat' }, registry.getProvider, () => async () => ({}))
+  assert.equal(videoAsChatRuntime.ok, false, 'video model capability cannot cross into the chat runtime')
+  assert.equal(videoAsChatRuntime.error.code, 'CONNECTION_NOT_VERIFIED')
+
+  const imageRelay = {
+    ...runtimeConnection,
+    id: 'relay-image-runtime',
+    kind: 'relay',
+    providerId: 'custom-relay',
+    capabilities: ['chat', 'image'],
+    detectedEndpoints: { models: '/v1/models', chat: '/v1/chat/completions', image: '/v1/images/generations' },
+    models: [{ id: 'gpt-image-1', capability: 'image', source: 'remote' }],
+    validations: {
+      image: { ok: true, status: 'directory_verified', level: 'model_directory', track: 'image', inventoryRevision: 'revision-1' }
+    }
+  }
+  const imageRuntime = configResolver.resolveRuntimeProviderConfig({
+    connections: {
+      accounts: [], apiKeys: [], relays: [imageRelay],
+      defaults: { chat: null, image: { connectionId: imageRelay.id, providerId: 'custom-relay', modelId: 'gpt-image-1' }, video: null }
+    }
+  }, 'image', { action: 'generate' }, registry.getProvider, () => async () => ({}))
+  assert.equal(imageRuntime.ok, true)
+  assert.equal(imageRuntime.config.canonicalProviderId, 'custom-image')
+  assert.equal(imageRuntime.config.providerConfig.path, '/v1/images/generations')
+  assert.equal(imageRuntime.config.credentials.apiKey, runtimeConnection.apiKey)
 
   assert.throws(
     () => configModule._test.assertSecretsCanBePersisted({ connections: { apiKeys: [{ apiKey: 'plaintext-secret' }] } }),

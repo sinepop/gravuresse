@@ -1,29 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { t } from '../i18n'
 import { sameProviderId } from '../providers/aliases'
-import { createProviderProfilePatch, buildConfigProviderProfiles } from '../utils/providerConfig.js'
 import Ic from './icons'
-
-function normalizeAuthType(type) {
-  return String(type || '').toLowerCase().replace(/_/g, '-')
-}
 
 function findProviderDef(track, providerLists = {}, profile = {}) {
   const providers = providerLists?.[track] || []
   return providers.find(item => sameProviderId(track, item.id, profile.providerId || profile.id))
-}
-
-function isExecutableProvider(provider = {}) {
-  return Boolean(provider) && provider.executable !== false && provider.integrationStatus !== 'metadata'
-}
-
-function hasCredential(profile = {}, providerDef = {}) {
-  if (profile.accountId && profile.accountKind !== 'oauth-placeholder') return true
-  const customType = normalizeAuthType(profile.customAuth?.type)
-  const type = customType || normalizeAuthType(profile.authType?.type || providerDef?.authType?.type)
-  if (type === 'none') return Boolean(profile.providerId || profile.id || providerDef.id)
-  if (type === 'session') return Boolean(profile.sessionToken)
-  return Boolean(profile.apiKey)
 }
 
 function providerName(track, providerLists = {}, profile = {}) {
@@ -31,22 +13,16 @@ function providerName(track, providerLists = {}, profile = {}) {
   return profile.name || provider?.name || profile.providerId || profile.id || t('provider', 'zh')
 }
 
-function sameProfile(track, current = {}, profile = {}) {
-  // Config-array profiles share the same id; use _configProviderIndex to disambiguate
-  if (typeof profile._configProviderIndex === 'number' && typeof current._configProviderIndex === 'number') {
-    return profile._configProviderIndex === current._configProviderIndex &&
-      (current?.model || '') === (profile.model || '')
-  }
-  return sameProviderId(track, current?.id, profile.providerId || profile.id) &&
-    (current?.baseUrl || '') === (profile.baseUrl || '') &&
-    (current?.model || '') === (profile.model || '')
+function sameProfile(current = {}, profile = {}) {
+  return current.connectionId === profile.connectionId &&
+    (current.modelId || '') === (profile.modelId || profile.model || '')
 }
 
-function ModelPicker({ track, current, profiles, providerLists, onSelect, lang }) {
+function ModelPicker({ track, current, profiles, providerLists, onConnectionSelect, lang }) {
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
-  const currentProfile = profiles.find(profile => sameProfile(track, current, profile))
-  const displayModel = currentProfile?.model || current?.model || profiles[0]?.model || t('modelSelector', lang)
+  const currentProfile = profiles.find(profile => sameProfile(current, profile))
+  const displayModel = currentProfile?.model || t('modelSelector', lang)
 
   useEffect(() => {
     const handler = (event) => {
@@ -57,7 +33,7 @@ function ModelPicker({ track, current, profiles, providerLists, onSelect, lang }
   }, [])
 
   const selectProfile = (profile) => {
-    onSelect(track, createProviderProfilePatch(profile))
+    onConnectionSelect?.(track, { connectionId: profile.connectionId, providerId: profile.providerId, modelId: profile.model })
     setOpen(false)
   }
 
@@ -91,7 +67,7 @@ function ModelPicker({ track, current, profiles, providerLists, onSelect, lang }
           animation: 'scaleIn 0.12s ease'
         }}>
           {profiles.map(profile => {
-            const selected = sameProfile(track, current, profile)
+            const selected = sameProfile(current, profile)
             const key = profile.profileId || `${profile.providerId || profile.id}:${profile.baseUrl || ''}:${profile.model}`
             return (
               <button key={key} className="model-selector-option" onClick={() => selectProfile(profile)} style={{
@@ -120,28 +96,37 @@ function ModelPicker({ track, current, profiles, providerLists, onSelect, lang }
   )
 }
 
-export default function ModelSelector({ config, providerLists, activeModule = 'image', onProviderChange, lang }) {
-  const mediaTrack = activeModule === 'video' ? 'video' : 'image'
-  const items = ['chat', mediaTrack].map(track => {
-    const current = config?.providers?.[track]
-    const savedProfiles = (config?.providerProfiles?.[track] || []).filter(profile => {
-      const providerDef = findProviderDef(track, providerLists, profile)
-      return isExecutableProvider(providerDef) && hasCredential(profile, providerDef) && profile.model
-    })
-    let profiles = savedProfiles
-    if (track === 'chat') {
-      const customProfiles = buildConfigProviderProfiles(config).filter(profile => {
-        const providerDef = findProviderDef(track, providerLists, profile)
-        return isExecutableProvider(providerDef) && hasCredential(profile, providerDef) && profile.model
-      })
-      const seen = new Set()
-      profiles = [...customProfiles, ...savedProfiles].filter(profile => {
-        const key = `${profile.providerId || profile.id}|${profile.baseUrl || ''}|${profile.model || ''}`
-        if (seen.has(key)) return false
-        seen.add(key)
-        return true
+function canonicalProfiles(config, track) {
+  const connections = config?.connections || {}
+  const all = [...(connections.accounts || []), ...(connections.apiKeys || []), ...(connections.relays || [])]
+  const profiles = []
+  for (const connection of all) {
+    const validation = connection.validations?.[track]
+    const currentInventory = validation?.ok === true && ['verified', 'directory_verified'].includes(validation?.status) &&
+      validation.track === track && validation.inventoryRevision && validation.inventoryRevision === connection.inventoryRevision &&
+      validation.inventoryRevision === connection.revision
+    if (!currentInventory || !connection.capabilities?.includes(track)) continue
+    for (const model of connection.models || []) {
+      if (model.source !== 'remote' || model.capability !== track) continue
+      profiles.push({
+        connectionId: connection.id,
+        providerId: connection.providerId,
+        id: connection.providerId,
+        name: connection.name,
+        model: model.id,
+        modelId: model.id,
+        baseUrl: connection.baseUrl || ''
       })
     }
+  }
+  return profiles
+}
+
+export default function ModelSelector({ config, providerLists, activeModule = 'image', activeSelections = {}, onConnectionModelChange, lang }) {
+  const mediaTrack = activeModule === 'video' ? 'video' : 'image'
+  const items = ['chat', mediaTrack].map(track => {
+    const profiles = canonicalProfiles(config, track)
+    const current = activeSelections?.[track] || config?.connections?.defaults?.[track] || {}
     return profiles.length ? { track, current, profiles } : null
   }).filter(Boolean)
 
@@ -175,7 +160,7 @@ export default function ModelSelector({ config, providerLists, activeModule = 'i
           current={item.current}
           profiles={item.profiles}
           providerLists={providerLists}
-          onSelect={onProviderChange}
+          onConnectionSelect={onConnectionModelChange}
           lang={lang}
         />
       ))}

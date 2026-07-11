@@ -64,7 +64,7 @@ function ConnectorCard({ connector, onConnect, onCancel, onOpen, onRefresh, onDi
       {canConnect && <button onClick={() => onConnect(connector)} style={{ ...btnS(true), fontSize: 11 }}><Ic n="link" size={12} /> {localText(lang, '连接官网账号', 'Connect official account')}</button>}
       {activeAttempt && externalUrl && <button onClick={() => onOpen(connector)} style={{ ...btnS(false), fontSize: 11 }}><Ic n="link" size={12} /> {localText(lang, '重新打开认证页', 'Reopen authorization page')}</button>}
       {activeAttempt && <button onClick={() => onCancel(connector)} style={{ ...btnS(false), fontSize: 11 }}>{localText(lang, '取消授权', 'Cancel authorization')}</button>}
-      {canReverify && <button onClick={() => onRefresh(connector)} style={{ ...btnS(false), fontSize: 11 }}><Ic n="refresh" size={12} /> {localText(lang, '重新验证', 'Re-verify')}</button>}
+      {canReverify && <button onClick={() => onRefresh(connector)} style={{ ...btnS(false), fontSize: 11 }}><Ic n="refresh" size={12} /> {localText(lang, '重新拉取模型', 'Refresh models')}</button>}
       {canDisconnect && <button onClick={() => onDisconnect(connector)} style={{ ...btnS(false), color: 'var(--danger)', fontSize: 11 }}>{localText(lang, '断开', 'Disconnect')}</button>}
     </div>
   </div>
@@ -136,7 +136,7 @@ export default function AccountsPage({ lang = 'zh', onCanonicalChange, onBusyCha
     } })
   }
   const cancel = async connector => withBusy(async () => { try { await window.electronAPI?.providerAuth?.cancel({ attemptId: connector.attemptId }); await load() } catch (err) { setError(err?.message || localText(lang, '取消失败', 'Cancel failed')) } })
-  const reverify = async connector => withBusy(async () => { setError(''); try { if (connector.mode === 'cli' || !connector.connectionId) { await load(); return } const result = await window.electronAPI?.providerValidation?.run({ connectionId: connector.connectionId, track: 'chat' }); if (!result?.ok) setError(result?.message || localText(lang, '验证失败', 'Validation failed')); await load() } catch (err) { setError(err?.message || localText(lang, '验证失败', 'Validation failed')) } })
+  const reverify = async connector => withBusy(async () => { setError(''); try { if (connector.mode === 'cli' || !connector.connectionId) { await load(); return } const result = await window.electronAPI?.providerModels?.refresh({ connectionId: connector.connectionId, track: 'chat' }); if (!result?.result?.ok) setError(result?.result?.message || localText(lang, '模型拉取失败', 'Model discovery failed')); await load() } catch (err) { setError(err?.message || localText(lang, '模型拉取失败', 'Model discovery failed')) } })
   const disconnect = async connector => withBusy(async () => { try { await window.electronAPI?.providerAuth?.disconnect({ connectorId: connector.id }); await load() } catch (err) { setError(err?.message || localText(lang, '断开失败', 'Disconnect failed')) } })
 
   if (loading) return <div style={{ padding: 24, color: 'var(--text-muted)' }}>{localText(lang, '正在加载…', 'Loading…')}</div>

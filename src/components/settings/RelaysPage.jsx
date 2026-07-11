@@ -12,6 +12,7 @@ const EMPTY = () => ({
   detectedAt: '',
   detectedEndpoints: null,
   modelsCount: 0,
+  modelCounts: { chat: 0, image: 0, video: 0 },
   validation: null,
   cardError: '',
   diagnostic: '',
@@ -35,6 +36,7 @@ function firstEndpointHost(endpoints) {
 // Deliberately copy only renderer-editable fields and public detection metadata.
 export function normalizeRelay(item) {
   const validation = item?.validation || item?.validations?.chat || null
+  const models = Array.isArray(item?.models) ? item.models : []
   return {
     ...EMPTY(),
     id: String(item?.id || EMPTY().id),
@@ -45,7 +47,12 @@ export function normalizeRelay(item) {
     detectedProtocol: String(item?.detectedProtocol || ''),
     detectedAt: String(item?.detectedAt || validation?.checkedAt || ''),
     detectedEndpoints: item?.detectedEndpoints && typeof item.detectedEndpoints === 'object' ? item.detectedEndpoints : null,
-    modelsCount: Array.isArray(item?.models) ? item.models.length : Number(item?.modelsCount || 0),
+    modelsCount: models.length || Number(item?.modelsCount || 0),
+    modelCounts: {
+      chat: models.filter(model => model.capability === 'chat').length,
+      image: models.filter(model => model.capability === 'image').length,
+      video: models.filter(model => model.capability === 'video').length
+    },
     validation,
   }
 }
@@ -114,6 +121,9 @@ function RelaySummary({ relay, lang }) {
       {validation && <StatusBadge status={validation.status || 'pending_configuration'} lang={lang} />}
       {validationEvidenceLabel(validation, lang) && <span style={chipS('var(--accent)')}>{validationEvidenceLabel(validation, lang)}</span>}
       <span style={chipS()}>{localText(lang, `${relay.modelsCount} 个模型`, `${relay.modelsCount} models`)}</span>
+      {relay.modelCounts.chat > 0 && <span style={chipS()}>{localText(lang, `文本 ${relay.modelCounts.chat}`, `Text ${relay.modelCounts.chat}`)}</span>}
+      {relay.modelCounts.image > 0 && <span style={chipS()}>{localText(lang, `图片 ${relay.modelCounts.image}`, `Image ${relay.modelCounts.image}`)}</span>}
+      {relay.modelCounts.video > 0 && <span style={chipS()}>{localText(lang, `视频 ${relay.modelCounts.video}`, `Video ${relay.modelCounts.video}`)}</span>}
       <LatencyBadge latencyMs={validation?.latencyMs} />
       {validation?.level && <span style={chipS()}>{validation.level}</span>}
       {validation?.modelId && <span style={chipS()}>{validation.modelId}</span>}
@@ -124,11 +134,10 @@ function RelaySummary({ relay, lang }) {
   </div>
 }
 
-function RelayCard({ relay, onPatch, onSave, onValidate, onRemove, busy, busyAction, lang }) {
+function RelayCard({ relay, onPatch, onSave, onRemove, busy, busyAction, lang }) {
   const canReuseCredential = relay.hasCredential && relay.baseUrl.trim() === relay.persistedBaseUrl
   const hasKey = Boolean(relay.apiKey) || canReuseCredential
   const canSave = Boolean(relay.baseUrl.trim()) && hasKey && !busy
-  const canValidate = canReuseCredential && !relay.apiKey && Boolean(relay.detectedProtocol) && !busy
   return <div style={{ border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)', background: 'var(--bg-surface)', padding: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
       <span style={{ flex: 1, color: 'var(--text-primary)', fontSize: 14, fontWeight: 600 }}>{relayName(relay, lang)}</span>
@@ -157,9 +166,6 @@ function RelayCard({ relay, onPatch, onSave, onValidate, onRemove, busy, busyAct
       <button onClick={onSave} disabled={!canSave} style={{ ...btnS(true), opacity: canSave ? 1 : 0.5, cursor: canSave ? 'pointer' : 'not-allowed', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
         {busyAction === 'save' ? localText(lang, '连接中…', 'Connecting…') : localText(lang, '连接并拉取模型', 'Connect & discover models')}
       </button>
-      {relay.hasCredential && relay.detectedProtocol && <button onClick={onValidate} disabled={!canValidate} title={!canValidate && !busy ? localText(lang, '请先保存当前 Base URL 和 API Key', 'Save the current Base URL and API Key first') : ''} style={{ ...btnS(false), opacity: canValidate ? 1 : 0.5 }}>
-        {busyAction === 'validate' ? localText(lang, '测试中…', 'Testing…') : localText(lang, '真实测试连接', 'Test Connection')}
-      </button>}
       <button onClick={onRemove} disabled={busy} style={{ ...btnS(false), color: 'var(--danger)', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
         <Ic n="trash" size={13} /> {localText(lang, '删除', 'Delete')}
       </button>
@@ -237,49 +243,6 @@ export default function RelaysPage({ lang, onCanonicalChange, onBusyChange }) {
     }
   }
 
-  const validate = async relay => {
-    setBusyId(relay.id)
-    setBusyAction('validate')
-    patch(relay.id, { cardError: '', diagnostic: '', diagnosticCopied: false })
-    try {
-      const result = await window.electronAPI?.providerValidation?.run({ connectionId: relay.id, track: 'chat' })
-      if (result?.ok !== true) {
-        const failure = {
-          ...result,
-          protocol: result?.protocol || relay.detectedProtocol,
-          stage: result?.stage || 'inference',
-          endpointPath: result?.endpointPath || relay.detectedEndpoints?.chat || ''
-        }
-        patch(relay.id, {
-          validation: result,
-          cardError: redactDiagnosticText(relayFailureMessage(failure, lang)),
-          diagnostic: relayFailureDiagnostic(failure, relay),
-          diagnosticCopied: false
-        })
-        return
-      }
-      await refresh()
-    } catch (err) {
-      const failure = {
-        protocol: relay.detectedProtocol,
-        stage: 'inference',
-        endpointHost: endpointHost(relay.baseUrl),
-        endpointPath: relay.detectedEndpoints?.chat || '',
-        errorCode: err?.errorCode || err?.code || 'VALIDATION_FAILED',
-        status: 'error',
-        message: err?.message || localText(lang, '测试连接失败', 'Connection test failed')
-      }
-      patch(relay.id, {
-        cardError: redactDiagnosticText(relayFailureMessage(failure, lang)),
-        diagnostic: relayFailureDiagnostic(failure, relay),
-        diagnosticCopied: false
-      })
-    } finally {
-      setBusyId('')
-      setBusyAction('')
-    }
-  }
-
   const remove = async relay => {
     if (!window.confirm(localText(lang, '确定删除此中转？', 'Delete this relay?'))) return
     setBusyId(relay.id)
@@ -296,7 +259,7 @@ export default function RelaysPage({ lang, onCanonicalChange, onBusyChange }) {
   return <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
     <SectionHeading labelKey="providerGateways" lang={lang} />
     {error && <div style={{ color: 'var(--danger)', fontSize: 12 }}>{error}</div>}
-    {relays.map(relay => <RelayCard key={relay.id} relay={relay} onPatch={changes => patch(relay.id, changes)} onSave={() => save(relay)} onValidate={() => validate(relay)} onRemove={() => remove(relay)} busy={busyId === relay.id} busyAction={busyId === relay.id ? busyAction : ''} lang={lang} />)}
+    {relays.map(relay => <RelayCard key={relay.id} relay={relay} onPatch={changes => patch(relay.id, changes)} onSave={() => save(relay)} onRemove={() => remove(relay)} busy={busyId === relay.id} busyAction={busyId === relay.id ? busyAction : ''} lang={lang} />)}
     <button onClick={() => setRelays(current => [...current, EMPTY()])} style={{ ...btnS(true), alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
       <Ic n="plus" size={13} /> {localText(lang, '添加中转', 'Add relay')}
     </button>

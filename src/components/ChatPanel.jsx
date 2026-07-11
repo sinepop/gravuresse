@@ -123,7 +123,7 @@ const selectChipS = () => ({
   transition: 'all 0.15s',
 })
 
-export default function ChatPanel({ chat, config, providerLists, onProviderChange, lang, generationMode = 'image', conversations, activeConvId, onSwitchConv, onNewConv, onDeleteConv, onRenameConv, onExportConv, onExportProject, onImportConv, onEnsureConversation, conversationBusy = false, canvas, referenceIntent, onReferenceIntentConsumed, composerIntent, onComposerIntentConsumed }) {
+export default function ChatPanel({ chat, config, providerLists, activeSelections, onConnectionModelChange, lang, generationMode = 'image', conversations, activeConvId, onSwitchConv, onNewConv, onDeleteConv, onRenameConv, onExportConv, onExportProject, onImportConv, onEnsureConversation, conversationBusy = false, canvas, referenceIntent, onReferenceIntentConsumed, composerIntent, onComposerIntentConsumed }) {
   const [input, setInput] = useState('')
   const [showConvList, setShowConvList] = useState(false)
   const [showRefPicker, setShowRefPicker] = useState(false)
@@ -625,7 +625,8 @@ export default function ChatPanel({ chat, config, providerLists, onProviderChang
               config={config}
               providerLists={providerLists}
               activeModule={generationMode}
-              onProviderChange={onProviderChange}
+              activeSelections={activeSelections}
+              onConnectionModelChange={onConnectionModelChange}
               lang={lang}
             />
           </div>

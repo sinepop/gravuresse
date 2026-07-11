@@ -31,8 +31,9 @@ const MODULES = [
 // conversation bridge and the live canvas stay structurally identical.
 
 export default function App() {
-  const { config, providerLists, save, updateProvider } = useConfig()
+  const { config, providerLists, save } = useConfig()
   const [liveConnections, setLiveConnections] = useState(null)
+  const [activeSelections, setActiveSelections] = useState({})
   const runtimeConfig = useMemo(() => liveConnections && config ? { ...config, connections: liveConnections } : config, [config, liveConnections])
   const canvas = useCanvas()
   const taskQueue = useTaskQueue(canvas)
@@ -110,7 +111,7 @@ export default function App() {
     removeAsset: (id, assetId) => patchStoredConversation(id, conv => removeConversationAsset(conv, assetId))
   }), [patchStoredConversation])
 
-  const chat = useChat(runtimeConfig, canvas, taskQueue.add, activeConvId, isActiveConversation, conversationBridge, providerLists)
+  const chat = useChat(runtimeConfig, canvas, taskQueue.add, activeConvId, isActiveConversation, conversationBridge, providerLists, activeSelections)
 
   const setChatMessages = chat.setMessages
   const replaceCanvasAssets = canvas.replaceAssets
@@ -660,7 +661,7 @@ export default function App() {
         <main className="module-content">
           <div className="workspace-main">
             <div className="chat-pane">
-                <ChatPanel chat={chat} config={runtimeConfig} providerLists={providerLists} onProviderChange={updateProvider} lang={lang} generationMode={activeModule}
+                <ChatPanel chat={chat} config={runtimeConfig} providerLists={providerLists} activeSelections={activeSelections} onConnectionModelChange={(track, selection) => setActiveSelections(current => ({ ...current, [track]: selection }))} lang={lang} generationMode={activeModule}
                   conversations={conversations} activeConvId={activeConvId}
                   onSwitchConv={handleSwitchConv} onNewConv={handleNewConv} onDeleteConv={handleDeleteConv}
                   onRenameConv={handleRenameConv} onExportConv={handleExportConv} onExportProject={handleExportProject} onImportConv={handleImportConv}

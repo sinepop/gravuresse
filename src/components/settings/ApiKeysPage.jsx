@@ -42,10 +42,6 @@ function providerCapabilities(providerLists, providerId) {
   return TRACKS.filter(track => (providerLists?.[track] || []).some?.(item => item.id === providerId))
 }
 
-function validationAvailability(providerLists, providerId, track) {
-  return (providerLists?.[track] || []).find?.(item => item.id === providerId)?.validationAvailability || 'unsupported'
-}
-
 function validationFor(connection, track) {
   return connection?.validations?.[track] || null
 }
@@ -84,24 +80,12 @@ function ApiKeyCard({ providerId, providerLists, connections, onRefresh, onReque
         }
       })
       const failed = Object.values(result?.modelsResults || {}).find(item => item?.ok !== true) || (result?.modelsResult?.ok !== true ? result?.modelsResult : null)
-      if (failed) setError(failed.message || localText(lang, '模型拉取或验证失败', 'Model discovery or validation failed'))
+      if (failed) setError(failed.message || localText(lang, '模型拉取失败', 'Model discovery failed'))
       await onRefresh?.()
     } catch (err) {
       setError(err?.message || localText(lang, '保存失败', 'Save failed'))
     } finally { setSaving(false); onRequestEnd?.() }
   }, [draft, existing, lang, connectionId, providerId, displayName, entry, capabilities, onRefresh, onRequestStart, onRequestEnd])
-
-  const validate = useCallback(async track => {
-    if (!existing) return
-    setBusyTrack(track); setError('')
-    onRequestStart?.()
-    try {
-      const result = await window.electronAPI?.providerValidation?.run({ connectionId: existing.id, track })
-      if (!result?.ok) setError(result?.message || localText(lang, '连接验证失败', 'Connection validation failed'))
-      await onRefresh?.()
-    } catch (err) { setError(err?.message || localText(lang, '验证失败', 'Validation failed')) }
-    finally { setBusyTrack(''); onRequestEnd?.() }
-  }, [existing, lang, onRefresh, onRequestStart, onRequestEnd])
 
   const refreshModels = useCallback(async track => {
     if (!existing) return
@@ -140,14 +124,12 @@ function ApiKeyCard({ providerId, providerLists, connections, onRefresh, onReque
         <input type="password" value={draft} onChange={e => setDraft(e.target.value)} disabled={cardBusy} placeholder={existing ? REDACTED_API_KEY : localText(lang, '粘贴 API 密钥', 'Paste API key')} style={{ ...inputS(), flex: 1 }} />
         <button onClick={save} disabled={cardBusy} style={{ ...btnS(true), opacity: cardBusy ? 0.6 : 1 }}>{saving ? localText(lang, '保存中…', 'Saving…') : localText(lang, '保存并拉取', 'Save & Discover')}</button>
       </div>
-      {existing && capabilities.map(track => { const trackValidation = validationFor(existing, track); const availability = validationAvailability(providerLists, providerId, track); const unsupported = availability === 'unsupported'; return <div key={track} style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', paddingTop: 6, borderTop: '1px solid var(--border-subtle)' }}>
+      {existing && capabilities.map(track => { const trackValidation = validationFor(existing, track); return <div key={track} style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', paddingTop: 6, borderTop: '1px solid var(--border-subtle)' }}>
         <span style={chipS()}>{track}</span>
         <StatusBadge status={trackValidation?.status || 'pending_configuration'} lang={lang} />
         <LatencyBadge latencyMs={trackValidation?.latencyMs} />
         {validationEvidenceLabel(trackValidation, lang) && <span style={chipS('var(--accent)')}>{validationEvidenceLabel(trackValidation, lang)}</span>}
-        <button onClick={() => refreshModels(track)} disabled={cardBusy || unsupported} title={unsupported ? localText(lang, '该提供商没有可靠的远端模型目录', 'No reliable remote model directory is available') : ''} style={{ ...btnS(false), padding: '5px 10px', fontSize: 11, opacity: unsupported ? 0.55 : 1 }}>{busyTrack === track ? localText(lang, '处理中…', 'Working…') : localText(lang, '刷新模型', 'Refresh models')}</button>
-        <button onClick={() => validate(track)} disabled={cardBusy || unsupported} title={unsupported ? localText(lang, '该提供商没有可靠的无成本验证方式', 'No reliable no-cost validation is available') : ''} style={{ ...btnS(false), padding: '5px 10px', fontSize: 11, opacity: unsupported ? 0.55 : 1 }}>{busyTrack === track ? localText(lang, '验证中…', 'Validating…') : availability === 'directory' ? localText(lang, '验证模型目录', 'Verify Directory') : localText(lang, '真实测试连接', 'Test Connection')}</button>
-        {unsupported && <span style={chipS()}>{localText(lang, '不支持无成本验证', 'No no-cost validation')}</span>}
+        <button onClick={() => refreshModels(track)} disabled={cardBusy} style={{ ...btnS(false), padding: '5px 10px', fontSize: 11 }}>{busyTrack === track ? localText(lang, '处理中…', 'Working…') : localText(lang, '刷新模型', 'Refresh models')}</button>
         {trackValidation?.level && <span style={chipS()}>{trackValidation.level}</span>}
         {trackValidation?.checkedAt && <span style={chipS()}>{new Date(trackValidation.checkedAt).toLocaleString(lang === 'en' ? 'en-US' : 'zh-CN')}</span>}
         {trackValidation?.endpointHost && <span style={chipS()}>{trackValidation.endpointHost}</span>}
