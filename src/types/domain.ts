@@ -103,6 +103,9 @@ export interface ProviderValidationStatus {
   message: string
   evidence?: 'assistant_output' | 'protocol_response' | 'model_directory' | 'capability' | 'none'
   outputVerified?: boolean
+  protocol?: 'openai' | 'anthropic' | 'gemini' | string
+  stage?: 'directory' | 'inference' | string
+  endpointPath?: string
   track?: Track
   inventoryRevision?: string
 }

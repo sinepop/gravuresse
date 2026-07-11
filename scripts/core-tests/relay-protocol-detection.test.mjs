@@ -160,6 +160,40 @@ test('relay detection skips obvious non-text candidates without classifying them
   assert.ok(!['chat', 'image', 'video'].includes(result.models.find(model => model.id === 'text-embedding-3-large').capability))
 })
 
+test('relay detection probes an ambiguous non-media model before declaring no text candidates', async () => {
+  const attempted = []
+  const result = await detectRelayProtocol({
+    baseUrl: 'https://relay.example.com/v1', apiKey: 'secret',
+    requestFn: async (_url, options, body) => {
+      if (options.method === 'GET') return response({ data: [
+        { id: 'vendor-coding-pro', type: 'model', description: 'Supports text and audio input' },
+        { id: 'vendor-embedding', type: 'embedding' },
+        { id: 'vendor-visual', output_modalities: ['image'] },
+        { id: 'vendor-motion', capabilities: { textToVideo: true } }
+      ] })
+      attempted.push(body.model)
+      return response({ choices: [{ message: { content: 'OK' }, finish_reason: 'stop' }] })
+    }
+  })
+  assert.deepEqual(attempted, ['vendor-coding-pro'])
+  assert.equal(result.validation.modelId, 'vendor-coding-pro')
+  assert.equal(result.models.find(model => model.id === 'vendor-coding-pro').capability, 'chat')
+})
+
+test('zero safe text candidates reports inference selection instead of directory failure', async () => {
+  await assert.rejects(() => detectRelayProtocol({
+    baseUrl: 'https://relay.example.com/v1', apiKey: 'secret',
+    requestFn: async () => response({ data: [{ id: 'text-embedding-3-large' }, { id: 'vendor-rerank-v2' }] })
+  }), error => {
+    const failure = error?.failures?.[0]
+    assert.equal(failure?.stage, 'inference')
+    assert.equal(failure?.endpointPath, '/v1/chat/completions')
+    assert.equal(failure?.errorCode, 'NO_TEXT_MODEL_CANDIDATE')
+    assert.match(failure?.message || '', /2 directory models/)
+    return true
+  })
+})
+
 test('failed relay detection leaves an existing usable relay unchanged', async () => {
   const existing = {
     id: 'relay-one', kind: 'relay', providerId: 'custom-relay', baseUrl: 'https://old.example.com/v1',

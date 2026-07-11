@@ -314,6 +314,7 @@ function relayProbeFailure(error, context = {}) {
   if (/response is too large/i.test(message)) return { ...details, errorCode: 'RESPONSE_TOO_LARGE', message: 'Response is too large' }
   if (/invalid JSON/i.test(message)) return { ...details, errorCode: 'INVALID_RESPONSE', message }
   if (/no discoverable models|no valid model identifiers/i.test(message)) return { ...details, errorCode: 'EMPTY_MODEL_DIRECTORY', message }
+  if (/no callable text candidate/i.test(message)) return { ...details, errorCode: 'NO_TEXT_MODEL_CANDIDATE', message }
   if (/no assistant output|no valid protocol response|no text model/i.test(message)) return { ...details, errorCode: 'MINIMAL_INFERENCE_FAILED', message }
   if (/ENOTFOUND|ECONNREFUSED|ECONNRESET|network|socket/i.test(message)) return { ...details, errorCode: 'NETWORK_UNAVAILABLE', message: 'Network unavailable' }
   return { ...details, errorCode: 'PROBE_FAILED', message: 'Probe failed' }
@@ -323,9 +324,12 @@ const NON_TEXT_PROBE_MODEL = /(?:^|[-_.:/])(embedding|embed|rerank|moderation|wh
 
 function relayTextProbeCandidates(models) {
   return models
-    .filter(model => !['image', 'video', 'other'].includes(model.capability))
+    .filter(model => !['image', 'video'].includes(model.capability))
     .filter(model => model.capability === 'chat' || !NON_TEXT_PROBE_MODEL.test(model.id || ''))
-    .sort((a, b) => Number(b.capability === 'chat') - Number(a.capability === 'chat'))
+    .sort((a, b) => {
+      const rank = model => model.capability === 'chat' ? 0 : model.capability === 'unknown' ? 1 : 2
+      return rank(a) - rank(b)
+    })
     .slice(0, 6)
 }
 
@@ -349,12 +353,12 @@ async function detectRelayProtocol({ baseUrl, apiKey, requestOptions = {}, reque
       const directoryResponse = await requestFn(probe.modelUrl(), { method: 'GET', ...requestOptions, headers: probe.headers })
       assertSuccessfulResponse(directoryResponse)
       const parsed = parseRelayModelDirectory(directoryResponse?.data, probe.protocol)
+      failureContext = { stage: 'inference', endpointHost: endpointHost(safeBase), endpointPath: probe.chatPath }
       const candidates = relayTextProbeCandidates(parsed)
-      if (!candidates.length) throw new Error('No text model is available for minimal inference')
+      if (!candidates.length) throw new Error(`No callable text candidate among ${parsed.length} directory models`)
       let verifiedModel = ''
       let inferenceEvidence = null
       let lastInferenceError = null
-      failureContext = { stage: 'inference', endpointHost: endpointHost(safeBase), endpointPath: probe.chatPath }
       for (const candidate of candidates) {
         try {
           const response = await requestFn(probe.chatUrl(candidate.id), {
@@ -367,7 +371,7 @@ async function detectRelayProtocol({ baseUrl, apiKey, requestOptions = {}, reque
         } catch (error) { lastInferenceError = error }
       }
       if (!verifiedModel) throw lastInferenceError || new Error('Minimal inference failed')
-      const models = parsed.map(model => model.id === verifiedModel && model.capability === 'unknown'
+      const models = parsed.map(model => model.id === verifiedModel && model.capability !== 'chat'
         ? { ...model, capability: 'chat', routeHint: probe.protocol === 'openai' ? 'openai-chat' : probe.protocol, reason: 'minimal-inference' }
         : model).sort(sortModelRecords('chat'))
       const revision = crypto.randomUUID()
@@ -470,6 +474,9 @@ function validationError(error, connection, started, secrets = []) {
 async function validateConnection({ connection, track, modelId, modelsApi, requestOptions, requestFn = request, onModels }) {
   const started = Date.now()
   const secrets = SECRET_FIELDS.flatMap(field => [connection[field], connection.credentials?.[field]]).filter(Boolean)
+  let failureStage = 'directory'
+  let failureEndpointPath = connection.detectedEndpoints?.models || connection.modelsPath || ''
+  let validationProtocol = connection.detectedProtocol || ''
   try {
     if (!normalizeCapabilities(connection.capabilities).includes(track)) throw new Error(`Connection does not declare ${track} capability`)
     const strategy = connection.kind === 'api-key'
@@ -514,6 +521,8 @@ async function validateConnection({ connection, track, modelId, modelsApi, reque
         : strategy === VALIDATION_STRATEGIES.OPENAI_CHAT
           ? 'openai'
           : providerId
+    validationProtocol = protocol === 'google' ? 'gemini' : protocol === 'claude' ? 'anthropic' : protocol
+    failureStage = 'inference'
     let lastInferenceError = null
     for (const candidate of candidates) {
       try {
@@ -522,16 +531,21 @@ async function validateConnection({ connection, track, modelId, modelsApi, reque
         const headers = { ...auth.headers, 'Content-Type': 'application/json' }
         let body
         if (protocol === 'google' || protocol === 'gemini') {
-          url = applyQueryParams(joinCompatibleApiUrl(provider.baseUrl, `/v1beta/models/${encodeURIComponent(model)}:generateContent`), auth.queryParams)
+          const detectedPath = connection.detectedEndpoints?.chat
+          const chatPath = detectedPath
+            ? detectedPath.replace('{model}', encodeURIComponent(model))
+            : `/v1beta/models/${encodeURIComponent(model)}:generateContent`
+          url = applyQueryParams(joinCompatibleApiUrl(provider.baseUrl, chatPath), auth.queryParams)
           body = buildMinimalInferenceBody('gemini', model)
         } else if (protocol === 'anthropic' || protocol === 'claude') {
-          url = applyQueryParams(joinCompatibleApiUrl(provider.baseUrl, connection.endpoints?.chat || '/v1/messages'), auth.queryParams)
+          url = applyQueryParams(joinCompatibleApiUrl(provider.baseUrl, connection.detectedEndpoints?.chat || connection.endpoints?.chat || '/v1/messages'), auth.queryParams)
           headers['anthropic-version'] ||= '2023-06-01'
           body = buildMinimalInferenceBody('anthropic', model)
         } else {
-          url = applyQueryParams(joinCompatibleApiUrl(provider.baseUrl, connection.endpoints?.chat || '/v1/chat/completions'), auth.queryParams)
+          url = applyQueryParams(joinCompatibleApiUrl(provider.baseUrl, connection.detectedEndpoints?.chat || connection.endpoints?.chat || '/v1/chat/completions'), auth.queryParams)
           body = buildMinimalInferenceBody('openai', model)
         }
+        failureEndpointPath = url.pathname
         const response = await requestFn(url, { method: 'POST', headers, ...requestOptions }, body)
         assertSuccessfulResponse(response)
         const inference = analyzeInferenceResponse(protocol, response?.data)
@@ -554,7 +568,12 @@ async function validateConnection({ connection, track, modelId, modelsApi, reque
     }
     throw lastInferenceError || new Error('Minimal inference failed for every text model candidate')
   } catch (error) {
-    return validationError(error, connection, started, secrets)
+    return {
+      ...validationError(error, connection, started, secrets),
+      protocol: validationProtocol,
+      stage: failureStage,
+      endpointPath: failureEndpointPath
+    }
   }
 }
 

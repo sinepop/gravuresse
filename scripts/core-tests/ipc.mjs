@@ -117,7 +117,7 @@ export async function runIpcCoreTests() {
       const revision = `detected-${++detectionRevision}`
       return {
         detectedProtocol: 'openai', detectedAt: checkedAt,
-        detectedEndpoints: { models: '/v1/models', chat: '/v1/chat/completions' },
+        detectedEndpoints: { models: '/v1/models', chat: '/v1/vendor/chat/completions' },
         detectionRevision: revision, authType: { type: 'bearer' }, models,
         validation: { ok: true, status: 'verified', level: 'minimal_inference', checkedAt, latencyMs: 1, endpointHost: new URL(baseUrl).host, modelId: models[0]?.id || '', errorCode: '', message: 'verified' }
       }
@@ -212,7 +212,13 @@ export async function runIpcCoreTests() {
   assert.equal(connectionList.connections.relays[0].apiKey, '********')
   assert.equal(connectionList.connections.relays[1].apiKey, '********')
   assert.equal(connectionList.connections.relays[0].detectedProtocol, 'openai')
-  assert.equal(connectionList.connections.relays[0].detectedEndpoints.chat, '/v1/chat/completions')
+  assert.equal(connectionList.connections.relays[0].detectedEndpoints.chat, '/v1/vendor/chat/completions')
+
+  const relayRevalidation = await providerIpc.handlers.get('providerValidation:run')(null, { connectionId: 'relay-one', track: 'chat' })
+  assert.equal(relayRevalidation.ok, true)
+  assert.equal(relayRevalidation.evidence, 'assistant_output')
+  assert.equal(lastValidationRequest.url.pathname, '/v1/vendor/chat/completions')
+  assert.equal(lastValidationRequest.options.headers.Authorization, 'Bearer relay-one-secret')
 
   const savedStandard = await providerIpc.handlers.get('providerConnection:save')(null, {
     collection: 'apiKeys',

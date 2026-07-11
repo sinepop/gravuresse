@@ -37,7 +37,7 @@ test('canvas uses product language for batch actions and source relationships', 
   assert.doesNotMatch(canvasSource, />[^<{]*\p{Script=Han}[^<{]*</u)
 })
 
-test('relay UI exposes only Base URL, API Key, connect and delete controls', () => {
+test('relay UI exposes only Base URL, API Key, connect, test and delete controls', () => {
   assert.match(source, />Base URL\s*</)
   assert.match(source, />API Key\s*</)
   assert.match(source, /连接并拉取模型/)
@@ -54,7 +54,6 @@ test('relay UI exposes only Base URL, API Key, connect and delete controls', () 
     'Path prefix',
     'JSON template',
     'Refresh models',
-    'Validate',
   ]) assert.doesNotMatch(source, new RegExp(forbidden.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `must not expose ${forbidden}`)
 })
 
@@ -84,7 +83,10 @@ test('provider links have localized user-facing labels', () => {
 test('relay save submits only renderer-owned intent fields', () => {
   assert.match(source, /connection:\s*\{\s*id:\s*relay\.id,\s*baseUrl:\s*relay\.baseUrl\.trim\(\),\s*apiKey:\s*credential\s*\}/)
   assert.doesNotMatch(source, /connection:\s*\{\s*\.\.\./)
-  assert.doesNotMatch(source, /providerModels\?\.refresh|providerValidation\?\.run/)
+  assert.doesNotMatch(source, /providerModels\?\.refresh/)
+  assert.match(source, /providerValidation\?\.run\(\{ connectionId: relay\.id, track: 'chat' \}\)/)
+  assert.match(source, /真实测试连接/)
+  assert.match(source, /validationEvidenceLabel/)
 })
 
 test('failed relay detection stays local and never refreshes canonical state', () => {
