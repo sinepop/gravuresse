@@ -91,9 +91,68 @@ export interface ProviderProfile {
   [key: string]: unknown
 }
 
+export interface ProviderValidationStatus {
+  ok: boolean
+  status: string
+  level: string
+  checkedAt: string
+  latencyMs: number | null
+  endpointHost: string
+  modelId: string
+  errorCode: string
+  message: string
+  track?: Track
+  inventoryRevision?: string
+}
+
+export interface RemoteProviderModel {
+  id: string
+  capability: Track | 'other' | 'unknown'
+  routeHint?: string
+  source: 'remote'
+  reason?: string
+}
+
+export interface ProviderConnection {
+  id: string
+  providerId: string
+  name: string
+  kind: 'api-key' | 'relay' | 'oauth' | string
+  baseUrl?: string
+  authType?: { type: string; headerName?: string; paramName?: string; key?: string }
+  capabilities: Track[]
+  modelsPath?: string
+  pathPrefix?: string
+  endpoints?: Partial<Record<'chat' | 'image' | 'video' | 'capability' | 'submit' | 'poll', string>>
+  template?: Record<string, unknown>
+  models?: RemoteProviderModel[]
+  validation?: ProviderValidationStatus | null
+  validations?: Partial<Record<Track, ProviderValidationStatus>>
+  revision?: string
+  inventoryRevision?: string
+  updatedAt?: string
+  apiKey?: string
+  sessionToken?: string
+  [key: string]: unknown
+}
+
+export interface ProviderDefaultSelection {
+  connectionId: string
+  providerId: string
+  modelId: string
+}
+
+export interface ProviderConnectionsConfig {
+  accounts: ProviderConnection[]
+  apiKeys: ProviderConnection[]
+  relays: ProviderConnection[]
+  defaults: Record<Track, ProviderDefaultSelection | null>
+}
+
 export interface ProviderCallParams {
   action: ProviderAction
   providerId?: string
+  connectionId?: string
   messages?: Array<{ role: MessageRole | 'system'; content: string }>
   system?: string
   thinking?: boolean
@@ -117,5 +176,6 @@ export type ProviderCallResult<T = unknown> =
 export interface ConfigPayload {
   providers?: Partial<Record<Track, ProviderProfile>>
   providerProfiles?: Partial<Record<Track, ProviderProfile[]>>
+  connections?: ProviderConnectionsConfig
   [key: string]: unknown
 }

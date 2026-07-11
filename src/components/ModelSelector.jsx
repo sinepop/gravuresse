@@ -63,20 +63,13 @@ function ModelPicker({ track, current, profiles, providerLists, onSelect, lang }
 
   return (
     <div ref={ref} style={{ position: 'relative', minWidth: 0, maxWidth: '100%' }}>
-      <button onClick={() => setOpen(!open)} style={{
-        background: open ? 'var(--accent-soft)' : 'var(--bg-surface)',
+      <button className="glass-control model-selector-trigger" data-open={open ? 'true' : 'false'} aria-expanded={open} onClick={() => setOpen(!open)} style={{
         border: `1px solid ${open ? 'var(--border-accent)' : 'var(--border-subtle)'}`,
         borderRadius: 'var(--radius-sm)',
-        padding: '5px 8px',
-        color: 'var(--text-secondary)',
-        fontSize: 10,
         cursor: 'pointer',
         display: 'flex',
         alignItems: 'center',
         gap: 5,
-        maxWidth: 142,
-        minWidth: 0,
-        minHeight: 28,
         fontFamily: 'var(--font-body)',
         boxShadow: open ? '0 0 0 2px var(--accent-glow)' : 'none'
       }}>
@@ -86,26 +79,22 @@ function ModelPicker({ track, current, profiles, providerLists, onSelect, lang }
       </button>
 
       {open && (
-        <div style={{
+        <div className="glass-overlay glass-specular model-selector-menu" style={{
           position: 'absolute',
           bottom: '100%',
           left: 0,
           marginBottom: 6,
-          background: 'var(--bg-elevated)',
-          border: '1px solid var(--border-default)',
-          borderRadius: 'var(--radius-md)',
           padding: 6,
           width: 280,
           maxWidth: 'calc(100vw - 96px)',
           zIndex: 100,
-          boxShadow: 'var(--shadow-lg)',
           animation: 'scaleIn 0.12s ease'
         }}>
           {profiles.map(profile => {
             const selected = sameProfile(track, current, profile)
             const key = profile.profileId || `${profile.providerId || profile.id}:${profile.baseUrl || ''}:${profile.model}`
             return (
-              <button key={key} onClick={() => selectProfile(profile)} style={{
+              <button key={key} className="model-selector-option" onClick={() => selectProfile(profile)} style={{
                 display: 'grid',
                 gridTemplateColumns: '1fr',
                 gap: 2,
@@ -113,10 +102,6 @@ function ModelPicker({ track, current, profiles, providerLists, onSelect, lang }
                 textAlign: 'left',
                 padding: '8px 10px',
                 background: selected ? 'var(--accent-soft)' : 'transparent',
-                border: 'none',
-                borderRadius: 'var(--radius-sm)',
-                color: 'var(--text-primary)',
-                fontSize: 11,
                 cursor: 'pointer',
                 fontFamily: 'var(--font-body)'
               }}>

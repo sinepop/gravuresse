@@ -2,6 +2,18 @@
 
 ## 中文
 
+#### v2.4.0 (2026-07-11)
+
+**设置系统重构 (Settings System Refactoring)**
+- **提供商设置**: "API 配置" 重命名为 "提供商设置"，包含 4 个子页面
+  - 账号 (Accounts): OAuth/设备码连接器，一键连接
+  - API 密钥 (API Keys): 27 标准供应商 API Key 管理，自动拉取模型
+  - 自定义中转 (Custom Relays): 多中转配置，独立认证与能力设置
+  - 默认模型搭配 (Default Model Pairing): 对话/生图/视频独立选择默认模型
+- **真实验证**: 所有"连接成功"来自真实网络请求，含验证级别、时间、延迟、实际端点
+- **自动拉取模型**: 保存凭证后自动从远程 API 获取可用模型列表
+- **清理旧代码**: 移除手动模型编辑、OAuth 占位数据、旧 Provider 页面
+
 #### v2.3.0 (2026-07-10)
 
 **Provider 架构重构（Hermes 风格）**
@@ -511,6 +523,18 @@
 ---
 
 ## English
+
+#### v2.4.0 (2026-07-11)
+
+**Settings System Refactoring**
+- **Provider Settings**: "API Config" renamed to "Provider Settings" with 4 sub-pages
+  - Accounts: OAuth/device-code connectors, one-click connect
+  - API Keys: 27 standard provider API Key management, auto-fetch models
+  - Custom Relays: multi-relay configuration, independent auth and capability settings
+  - Default Model Pairing: independent default model selection for Chat/Image/Video
+- **Real Verification**: all "Connection Successful" messages come from real network requests, including verification level, timestamp, latency, and actual endpoint
+- **Auto-fetch Models**: automatically fetch available model list from remote API after saving credentials
+- **Legacy Cleanup**: removed manual model editing, OAuth placeholder data, old Provider pages
 
 #### v2.2.0 (2026-07-07)
 

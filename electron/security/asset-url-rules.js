@@ -69,11 +69,26 @@ function sanitizeHttpsUrl(value) {
   return parsed.href
 }
 
+function sanitizeMediaCacheUrl(value, type) {
+  let parsed
+  try { parsed = new URL(value) } catch { return '' }
+  if (parsed.protocol !== 'gravuresse-media:' || parsed.hostname !== 'cache') return ''
+  if (parsed.username || parsed.password || parsed.search || parsed.hash) return ''
+  let fileName
+  try { fileName = decodeURIComponent(parsed.pathname.replace(/^\/+/, '')) } catch { return '' }
+  const match = /^([a-f0-9]{64})\.(png|jpg|webp|mp4)$/.exec(fileName)
+  if (!match) return ''
+  const isVideo = match[2] === 'mp4'
+  if ((type === 'video') !== isVideo) return ''
+  return `gravuresse-media://cache/${fileName}`
+}
+
 function sanitizeAssetUrl(url, type = 'image') {
   if (typeof url !== 'string') return ''
   const cleanType = type === 'video' ? 'video' : 'image'
   const value = url.trim()
   if (!value) return ''
+  if (/^gravuresse-media:/i.test(value)) return sanitizeMediaCacheUrl(value, cleanType)
   if (/^data:/i.test(value)) return sanitizeDataUrl(value, cleanType)
   return sanitizeHttpsUrl(value)
 }
@@ -85,5 +100,6 @@ module.exports = {
   isBlockedHost,
   isPrivateIPv4,
   isPrivateIPv6,
+  sanitizeMediaCacheUrl,
   sanitizeAssetUrl
 }

@@ -1,5 +1,6 @@
 const { app, BrowserWindow, ipcMain, dialog, shell, session, protocol } = require('electron')
 const path = require('path')
+const os = require('os')
 const fs = require('fs')
 const crypto = require('crypto')
 const { fileURLToPath } = require('url')
@@ -15,7 +16,7 @@ const { registerConfigIpc } = require('./ipc/config')
 const { registerConversationIpc } = require('./ipc/conversation')
 const { registerAssetIpc } = require('./ipc/assets')
 const { registerProviderIpc } = require('./ipc/provider')
-const { MEDIA_CACHE_SCHEME, cacheAssetPreview, mediaCacheMime, parseMediaCacheUrl } = require('./media-cache')
+const { MEDIA_CACHE_SCHEME, cacheAssetBytes, cacheAssetPreview, mediaCacheMime, parseMediaCacheUrl } = require('./media-cache')
 const { canUseStoredCredentials, resolveProviderIdByTrack, storedProviderForRequest } = require('./providers/account-resolver')
 const {
   realSecret, credentialsFromProvider, inferProviderTrack, defaultProviderBaseUrl: getDefaultBaseUrl,
@@ -433,14 +434,22 @@ registerAssetIpc({
     downloadToFile,
     validateAssetBytes
   }),
+  cacheAssetBytes,
+  mediaCacheDir: MEDIA_CACHE_DIR,
+  validateAssetBytes,
+  maxAssetBytes: MAX_ASSET_BYTES,
   openExternalSafe
 })
 
 function createWindow() {
+  const windowsBuild = Number(os.release().split('.')[2] || 0)
+  const useMica = process.platform === 'win32' && windowsBuild >= 22621
   mainWindow = new BrowserWindow({
     width: 1400, height: 900, minWidth: 1000, minHeight: 600,
     show: false,
-    frame: false, titleBarStyle: 'hidden', backgroundColor: '#1A1A1E',
+    frame: false, titleBarStyle: 'hidden',
+    backgroundColor: useMica ? '#00000000' : '#1A1A1E',
+    backgroundMaterial: useMica ? 'mica' : 'none',
     icon: path.join(__dirname, '../build/icon.png'),
     webPreferences: {
       preload: path.join(__dirname, '../preload/preload.js'),
@@ -449,11 +458,10 @@ function createWindow() {
   })
 
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
-    const devCsp = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' gravuresse-media: data: blob:; media-src 'self' gravuresse-media: data: blob:; connect-src 'self' https: ws:; font-src 'self' data: https://fonts.gstatic.com; child-src 'self'"
-    // Prod: allow Google Fonts CDN (style-src / font-src) so the @import in
-    // global.css can load Inter/JetBrains/Outfit in the packaged app; scripts
-    // and navigational surfaces stay locked down.
-    const prodCsp = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' gravuresse-media: data: blob:; media-src 'self' gravuresse-media: data: blob:; connect-src 'self' https:; font-src 'self' data: https://fonts.gstatic.com; child-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    const devCsp = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' gravuresse-media: data: blob:; media-src 'self' gravuresse-media: data: blob:; connect-src 'self' https: ws:; font-src 'self' data:; child-src 'self'"
+    // Local system fonts need no third-party style or font hosts. Scripts and
+    // navigational surfaces stay locked down in production.
+    const prodCsp = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' gravuresse-media: data: blob:; media-src 'self' gravuresse-media: data: blob:; connect-src 'self' https:; font-src 'self' data:; child-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
     callback({
       responseHeaders: {
         ...details.responseHeaders,

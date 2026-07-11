@@ -36,6 +36,12 @@ export default function useCanvas() {
     return item
   }, [commitAssets])
 
+  const addAssets = useCallback((nextAssets, options = {}) => {
+    const items = Array.isArray(nextAssets) ? nextAssets.map(asset => createAsset(asset)) : []
+    if (items.length > 0) commitAssets(prev => [...items, ...prev], options)
+    return items
+  }, [commitAssets])
+
   const addPlaceholder = useCallback((label, asset = {}, options = {}) => {
     const item = createAsset({
       type: 'image',
@@ -113,6 +119,7 @@ export default function useCanvas() {
     viewMode,
     setViewMode,
     addAsset,
+    addAssets,
     addPlaceholder,
     removeAsset,
     replaceAssets,
@@ -124,5 +131,5 @@ export default function useCanvas() {
     canUndo: undoStack.current.length > 0,
     canRedo: redoStack.current.length > 0,
     clear
-  }), [sortedAssets, assets, selectedAsset, selectedId, viewMode, addAsset, addPlaceholder, removeAsset, replaceAssets, updateAsset, updateAssets, getAssetById, undo, redo, clear])
+  }), [sortedAssets, assets, selectedAsset, selectedId, viewMode, addAsset, addAssets, addPlaceholder, removeAsset, replaceAssets, updateAsset, updateAssets, getAssetById, undo, redo, clear])
 }

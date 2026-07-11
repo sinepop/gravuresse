@@ -1,5 +1,5 @@
 import {
-  Send, Settings, X, ChevronDown, Trash2, Download, Upload, Image, Film,
+  Send, Settings, X, ChevronDown, ChevronUp, Trash2, Download, Upload, Image, Film,
   Sparkles, Grid3X3, Link, Check, AlertTriangle, RefreshCw, Eye, Zap,
   Minus, Square, Copy, Plus, MousePointer, Hand, Pencil, Circle, Type,
   LayoutGrid, Move, Lightbulb, MessageSquare, ExternalLink, BookOpen,
@@ -11,6 +11,7 @@ const ICONS = {
   gear: Settings,
   close: X,
   chevDown: ChevronDown,
+  chevUp: ChevronUp,
   trash: Trash2,
   download: Download,
   upload: Upload,

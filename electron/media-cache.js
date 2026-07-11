@@ -64,6 +64,33 @@ function cachedFileFor(cacheDir, hash) {
   return null
 }
 
+function cacheAssetBytes(bytes, type, declaredMime, { cacheDir, validateAssetBytes }) {
+  const buffer = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes || [])
+  const mime = validateAssetBytes(buffer, type, declaredMime)
+  const ext = ASSET_MIME_EXTENSIONS[mime]
+  if (!ext) throw new Error('Unsupported asset cache type')
+  fs.mkdirSync(cacheDir, { recursive: true })
+  const hash = crypto.createHash('sha256').update(buffer).digest('hex')
+  const fileName = `${hash}${ext}`
+  const filePath = path.join(cacheDir, fileName)
+  if (!fs.existsSync(filePath)) {
+    const temporary = path.join(cacheDir, `${hash}.tmp-${crypto.randomUUID()}`)
+    try {
+      fs.writeFileSync(temporary, buffer, { flag: 'wx' })
+      if (!fs.existsSync(filePath)) fs.renameSync(temporary, filePath)
+      else fs.unlinkSync(temporary)
+    } catch (error) {
+      try { fs.unlinkSync(temporary) } catch {}
+      throw error
+    }
+  }
+  return {
+    url: mediaCacheUrlForFileName(fileName),
+    mime,
+    size: buffer.length
+  }
+}
+
 async function cacheAssetPreview(params, { cacheDir, downloadToFile, validateAssetBytes }) {
   const { url, type } = normalizePreviewParams(params)
   if (url.startsWith('data:') || url.startsWith(`${MEDIA_CACHE_SCHEME}:`)) return url
@@ -95,6 +122,7 @@ async function cacheAssetPreview(params, { cacheDir, downloadToFile, validateAss
 module.exports = {
   MEDIA_CACHE_SCHEME,
   MEDIA_CACHE_HOST,
+  cacheAssetBytes,
   cacheAssetPreview,
   mediaCacheMime,
   mediaCacheUrlForFileName,

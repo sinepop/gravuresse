@@ -1,0 +1,162 @@
+import { t } from '../../i18n'
+import Ic from '../icons'
+
+/* --- Constants --- */
+export const REDACTED_API_KEY = '********'
+export const TRACKS = ['chat', 'image', 'video']
+
+/* --- Style Helpers --- */
+export const labelS = () => ({
+  display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13,
+  color: 'var(--text-secondary)', fontFamily: 'var(--font-body)',
+  fontWeight: 400, letterSpacing: '0.2px'
+})
+
+export const inputS = () => ({
+  background: 'var(--bg-input)', border: '1px solid var(--border-default)',
+  borderRadius: 'var(--radius-sm)', padding: '9px 12px',
+  color: 'var(--text-primary)', fontSize: 13, fontFamily: 'var(--font-mono)',
+  outline: 'none', transition: 'all 0.2s ease', lineHeight: 1.5
+})
+
+export const selectS = () => ({
+  ...inputS(), appearance: 'auto', cursor: 'pointer', fontFamily: 'var(--font-body)'
+})
+
+export const btnS = (primary) => ({
+  padding: '8px 22px',
+  background: primary ? 'var(--accent-gradient)' : 'var(--bg-surface)',
+  border: primary ? 'none' : '1px solid var(--border-default)',
+  borderRadius: 'var(--radius-sm)',
+  color: primary ? 'var(--text-white)' : 'var(--text-secondary)',
+  fontSize: 13, cursor: 'pointer', fontFamily: 'var(--font-body)',
+  fontWeight: primary ? 600 : 400, transition: 'all 0.2s ease',
+  boxShadow: primary ? 'var(--shadow-accent), inset 0 1px 0 rgba(255,255,255,0.12)' : 'none'
+})
+
+export const chipS = (color = 'var(--text-muted)') => ({
+  display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 7px',
+  borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)',
+  background: 'var(--bg-surface)', color, fontSize: 'var(--font-size-meta)', lineHeight: 1.3
+})
+
+export function billingChipS(mode, track) {
+  const highRisk = track === 'video' || mode === 'subscription'
+  if (mode === 'paygo') return { ...chipS('var(--success)'), borderColor: 'var(--success-soft)', background: 'var(--success-soft)' }
+  if (mode === 'credits') return { ...chipS(highRisk ? 'var(--danger)' : 'var(--accent)'), borderColor: highRisk ? 'var(--danger-border)' : 'var(--border-accent)', background: highRisk ? 'var(--danger-soft)' : 'var(--accent-soft)' }
+  if (mode === 'subscription') return { ...chipS('var(--danger)'), borderColor: 'var(--danger-border)', background: 'var(--danger-soft)' }
+  return chipS()
+}
+
+/* --- Text Helpers --- */
+export function localText(lang, zh, en) {
+  return lang === 'en' ? en : zh
+}
+
+export function openExternal(url) {
+  if (!url) return
+  window.electronAPI?.openExternal?.(url).catch?.(() => {})
+}
+
+/* --- Provider Display --- */
+export function providerDisplayName(provider = {}, lang, track = 'chat') {
+  if (provider.id === 'volcengine') {
+    if (track === 'image') return lang === 'en' ? 'Seedream / Jimeng' : 'Seedream / 即梦'
+    if (track === 'video') return lang === 'en' ? 'Seedance / Jimeng' : 'Seedance / 即梦'
+    return lang === 'en' ? 'Doubao / Volcengine ModelArk' : '豆包 / 火山方舟'
+  }
+  if (lang === 'en') {
+    const part = String(provider.name || '').split('/').map(s => s.trim()).find(s => s && !/[一-鿿]/.test(s))
+    return part || provider.name || ''
+  }
+  const part = String(provider.name || '').split('/').map(s => s.trim()).find(s => s && /[一-鿿]/.test(s))
+  return part || provider.name || ''
+}
+
+/* --- Label Helpers --- */
+export function billingLabel(mode, lang) {
+  if (mode === 'paygo') return t('billingPaygo', lang)
+  if (mode === 'credits') return t('billingCredits', lang)
+  if (mode === 'subscription') return t('billingSubscription', lang)
+  return t('billingUnknown', lang)
+}
+
+export function statusLabel(status, lang) {
+  const map = {
+    verified: { zh: '已验证', en: 'Verified' },
+    connected_unverified: { zh: '已连接·未验证', en: 'Connected · unverified' },
+    directory_verified: { zh: '仅目录已验证', en: 'Directory only' },
+    available: { zh: '可连接', en: 'Available' },
+    registration_required: { zh: '待官方注册', en: 'Registration required' },
+    authenticated_unavailable: { zh: '已认证，暂不可执行', en: 'Authenticated, unavailable' },
+    unavailable: { zh: '不可用', en: 'Unavailable' },
+    pending: { zh: '等待授权', en: 'Awaiting authorization' },
+    exchanging: { zh: '验证授权中', en: 'Exchanging token' },
+    expired: { zh: '已过期', en: 'Expired' },
+    cancelled: { zh: '已取消', en: 'Cancelled' },
+    detected: { zh: '已检测', en: 'Detected' },
+    pending_configuration: { zh: '待配置', en: 'Pending config' },
+    unsupported: { zh: '待实现', en: 'Not implemented' },
+    not_detected: { zh: '未检测到', en: 'Not found' },
+    error: { zh: '错误', en: 'Error' },
+  }
+  return map[status]?.[lang] || status || '—'
+}
+
+export function statusColor(status) {
+  if (status === 'verified') return 'var(--success)'
+  if (status === 'detected' || status === 'available' || status === 'directory_verified') return 'var(--accent)'
+  if (status === 'pending_configuration' || status === 'registration_required' || status === 'authenticated_unavailable' || status === 'unsupported' || status === 'unavailable' || status === 'connected_unverified' || status === 'pending' || status === 'exchanging') return '#f59e0b'
+  if (status === 'error') return 'var(--danger)'
+  return 'var(--text-muted)'
+}
+
+export function latencyText(ms) {
+  if (!ms && ms !== 0) return ''
+  return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`
+}
+
+/* --- Reusable Sub-Components --- */
+export function SectionHeading({ labelKey, lang }) {
+  return <div style={{ color: 'var(--text-primary)', fontSize: 13, fontWeight: 600 }}>{t(labelKey, lang)}</div>
+}
+
+export function StatusDot({ status, size = 8 }) {
+  return <span style={{ width: size, height: size, borderRadius: size, background: statusColor(status), display: 'inline-block', flexShrink: 0 }} />
+}
+
+export function StatusBadge({ status, lang }) {
+  const color = statusColor(status)
+  const bg = status === 'verified' ? 'var(--success-soft)' : status === 'detected' ? 'var(--accent-soft)' : 'var(--bg-surface)'
+  return <span style={{ ...chipS(color), borderColor: color, background: bg }}>{statusLabel(status, lang)}</span>
+}
+
+export function LatencyBadge({ latencyMs }) {
+  if (!latencyMs && latencyMs !== 0) return null
+  return <span style={chipS()}>{latencyText(latencyMs)}</span>
+}
+
+export function ProviderLinkButtons({ links, lang, buttons }) {
+  if (!links || !buttons) return null
+  const visible = buttons.filter(b => links[b.key])
+  if (!visible.length) return null
+  return (
+    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+      {visible.map(b => (
+        <button key={b.key} onClick={() => openExternal(links[b.key])}
+          style={{ ...btnS(false), padding: '5px 8px', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+          <Ic n={b.icon} size={11} />{t(b.labelKey, lang)}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+export function EmptyState({ message }) {
+  if (!message) return null
+  return (
+    <div style={{ padding: '32px 16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 13, lineHeight: 1.5 }}>
+      {message}
+    </div>
+  )
+}

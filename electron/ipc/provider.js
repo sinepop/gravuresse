@@ -8,6 +8,28 @@ function precheckFailed(message) {
   return { ok: false, error: { code: 'PRECHECK_FAILED', message } }
 }
 
+function providerTestResult(input = {}) {
+  return {
+    ok: input.ok === true,
+    status: input.status || (input.ok ? 'verified' : 'error'),
+    level: input.level || 'none',
+    checkedAt: input.checkedAt || new Date().toISOString(),
+    latencyMs: Number.isFinite(input.latencyMs) ? input.latencyMs : null,
+    endpointHost: input.endpointHost || '',
+    modelId: input.modelId || '',
+    errorCode: input.errorCode || '',
+    message: input.message || '',
+    ...(input.imageUrl ? { imageUrl: input.imageUrl } : {}),
+    ...(input.details ? { details: input.details } : {}),
+    ...(input.warnings ? { warnings: input.warnings } : {})
+  }
+}
+
+function providerEndpointHost(value) {
+  try { return new URL(value).host }
+  catch { return '' }
+}
+
 function normalizeLegacyChatMessages(messages) {
   const source = Array.isArray(messages?.history)
     ? messages.history
@@ -73,8 +95,23 @@ function registerProviderIpc({
   credentialsFromProvider,
   applyQueryParams,
   requestOptionsFromConfig,
-  getModelFetchProvider
+  getModelFetchProvider,
+  relayDetector
 }) {
+  function hasAssistantOutput(providerId, responseData) {
+    let json
+    try { json = JSON.parse(responseData || '') } catch { return false }
+    if (providerId === 'google') return Boolean(json?.candidates?.some(candidate => candidate?.content?.parts?.some(part => typeof part?.text === 'string' && part.text.length > 0)))
+    if (providerId === 'anthropic') return Boolean(json?.content?.some(item => typeof item?.text === 'string' && item.text.length > 0))
+    return Boolean(json?.choices?.some(choice => typeof choice?.message?.content === 'string' && choice.message.content.length > 0))
+  }
+  require('./provider-connections').registerProviderConnectionsIpc({
+    ipcMain,
+    config,
+    modelsApi,
+    requestOptionsFromConfig,
+    relayDetector
+  })
   // ──────────────────────────────────────────────────────────────────────────────
   // New provider API — canonical entry points for all provider operations.
   // Renderer uses `provider:call` with an explicit `action` field.
@@ -125,7 +162,9 @@ function registerProviderIpc({
   })
 
   ipcMain.handle('provider:test', async (_, params = {}) => {
+    const started = Date.now()
     let errorSecrets = []
+    let endpoint = ''
     try {
       const stored = config.load()
       const track = params.track || inferProviderTrack({ id: params.providerId || params.id, protocol: params.protocol })
@@ -137,15 +176,29 @@ function registerProviderIpc({
       })
       const providerId = resolveProviderIdByTrack(track, params.providerId || params.id || storedProvider.id)
       const providerDef = require('../providers/registry').getProvider(providerId)
-      if (!providerDef) return { ok: false, message: 'Unknown provider' }
+      if (!providerDef) return providerTestResult({ ok: false, errorCode: 'UNKNOWN_PROVIDER', message: 'Unknown provider', latencyMs: Date.now() - started })
       if (track === 'image' && params.testMode === 'image') {
         const built = buildProviderImageTestPayload(params, stored)
-        if (!built.ok) return { ok: false, message: built.message, code: built.code, details: built.details, warnings: built.warnings }
+        if (!built.ok) return providerTestResult({
+          ok: false,
+          errorCode: built.code || 'IMAGE_TEST_PRECHECK_FAILED',
+          message: built.message,
+          details: built.details,
+          warnings: built.warnings,
+          latencyMs: Date.now() - started
+        })
         const result = await providerPipeline.execute(built.payload)
-        if (!result.ok) return { ok: false, message: result.error?.message || 'Image generation test failed' }
-        return { ok: true, message: 'Image generation succeeded', imageUrl: result.data }
+        if (!result.ok) return providerTestResult({ ok: false, errorCode: result.error?.code || 'IMAGE_GENERATION_FAILED', message: result.error?.message || 'Image generation test failed', latencyMs: Date.now() - started })
+        return providerTestResult({ ok: true, level: 'generation', message: 'Image generation succeeded', imageUrl: result.data, latencyMs: Date.now() - started })
       }
-      if (!providerDef.healthCheck) return { ok: true, message: 'No health check available' }
+      if (!providerDef.healthCheck) return providerTestResult({
+        ok: false,
+        status: 'unsupported',
+        level: 'none',
+        errorCode: 'HEALTH_CHECK_UNAVAILABLE',
+        message: 'No real health check is available for this provider',
+        latencyMs: Date.now() - started
+      })
       const requestedBaseUrl = params.baseUrl || storedProvider.baseUrl || providerDef.defaults.baseUrl
       const sameEndpoint = canUseStoredCredentials(track, { id: params.id || params.providerId || storedProvider.id, baseUrl: requestedBaseUrl }, storedProvider)
       const hasRendererCredential = Boolean(realSecret(params.apiKey || params.credentials?.apiKey) || realSecret(params.sessionToken || params.credentials?.sessionToken))
@@ -166,14 +219,24 @@ function registerProviderIpc({
         customAuth: params.customAuth || storedProvider.customAuth
       })
       const url = applyQueryParams(joinApiUrl(testBaseUrl, providerDef.healthCheck.url), auth.queryParams)
-      await request(url, {
+      endpoint = url
+      const response = await request(url, {
         method: providerDef.healthCheck.method,
         headers: { ...auth.headers, 'Content-Type': 'application/json' },
         ...requestOptionsFromConfig(stored)
       }, providerDef.healthCheck.body)
-      return { ok: true, message: 'Connection successful' }
+      if (!hasAssistantOutput(providerId, response?.data)) {
+        return providerTestResult({ ok: false, errorCode: 'INVALID_HEALTH_RESPONSE', message: 'Health check returned no assistant output', latencyMs: Date.now() - started, endpointHost: providerEndpointHost(url) })
+      }
+      return providerTestResult({ ok: true, level: 'minimal_inference', message: 'Connection successful', latencyMs: Date.now() - started, endpointHost: providerEndpointHost(url), modelId: params.model || storedProvider.model || '' })
     } catch (err) {
-      return { ok: false, message: require('../providers/pipeline').redactSecrets(err?.message || 'Test failed', errorSecrets) }
+      return providerTestResult({
+        ok: false,
+        errorCode: err?.code || 'PROVIDER_TEST_FAILED',
+        message: require('../providers/pipeline').redactSecrets(err?.message || 'Test failed', errorSecrets),
+        latencyMs: Date.now() - started,
+        endpointHost: providerEndpointHost(endpoint)
+      })
     }
   })
 
@@ -196,8 +259,11 @@ function registerProviderIpc({
         ...requestOptionsFromConfig(stored)
       })
 
-      const data = JSON.parse(res.data || '{}')
-      const models = (data.data || []).map(m => m.id || m.name || String(m)).filter(Boolean).sort()
+      const data = JSON.parse(res.data || '')
+      const list = data?.data || data?.models || (Array.isArray(data) ? data : null)
+      if (!Array.isArray(list) || list.length === 0) throw new Error('Provider returned an empty or invalid model list')
+      const models = list.map(m => typeof m === 'string' ? m : m?.id || m?.name || '').filter(Boolean).sort()
+      if (models.length === 0) throw new Error('Provider returned an empty or invalid model list')
       return { ok: true, models }
     } catch (err) {
       return { ok: false, message: require('../providers/pipeline').redactSecrets(err?.message || 'Failed to fetch models', [requestSecret]) }
@@ -215,7 +281,7 @@ function registerProviderIpc({
       const start = Date.now()
       const { request, joinCompatibleApiUrl } = require('../api/http')
       const url = joinCompatibleApiUrl(resolved.baseUrl, '/v1/chat/completions')
-      await request(url, {
+      const response = await request(url, {
         method: 'POST',
         headers: {
           'Authorization': 'Bearer ' + String(resolved.apiKey),
@@ -227,6 +293,8 @@ function registerProviderIpc({
         messages: [{ role: 'user', content: 'ping' }],
         max_tokens: 1
       })
+
+      if (!hasAssistantOutput('openai', response?.data)) throw new Error('Connection test returned no assistant output')
 
       const latencyMs = Date.now() - start
       return { ok: true, latencyMs }

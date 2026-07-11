@@ -110,7 +110,7 @@ const chipBtnS = (active) => ({
   border: `1px solid ${active ? 'var(--border-accent)' : 'var(--border-subtle)'}`,
   borderRadius: 'var(--radius-sm)', padding: '3px 8px',
   color: active ? 'var(--accent)' : 'var(--text-muted)',
-  fontSize: 10, cursor: 'pointer', fontWeight: active ? 600 : 400,
+  fontSize: 11, cursor: 'pointer', fontWeight: active ? 600 : 400,
   transition: 'all 0.15s', whiteSpace: 'nowrap',
   display: 'flex', alignItems: 'center', gap: 4,
 })
@@ -118,7 +118,7 @@ const chipBtnS = (active) => ({
 const selectChipS = () => ({
   background: 'var(--select-bg)', border: '1px solid var(--border-subtle)',
   borderRadius: 'var(--radius-sm)', padding: '3px 6px',
-  color: 'var(--select-text)', fontSize: 10, cursor: 'pointer',
+  color: 'var(--select-text)', fontSize: 11, cursor: 'pointer',
   fontFamily: 'var(--font-body)', outline: 'none',
   transition: 'all 0.15s',
 })
@@ -312,12 +312,11 @@ export default function ChatPanel({ chat, config, providerLists, onProviderChang
   const canSend = Boolean(input.trim()) && !chat.loading && !conversationBusy
 
   return (
-    <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+    <div className="chat-panel" style={{ position: 'relative', display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
       {/* Conversation bar */}
-      <div style={{
+      <div className="chat-header" style={{
         display: 'flex', alignItems: 'center', gap: 6, padding: '12px 16px',
-        borderBottom: '1px solid var(--border-glass)', flexShrink: 0,
-        background: 'transparent'
+        flexShrink: 0
       }}>
         <button onClick={() => setShowConvList(!showConvList)} style={{
           background: showConvList ? 'var(--accent-soft)' : 'transparent',
@@ -354,7 +353,7 @@ export default function ChatPanel({ chat, config, providerLists, onProviderChang
         >
           <Ic n="download" size={12} sw={2} />
         </button>
-        <button onClick={onImportConv} disabled={conversationBusy} title={t('importConversation', lang)} aria-label={t('importConversation', lang)} style={{
+        <button onClick={onImportConv} disabled={conversationBusy} title={t('importProject', lang)} aria-label={t('importProject', lang)} style={{
           background: 'transparent', border: '1px solid var(--border-subtle)',
           borderRadius: 'var(--radius-sm)', width: 30, height: 28, color: 'var(--text-secondary)',
           fontSize: 11, cursor: conversationBusy ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -367,7 +366,7 @@ export default function ChatPanel({ chat, config, providerLists, onProviderChang
         </button>
         <div style={{ flex: 1 }} />
         {conversations.length > 0 && (
-          <span style={{ fontSize: 10, color: 'var(--text-ghost)', fontFamily: 'var(--font-mono)' }}>
+          <span className="workspace-meta">
             {conversations.findIndex(c => c.id === activeConvId) + 1}/{conversations.length}
           </span>
         )}
@@ -427,7 +426,7 @@ export default function ChatPanel({ chat, config, providerLists, onProviderChang
                     {conv.title || t('untitledConversation', lang)}
                   </div>
                 )}
-                <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 1 }}>{formatDate(conv.updatedAt)}</div>
+                <div className="workspace-meta" style={{ marginTop: 2 }}>{formatDate(conv.updatedAt)}</div>
               </div>
               <button onClick={(e) => { e.stopPropagation(); if (window.confirm(t('deleteConvConfirm', lang))) onDeleteConv(conv.id) }}
                 style={{ background: 'none', border: 'none', color: 'var(--text-ghost)', cursor: 'pointer', padding: 2, opacity: 0.5, transition: 'opacity 0.15s' }}
@@ -462,7 +461,7 @@ export default function ChatPanel({ chat, config, providerLists, onProviderChang
       )}
 
       {/* Messages */}
-      <div style={{ flex: 1, overflow: 'auto', padding: '16px 14px' }}>
+      <div className="chat-messages" style={{ flex: 1, overflow: 'auto', padding: '16px 14px' }}>
         {chat.messages.length === 0 && (
           <div style={{ textAlign: 'center', padding: '80px 20px', color: 'var(--text-muted)' }}>
             <div style={{
@@ -473,7 +472,7 @@ export default function ChatPanel({ chat, config, providerLists, onProviderChang
               <Ic n="sparkle" size={24} color="var(--accent)" />
             </div>
             <div style={{
-              fontFamily: 'var(--font-display)', fontSize: 20, fontStyle: 'italic',
+              fontFamily: 'var(--font-display)', fontSize: 20,
               marginBottom: 8, color: 'var(--text-secondary)', letterSpacing: '0.5px'
             }}>{t('studioAi', lang)}</div>
             <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{modeHint}</div>
@@ -493,7 +492,7 @@ export default function ChatPanel({ chat, config, providerLists, onProviderChang
             }} />
             <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>{t('thinking', lang)}</span>
             <span style={{
-              color: 'var(--text-ghost)', fontSize: 10, fontFamily: 'var(--font-mono)',
+              color: 'var(--text-ghost)', fontSize: 11, fontFamily: 'var(--font-mono)',
               marginLeft: 4, minWidth: 28
             }}>{formatElapsed(elapsed)}</span>
           </div>
@@ -610,7 +609,7 @@ export default function ChatPanel({ chat, config, providerLists, onProviderChang
               {t('referenceImage', lang)}
               {references.length > 0 && <span style={{
                 background: 'var(--accent)', color: 'var(--text-white)', borderRadius: '50%',
-                width: 16, height: 16, fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600
+                width: 16, height: 16, fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600
               }}>{references.length}</span>}
             </button>
           )}
@@ -635,7 +634,7 @@ export default function ChatPanel({ chat, config, providerLists, onProviderChang
 
           {/* Quick ratio/style chips when settings open */}
           {showGenSettings && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 10, color: 'var(--text-muted)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 11, color: 'var(--text-muted)' }}>
               <span>{t('ratio', lang)}:</span>
               <span style={{ color: 'var(--accent)', fontWeight: 500 }}>{genRatio}</span>
               {genStyle && <>
@@ -656,22 +655,22 @@ export default function ChatPanel({ chat, config, providerLists, onProviderChang
             flexWrap: 'wrap', alignItems: 'center'
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <span style={{ fontSize: 10, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{t('ratio', lang)}</span>
+              <span style={{ fontSize: 11, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{t('ratio', lang)}</span>
               <ChipSelect value={genRatio} options={ratioOptions} onChange={setGenRatio} style={selectChipS()} />
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <span style={{ fontSize: 10, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{t('style', lang)}</span>
+              <span style={{ fontSize: 11, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{t('style', lang)}</span>
               <ChipSelect value={genStyle} options={[{ value: '', label: t('noStyle', lang) }, ...STYLE_PRESETS.map(s => ({ value: s.value, label: s.label[lang] || s.value }))]} onChange={setGenStyle} style={selectChipS()} />
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <span style={{ fontSize: 10, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{t('resolution', lang)}</span>
+              <span style={{ fontSize: 11, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{t('resolution', lang)}</span>
               <ChipSelect value={genResolution} options={resolutionOptions} onChange={setGenResolution} style={selectChipS()} />
             </div>
           </div>
         )}
 
         {/* Input box */}
-        <div className="glass-input" style={{
+        <div className="glass-input chat-composer" style={{
           display: 'flex', gap: 10, alignItems: 'flex-end',
           padding: '10px 12px',
         }}>
@@ -679,7 +678,7 @@ export default function ChatPanel({ chat, config, providerLists, onProviderChang
             placeholder={modeHint} rows={1}
             style={{
               flex: 1, background: 'transparent', border: 'none', outline: 'none',
-              color: 'var(--text-primary)', fontSize: 13, resize: 'none', maxHeight: 120, lineHeight: 1.6
+              color: 'var(--text-primary)', fontSize: 14, resize: 'none', maxHeight: 120, lineHeight: 1.6
             }} />
           <button onClick={handleSend} disabled={!canSend} style={{
             background: canSend

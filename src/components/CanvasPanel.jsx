@@ -26,7 +26,8 @@ const filterBtnStyle = (active) => ({
   border: `1px solid ${active ? 'var(--border-accent)' : 'var(--border-subtle)'}`,
   borderRadius: 'var(--radius-sm)', padding: '4px 10px',
   color: active ? 'var(--accent)' : 'var(--text-secondary)',
-  fontSize: 10, cursor: 'pointer', fontWeight: active ? 500 : 400,
+  fontSize: 11, cursor: 'pointer', fontWeight: active ? 500 : 400,
+  whiteSpace: 'nowrap', flexShrink: 0,
   transition: 'all 0.15s'
 })
 
@@ -195,7 +196,7 @@ function InfiniteCanvas({ children, assets, activeTool, scale, setScale, offset,
           <Ic n="minus" size={14} sw={2} />
         </button>
         <span style={{
-          fontSize: 10, color: 'var(--text-secondary)', minWidth: 40, textAlign: 'center',
+          fontSize: 11, color: 'var(--text-secondary)', minWidth: 40, textAlign: 'center',
           fontFamily: 'var(--font-mono)', cursor: 'pointer', padding: '2px 4px', borderRadius: 3
         }} onClick={resetZoom} title={t('resetZoom', lang)}>
           {Math.round(scale * 100)}%
@@ -204,7 +205,7 @@ function InfiniteCanvas({ children, assets, activeTool, scale, setScale, offset,
           <Ic n="plus" size={14} sw={2} />
         </button>
         <div style={{ width: 1, height: 16, background: 'var(--border-subtle)', margin: '0 2px' }} />
-        <button className="canvas-zoom-button" onClick={fitToView} style={{ ...zoomCtrlBtn, width: 'auto', padding: '2px 6px', fontSize: 10 }} title={t('fitToView', lang)}>
+        <button className="canvas-zoom-button" onClick={fitToView} style={{ ...zoomCtrlBtn, width: 'auto', padding: '2px 6px', fontSize: 11 }} title={t('fitToView', lang)}>
           {t('fit', lang)}
         </button>
       </div>
@@ -212,7 +213,7 @@ function InfiniteCanvas({ children, assets, activeTool, scale, setScale, offset,
       {!isPanning && scale === 1 && offset.x === 0 && offset.y === 0 && assets?.length > 0 && (
         <div style={{
           position: 'absolute', bottom: 14, left: 14, zIndex: 10,
-          fontSize: 10, color: 'var(--text-ghost)', display: 'flex', alignItems: 'center', gap: 6,
+          fontSize: 11, color: 'var(--text-ghost)', display: 'flex', alignItems: 'center', gap: 6,
           padding: '6px 12px', borderRadius: '99px',
           opacity: 0.8
         }}>
@@ -411,7 +412,7 @@ function EditBar({ activeTool, setActiveTool, drawColor, setDrawColor, drawWidth
                   }}>
                     {label}
                     <span style={{
-                      fontSize: 9, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)',
+                      fontSize: 11, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)',
                       background: 'var(--bg-surface)', padding: '1px 4px', borderRadius: 3
                     }}>{tool.key}</span>
                   </div>
@@ -724,7 +725,7 @@ function AgentQueue({ selectedAsset, onAction, referenceEnabled, videoEnabled, l
       padding: open ? 8 : 6
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <button onClick={() => setOpen(prev => !prev)} title={t('agentQueue', lang)} style={agentBtnStyle}>
+        <button onClick={() => setOpen(prev => !prev)} title={t('agentQueueTooltip', lang)} aria-label={t('agentQueue', lang)} style={agentBtnStyle}>
           <Ic n="zap" size={13} /> {t('agentQueue', lang)}
         </button>
         {open && (
@@ -808,7 +809,7 @@ const agentIconBtnStyle = {
   borderRadius: 'var(--radius-sm)'
 }
 
-export default function CanvasPanel({ canvas, lang, onContextMenu, onAssetAction, generationMode = 'image', videoEnabled = false, referenceEnabled = false }) {
+export default function CanvasPanel({ canvas, lang, onContextMenu, onAssetAction, onImportImages, generationMode = 'image', videoEnabled = false, referenceEnabled = false }) {
   const { selectedAsset, selectedId, setSelectedId, viewMode, setViewMode } = canvas
   const modeAssets = (canvas.assets || []).filter(asset => asset.type === generationMode)
   const materialCount = modeAssets.filter(asset => asset.isMaterial === true).length
@@ -822,6 +823,9 @@ export default function CanvasPanel({ canvas, lang, onContextMenu, onAssetAction
   const [offset, setOffset] = useState({ x: 0, y: 0 })
   const [draggedAsset, setDraggedAsset] = useState(null)
   const [showLineage, setShowLineage] = useState(false)
+  const [importingImages, setImportingImages] = useState(false)
+  const [importMessage, setImportMessage] = useState('')
+  const [draggingFiles, setDraggingFiles] = useState(false)
 
   const scaleRef = useRef(1)
   useEffect(() => {
@@ -831,6 +835,57 @@ export default function CanvasPanel({ canvas, lang, onContextMenu, onAssetAction
   const drawingCanvasRef = useRef(null)
   const dragCleanupRef = useRef(null)
   const viewportRef = useRef(null)
+
+  const imageFiles = useCallback(files => Array.from(files || []).filter(file =>
+    ['image/png', 'image/jpeg', 'image/webp'].includes(String(file.type || '').toLowerCase()) || /\.(png|jpe?g|webp)$/i.test(file.name || '')
+  ), [])
+
+  const canvasPoint = useCallback((clientX, clientY) => {
+    if (viewMode !== 'free' || !viewportRef.current) return null
+    const rect = viewportRef.current.getBoundingClientRect()
+    return {
+      x: Math.max(0, (clientX - rect.left - offset.x) / scale),
+      y: Math.max(0, (clientY - rect.top - offset.y) / scale)
+    }
+  }, [viewMode, offset.x, offset.y, scale])
+
+  const runImageImport = useCallback(async (files = [], position = null) => {
+    if (!onImportImages || importingImages) return
+    setImportingImages(true)
+    setImportMessage('')
+    try {
+      const result = await onImportImages({ files, position })
+      if (result?.canceled) return
+      const accepted = result?.imported?.length || 0
+      const rejected = result?.rejected || []
+      if (rejected.length > 0) {
+        setImportMessage(`${t('importImagesPartial', lang)} ${accepted}/${accepted + rejected.length}: ${rejected.map(item => `${item.name}: ${item.reason}`).join('; ')}`)
+      } else if (accepted > 0) {
+        setImportMessage(`${t('importImagesSuccess', lang)} (${accepted})`)
+      }
+    } catch (error) {
+      setImportMessage(`${t('importImagesFail', lang)}: ${error?.message || ''}`)
+    } finally {
+      setImportingImages(false)
+    }
+  }, [importingImages, lang, onImportImages])
+
+  useEffect(() => {
+    const onPaste = event => {
+      const target = event.target
+      const tag = target?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable) return
+      let files = imageFiles(event.clipboardData?.files)
+      if (files.length === 0) {
+        files = imageFiles(Array.from(event.clipboardData?.items || []).map(item => item.kind === 'file' ? item.getAsFile() : null).filter(Boolean))
+      }
+      if (files.length === 0) return
+      event.preventDefault()
+      runImageImport(files, null)
+    }
+    window.addEventListener('paste', onPaste)
+    return () => window.removeEventListener('paste', onPaste)
+  }, [imageFiles, runImageImport])
 
   useEffect(() => {
     if (selectedId && !assets.some(asset => asset.id === selectedId)) {
@@ -954,9 +1009,9 @@ export default function CanvasPanel({ canvas, lang, onContextMenu, onAssetAction
   return (
     <div style={{ display: 'flex', height: '100%' }}>
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        <div style={{
+        <div className="canvas-toolbar" style={{
           display: 'flex', alignItems: 'center', gap: 6, padding: '12px 16px',
-          background: 'transparent', zIndex: 10
+          zIndex: 10, overflowX: 'auto', overflowY: 'hidden'
         }}>
           <button onClick={() => setViewMode('grid')} style={filterBtnStyle(viewMode === 'grid')}>
             <Ic n="grid" size={12} /> {t('gridView', lang)}
@@ -972,6 +1027,17 @@ export default function CanvasPanel({ canvas, lang, onContextMenu, onAssetAction
             <Ic n="redo" size={12} />
           </button>
           <button
+            onClick={() => {
+              const rect = viewportRef.current?.getBoundingClientRect()
+              runImageImport([], rect ? canvasPoint(rect.left + rect.width / 2, rect.top + rect.height / 2) : null)
+            }}
+            disabled={importingImages}
+            title={t('importImages', lang)}
+            style={{ ...filterBtnStyle(false), opacity: importingImages ? 0.55 : 1, display: 'inline-flex', alignItems: 'center', gap: 5 }}
+          >
+            <Ic n="upload" size={12} /> {importingImages ? t('importingImages', lang) : t('importImages', lang)}
+          </button>
+          <button
             onClick={() => setShowMaterialsOnly(prev => !prev)}
             disabled={materialCount === 0 && !showMaterialsOnly}
             title={materialCount === 0 ? t('noMaterialAssets', lang) : t('materialsOnly', lang)}
@@ -983,7 +1049,8 @@ export default function CanvasPanel({ canvas, lang, onContextMenu, onAssetAction
           <button
             onClick={() => setShowLineage(prev => !prev)}
             disabled={viewMode !== 'free'}
-            title={t('lineageLines', lang)}
+            title={t('lineageLinesTooltip', lang)}
+            aria-label={t('lineageLines', lang)}
             style={{ ...filterBtnStyle(showLineage), opacity: viewMode === 'free' ? 1 : 0.45, display: 'inline-flex', alignItems: 'center', gap: 5 }}
           >
             <Ic n="link" size={12} />
@@ -994,9 +1061,25 @@ export default function CanvasPanel({ canvas, lang, onContextMenu, onAssetAction
             {t('openNanaGallery', lang)}
           </button>
           <div style={{ flex: 1 }} />
-          <span style={{ fontSize: 10, color: 'var(--text-ghost)', fontFamily: 'var(--font-mono)' }}>{assets.length} {t('assetUnit', lang)}</span>
+          <span className="workspace-meta">{assets.length} {t('assetUnit', lang)}</span>
         </div>
-        <div ref={viewportRef} className={assets.length === 0 ? 'canvas-surface' : undefined} style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column' }}>
+        {importMessage && <div role="status" style={{ padding: '7px 16px', color: 'var(--text-secondary)', background: 'var(--bg-surface)', borderTop: '1px solid var(--border-subtle)', borderBottom: '1px solid var(--border-subtle)', fontSize: 11 }}>{importMessage}</div>}
+        <div
+          ref={viewportRef}
+          className={assets.length === 0 ? 'canvas-surface' : undefined}
+          onDragEnter={event => { if (imageFiles(event.dataTransfer?.files).length > 0) { event.preventDefault(); setDraggingFiles(true) } }}
+          onDragOver={event => { if (imageFiles(event.dataTransfer?.files).length > 0) { event.preventDefault(); event.dataTransfer.dropEffect = 'copy' } }}
+          onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget)) setDraggingFiles(false) }}
+          onDrop={event => {
+            const files = imageFiles(event.dataTransfer?.files)
+            setDraggingFiles(false)
+            if (files.length > 0) {
+              event.preventDefault()
+              runImageImport(files, canvasPoint(event.clientX, event.clientY))
+            }
+          }}
+          style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column', outline: draggingFiles ? '2px solid var(--accent)' : 'none', outlineOffset: -3 }}
+        >
           {assets.length === 0 ? (
             <div className="canvas-empty-state">
               <div className="canvas-empty-icon">
@@ -1014,6 +1097,9 @@ export default function CanvasPanel({ canvas, lang, onContextMenu, onAssetAction
                 <div className="canvas-empty-description" style={{ display: 'none' }}>
                   {t('describeCreateInChat', lang)}
                 </div>
+                <button onClick={() => runImageImport()} disabled={importingImages} style={{ ...filterBtnStyle(false), marginTop: 12, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <Ic n="upload" size={13} /> {t('importImages', lang)}
+                </button>
               </div>
             </div>
           ) : viewMode === 'grid' ? (

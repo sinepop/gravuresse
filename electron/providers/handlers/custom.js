@@ -74,6 +74,27 @@ function pickFields(source, fields) {
   return out
 }
 
+function normalizeTemplateContract(template, action) {
+  const normalized = { ...template }
+  const hasRequestTemplate = hasOwn(normalized, 'request') && (
+    !isPlainObject(normalized.request) ||
+    Object.keys(normalized.request).length > 0 ||
+    !hasOwn(normalized, 'body')
+  )
+  if (!hasOwn(normalized, 'requestBody') && hasRequestTemplate) {
+    normalized.requestBody = normalized.request
+  }
+  if (!normalized.responsePath && normalized.resultPath) normalized.responsePath = normalized.resultPath
+  if (!normalized.pollPath && normalized.pollEndpoint) normalized.pollPath = normalized.pollEndpoint
+  if (action === 'generate' && !normalized.imageUrlPath && normalized.resultPath) {
+    normalized.imageUrlPath = normalized.resultPath
+  }
+  if (action !== 'generate' && !normalized.videoUrlPath && normalized.resultPath) {
+    normalized.videoUrlPath = normalized.resultPath
+  }
+  return normalized
+}
+
 function capabilityConfig(params) {
   if (params.action === 'generate') return params.provider?.image || {}
   return params.provider?.video || {}
@@ -82,7 +103,7 @@ function capabilityConfig(params) {
 function getTemplate(params) {
   const cap = capabilityConfig(params)
   const generationOptions = isPlainObject(params.generationOptions) ? params.generationOptions : {}
-  return mergeObjects(
+  return normalizeTemplateContract(mergeObjects(
     params.provider?.template,
     params.provider?.customTemplate,
     cap.template,
@@ -93,7 +114,7 @@ function getTemplate(params) {
     params.customTemplate,
     params.template,
     pickFields(params, TEMPLATE_FIELDS)
-  )
+  ), params.action)
 }
 
 function getAuthConfig(params, template) {
@@ -664,7 +685,7 @@ async function handleVideoSubmit(params) {
   const template = getTemplate(params)
   const values = templateValues(params)
   const auth = authForRequest(params, template)
-  const bodyTemplate = template.submitBody || template.body || template.requestBody
+  const bodyTemplate = template.submitBody || template.requestBody || template.body
   const body = bodyTemplate ? applyTemplate(bodyTemplate, values) : defaultVideoBody(params)
   const url = buildUrl(params.baseUrl, template.pathPrefix, template.submitPath, values, auth.queryParams, 'Custom video submitPath')
   const json = await requestJson(url, template.submitMethod || template.method || 'POST', {
@@ -754,6 +775,7 @@ module.exports = {
     defaultOpenAiBody,
     extractImage,
     getTemplate,
+    normalizeTemplateContract,
     customImageBodyTemplate,
     commonImageTaskId,
     customOpenAiImageHandler

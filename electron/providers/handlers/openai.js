@@ -16,8 +16,8 @@ function getSize(ratio, resolution) {
   return `${Math.min(w, 4096)}x${Math.min(h, 4096)}`
 }
 
-function chatCompletionsUrl(baseUrl) {
-  return joinCompatibleApiUrl(baseUrl, '/v1/chat/completions')
+function chatCompletionsUrl(baseUrl, path) {
+  return joinCompatibleApiUrl(baseUrl, path || '/v1/chat/completions')
 }
 
 function imageGenerationsUrl(baseUrl) {
@@ -33,7 +33,7 @@ async function handleChat(params) {
     ],
     max_tokens: 4096
   }
-  const url = chatCompletionsUrl(params.baseUrl)
+  const url = chatCompletionsUrl(params.baseUrl, params.path)
   const res = await request(url, {
     method: 'POST',
     headers: { ...params.auth.headers, 'Content-Type': 'application/json' },

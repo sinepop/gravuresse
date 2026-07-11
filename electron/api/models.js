@@ -133,7 +133,7 @@ function buildGeminiModelListUrl(baseUrl, queryParams = {}) {
 
 function handleFetchError(error, provider = {}) {
   if (!provider.reportErrors) return []
-  const message = redactSecrets(error?.message || 'Model fetch failed') || 'Model fetch failed'
+  const message = redactSecrets(error?.message || 'Model fetch failed', [provider.apiKey, provider.sessionToken]) || 'Model fetch failed'
   throw new Error(message)
 }
 
@@ -142,7 +142,7 @@ function normalizeModelList(list = [], provider = {}) {
   const seen = new Set()
   const out = []
   for (const item of list) {
-    const record = normalizeModelRecord(item, { source: 'remote' })
+    const record = normalizeModelRecord(item, { source: 'remote', track: provider.track || '' })
     if (!record || seen.has(record.id)) continue
     seen.add(record.id)
     out.push(record)
@@ -182,4 +182,4 @@ async function fetch(provider) {
   } catch (error) { return handleFetchError(error, provider) }
 }
 
-module.exports = { fetch, _test: { buildModelAuth, modelAuthType, applyQueryParams, buildModelListUrl, buildGeminiModelListUrl, buildCustomModelListUrl, handleFetchError, normalizeModelList } }
+module.exports = { fetch, buildModelAuth, applyQueryParams, _test: { buildModelAuth, modelAuthType, applyQueryParams, buildModelListUrl, buildGeminiModelListUrl, buildCustomModelListUrl, handleFetchError, normalizeModelList } }

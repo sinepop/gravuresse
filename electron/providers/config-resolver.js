@@ -14,6 +14,7 @@
  */
 
 const { canUseStoredCredentials, resolveProviderIdByTrack, storedProviderForRequest } = require('./account-resolver')
+const { findConnection } = require('./connections')
 
 const REDACTED_API_KEY = '********'
 
@@ -43,7 +44,7 @@ function normalizeAuthType(type) {
  * @returns {string} real credential or ''
  */
 function realSecret(value) {
-  return value && value !== REDACTED_API_KEY ? value : ''
+  return value && value !== REDACTED_API_KEY && !String(value).startsWith('__ENCRYPTED__') ? value : ''
 }
 
 /**
@@ -127,6 +128,76 @@ function buildSafePayload(providerConfig, canonicalProviderId, action, params) {
   return safePayload
 }
 
+function verifiedTrackInventory(connection = {}, track) {
+  const validation = connection.validations?.[track]
+  if (!validation || !['verified', 'directory_verified'].includes(validation.status) || validation.ok !== true) return false
+  // A validation is only usable when it belongs to the exact connection
+  // revision and track that is about to be executed.  Missing revisions are
+  // deliberately rejected: otherwise a legacy/static inventory could be
+  // mistaken for a freshly fetched remote inventory.
+  if (!connection.inventoryRevision || !validation.inventoryRevision || validation.inventoryRevision !== connection.inventoryRevision) return false
+  if (validation.track !== track) return false
+  if (track === 'chat' && validation.level !== 'minimal_inference') return false
+  if (track === 'chat' && validation.status !== 'verified') return false
+  if (track !== 'chat' && !['model_directory', 'capability'].includes(validation.level)) return false
+  if (!Array.isArray(connection.models) || !connection.models.some(model => model?.source === 'remote' && model?.capability === track)) return false
+  return true
+}
+
+function canonicalConnectionForRuntime(stored = {}, track, params = {}) {
+  const explicitId = String(params.connectionId || '')
+  const defaultSelection = stored.connections?.defaults?.[track] || null
+  const selection = explicitId
+    ? { connectionId: explicitId, modelId: params.model || '' }
+    : defaultSelection
+  if (!selection?.connectionId) return { selected: false }
+  const found = findConnection(stored, selection.connectionId)
+  if (!found) return { selected: true, error: { code: 'CONNECTION_NOT_FOUND', message: `Configured ${track} connection was not found.` } }
+  const connection = found.connection
+  if (!Array.isArray(connection.capabilities) || !connection.capabilities.includes(track)) {
+    return { selected: true, error: { code: 'CONNECTION_CAPABILITY_MISMATCH', message: `Configured connection does not support ${track}.` } }
+  }
+  if (!verifiedTrackInventory(connection, track)) {
+    return { selected: true, error: { code: 'CONNECTION_NOT_VERIFIED', message: `Configured ${track} connection does not have a current verified remote inventory.` } }
+  }
+  const modelId = String(params.model || selection.modelId || '')
+  const model = (connection.models || []).find(item => item?.source === 'remote' && item.id === modelId && item.capability === track)
+  if (!model) {
+    return { selected: true, error: { code: 'MODEL_NOT_VERIFIED', message: `Configured ${track} model is not in this connection's current verified remote inventory.` } }
+  }
+  return { selected: true, found, connection, modelId }
+}
+
+function providerConfigFromConnection(connection, track, modelId) {
+  const detectedRuntimeId = connection.kind === 'relay' && track === 'chat' && connection.detectedProtocol === 'anthropic'
+    ? 'anthropic'
+    : connection.kind === 'relay' && connection.detectedProtocol === 'gemini'
+      ? 'google'
+      : ''
+  const runtimeProviderId = detectedRuntimeId || (connection.kind === 'relay' && connection.providerId === 'custom-relay'
+    ? `custom-${track}`
+    : (connection.runtimeProviderId || connection.providerId))
+  const trackTemplate = connection.template?.[track] || {}
+  const compatiblePath = connection.kind === 'relay' && connection.compatibilityMode === 'openai'
+    ? (track === 'chat' ? '/v1/chat/completions' : track === 'image' ? '/v1/images/generations' : '')
+    : ''
+  return {
+    ...connection,
+    id: runtimeProviderId,
+    providerId: runtimeProviderId,
+    connectionId: connection.id,
+    model: modelId,
+    apiKey: connection.apiKey || connection.credentials?.apiKey || connection.sessionToken || connection.credentials?.sessionToken || '',
+    sessionToken: connection.sessionToken || connection.credentials?.sessionToken || '',
+    modelListPath: connection.detectedEndpoints?.models || connection.modelsPath || connection.modelListPath || '',
+    path: connection.detectedEndpoints?.[track] || compatiblePath || connection.endpoints?.[track] || connection.endpoints?.submit || connection.path,
+    submitPath: connection.endpoints?.submit || connection.endpoints?.[track] || connection.submitPath,
+    pollPath: connection.endpoints?.poll || connection.pollPath,
+    template: trackTemplate,
+    customTemplate: trackTemplate
+  }
+}
+
 /**
  * Full runtime provider config resolution for a provider call.
  *
@@ -142,6 +213,41 @@ function buildSafePayload(providerConfig, canonicalProviderId, action, params) {
  */
 function resolveRuntimeProviderConfig(stored, track, params, getProvider, resolveHandler) {
   const { providerId, action } = params
+  const canonical = canonicalConnectionForRuntime(stored, track, params)
+  if (canonical.selected) {
+    if (canonical.error) return { ok: false, error: canonical.error }
+    const providerConfig = providerConfigFromConnection(canonical.connection, track, canonical.modelId)
+    const canonicalProviderId = resolveProviderIdByTrack(track, providerConfig.providerId)
+    const providerDef = getProvider(canonicalProviderId)
+    if (!providerDef) return { ok: false, error: { code: 'UNKNOWN_PROVIDER', message: `Unknown provider: ${canonicalProviderId}` } }
+    if (!providerDef[track]) return { ok: false, error: { code: 'UNSUPPORTED_ACTION', message: `${canonicalProviderId} does not support ${track}` } }
+    const hasNativeHandler = Boolean(resolveHandler(providerDef[track]?.protocol))
+    const canUseTemplateHandler = hasTemplatePath(providerConfig, track) && (track === 'image' || !hasNativeHandler)
+    if (!hasNativeHandler && !canUseTemplateHandler) {
+      return { ok: false, error: { code: 'PROVIDER_NOT_EXECUTABLE', message: `${providerDef.name || canonicalProviderId} has no executable ${track} handler.` } }
+    }
+    const baseUrl = providerConfig.baseUrl || defaultProviderBaseUrl(canonicalProviderId, getProvider)
+    if (!baseUrl) return { ok: false, error: { code: 'PRECHECK_FAILED', message: 'Base URL is required for this provider.' } }
+    return {
+      ok: true,
+      config: {
+        providerConfig,
+        canonicalProviderId,
+        providerDef,
+        credentials: credentialsFromProvider(providerConfig),
+        baseUrl,
+        safePayload: buildSafePayload(providerConfig, canonicalProviderId, action, { ...params, model: canonical.modelId })
+      }
+    }
+  }
+  // Legacy providers/saved*Model values remain readable for migration and
+  // display, but can no longer authorize a runtime generation.  A canonical
+  // connection must be selected and verified first.
+  const legacyProvider = stored.providers?.[track]
+  const legacyModel = stored[`saved${track[0].toUpperCase()}${track.slice(1)}Model`]
+  if (legacyProvider?.id || legacyModel) {
+    return { ok: false, error: { code: 'LEGACY_PROVIDER_UNAVAILABLE', message: `Legacy ${track} provider configuration is unavailable until a verified provider connection is selected.` } }
+  }
   const activeProviderConfig = stored.providers?.[track] || {}
   const effectiveActiveProvider = storedProviderForRequest(stored, track, activeProviderConfig)
   const requestedProviderId = resolveProviderIdByTrack(track, providerId)
@@ -290,6 +396,9 @@ module.exports = {
   hasTemplatePath,
   isTemplateConfigurableProvider,
   buildSafePayload,
+  verifiedTrackInventory,
+  canonicalConnectionForRuntime,
+  providerConfigFromConnection,
 
   // High-level resolvers
   resolveRuntimeProviderConfig,

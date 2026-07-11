@@ -33,10 +33,32 @@ contextBridge.exposeInMainWorld('electronAPI', {
     fetchModels: (params) => ipcRenderer.invoke('provider:fetchModels', params),
     testConnection: (params) => ipcRenderer.invoke('provider:testConnection', params)
   },
+  providerConnection: {
+    list: () => ipcRenderer.invoke('providerConnection:list'),
+    save: (params) => ipcRenderer.invoke('providerConnection:save', params),
+    remove: (params) => ipcRenderer.invoke('providerConnection:remove', params)
+  },
+  providerAuth: {
+    begin: (params) => ipcRenderer.invoke('providerAuth:begin', params),
+    status: (params) => ipcRenderer.invoke('providerAuth:status', params),
+    cancel: (params) => ipcRenderer.invoke('providerAuth:cancel', params),
+    disconnect: (params) => ipcRenderer.invoke('providerAuth:disconnect', params)
+  },
+  providerModels: {
+    refresh: (params) => ipcRenderer.invoke('providerModels:refresh', params)
+  },
+  providerValidation: {
+    run: (params) => ipcRenderer.invoke('providerValidation:run', params)
+  },
+  providerDefaults: {
+    save: (params) => ipcRenderer.invoke('providerDefaults:save', params)
+  },
 
   saveAssetToDisk: (params) => ipcRenderer.invoke('api:saveAsset', params),
   saveAssetWithDialog: (params) => ipcRenderer.invoke('api:saveAssetWithDialog', params),
   cacheAssetPreview: (params) => ipcRenderer.invoke('api:cacheAssetPreview', params),
+  importLocalImages: () => ipcRenderer.invoke('api:importLocalImages'),
+  importImageBytes: (params) => ipcRenderer.invoke('api:importImageBytes', params),
   getSaveDir: () => ipcRenderer.invoke('api:getSaveDir'),
 
   openExternal: (url) => ipcRenderer.invoke('shell:open-external', url),

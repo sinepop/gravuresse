@@ -1,5 +1,5 @@
 const { registerHandler } = require('../handler')
-const { request, joinApiUrl } = require('../../api/http')
+const { request, joinCompatibleApiUrl } = require('../../api/http')
 
 async function anthropicHandler(params) {
   const payload = {
@@ -14,7 +14,7 @@ async function anthropicHandler(params) {
     payload.max_tokens = 20000
   }
 
-  const url = joinApiUrl(params.baseUrl, '/v1/messages')
+  const url = joinCompatibleApiUrl(params.baseUrl, params.path || '/v1/messages')
   const res = await request(url, {
     method: 'POST',
     headers: {

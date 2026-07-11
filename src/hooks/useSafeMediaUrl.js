@@ -1,22 +1,6 @@
 import { useEffect, useState } from 'react'
 import { sanitizeAssetUrl } from '../utils/mediaSecurity.js'
-
-const CACHE_FILE_RE = /^[a-f0-9]{64}\.(png|jpg|webp|mp4)$/
-
-function sanitizeMediaCacheUrl(url = '', type = 'image') {
-  let parsed
-  try {
-    parsed = new URL(url)
-  } catch {
-    return ''
-  }
-  if (parsed.protocol !== 'gravuresse-media:' || parsed.hostname !== 'cache') return ''
-  const fileName = decodeURIComponent(parsed.pathname.replace(/^\/+/, ''))
-  if (!CACHE_FILE_RE.test(fileName)) return ''
-  const isVideo = fileName.endsWith('.mp4')
-  if (type === 'video') return isVideo ? parsed.href : ''
-  return isVideo ? '' : parsed.href
-}
+import { sanitizeMediaCacheUrl } from '../utils/assetUrlRules.js'
 
 export function normalizePreviewUrl(url = '', type = 'image') {
   const mediaType = type === 'video' ? 'video' : 'image'
