@@ -14,17 +14,23 @@ import { normalizeAuthType } from '../utils/authType'
 /** @typedef {import('../types/domain').CanvasController} CanvasController */
 /** @typedef {import('../types/domain').ChatProviderResult} ChatProviderResult */
 /** @typedef {import('../types/domain').ConversationBridge} ConversationBridge */
+/** @typedef {import('../types/domain').ConfigPayload} ConfigPayload */
 /** @typedef {import('../types/domain').DirectGenerationOptions} DirectGenerationOptions */
 /** @typedef {import('../types/domain').GenerationSettings} GenerationSettings */
 /** @typedef {import('../types/domain').LastImageContext} LastImageContext */
 /** @typedef {import('../types/domain').Message} Message */
 /** @typedef {import('../types/domain').MessageTask} MessageTask */
 /** @typedef {import('../types/domain').ProviderProfile} ProviderProfile */
+/** @typedef {import('../types/domain').ProviderConnection} ProviderConnection */
 /** @typedef {import('../types/domain').Track} Track */
 /** @typedef {import('../types/domain').VideoPollResult} VideoPollResult */
 /** @typedef {import('../types/domain').VideoQueueTask} VideoQueueTask */
 /** @typedef {import('../types/domain').VideoQueueTaskInput} VideoQueueTaskInput */
 /** @typedef {Record<string, unknown>} UnknownRecord */
+/** @typedef {{ connectionId?: string, providerId?: string, modelId?: string, model?: string }} ActiveSelection */
+/** @typedef {Partial<Record<Track, ActiveSelection>>} ActiveSelections */
+/** @typedef {ProviderProfile & { id: string, prompt: string, ratio: string, resolution: string, negative_prompt: string, sourceImageUrl: string }} ImageFallbackParams */
+/** @typedef {ProviderProfile & { prompt: string, ratio: string, duration: number, sourceImageUrl: string }} VideoFallbackParams */
 
 /** @param {unknown} value @returns {value is UnknownRecord} */
 function isRecord(value) {
@@ -153,44 +159,45 @@ function coerceTaskForProvider(track, providerDef, task = {}) {
   }
 }
 
-/** @param {unknown} provider @param {unknown} providerDef */
-function hasProviderCredential(provider = {}, providerDef = {}) {
-  const config = recordOf(provider)
-  const definition = recordOf(providerDef)
-  if (textValue(config.accountId) && config.accountKind !== 'oauth-placeholder') return true
-  const customType = normalizeAuthType(recordOf(config.customAuth).type)
-  const type = customType || normalizeAuthType(recordOf(config.authType).type || recordOf(definition.authType).type)
-  if (type === 'none') return Boolean(textValue(config.id) || textValue(definition.id))
-  if (type === 'session') return Boolean(textValue(config.sessionToken))
-  return Boolean(textValue(config.apiKey))
-}
-
+/** @param {ProviderConnection} connection @param {Track} track @returns {string} */
 function canonicalProviderId(connection, track) {
   if (connection?.kind === 'relay' && connection.detectedProtocol === 'gemini') return 'google'
   if (connection?.kind === 'relay' && track === 'chat' && connection.detectedProtocol === 'anthropic') return 'anthropic'
   if (connection?.kind === 'relay' && connection.providerId === 'custom-relay') return `custom-${track}`
-  return connection?.runtimeProviderId || connection?.providerId || ''
+  return textValue(connection.runtimeProviderId) || connection.providerId || ''
 }
 
+/** @param {ConfigPayload | null} config @param {ActiveSelections} activeSelections @param {Track} track */
 function canonicalModelSelection(config, activeSelections, track) {
-  const connections = config?.connections || {}
-  const all = [...(connections.accounts || []), ...(connections.apiKeys || []), ...(connections.relays || [])]
-  const activeSelection = activeSelections?.[track]
-  const candidates = [activeSelection || connections.defaults?.[track]].filter(Boolean)
-  for (const selection of candidates) {
+  const connections = config?.connections || { accounts: [], apiKeys: [], relays: [], defaults: { chat: null, image: null, video: null } }
+  const all = [
+    ...(connections?.accounts || []),
+    ...(connections?.apiKeys || []),
+    ...(connections?.relays || [])
+  ]
+  const activeSelection = activeSelections[track]
+  const selection = activeSelection || connections.defaults?.[track]
+  if (selection) {
     const connection = all.find(item => item.id === selection.connectionId)
     const model = connection?.models?.find(item => item.id === selection.modelId && item.source === 'remote' && item.capability === track)
-    if (!connection || !model || !connection.capabilities?.includes(track)) continue
+    if (!connection || !model || !connection.capabilities?.includes(track)) return null
+    /** @type {ProviderProfile} */
+    const provider = {
+      id: canonicalProviderId(connection, track),
+      providerId: connection.providerId,
+      connectionId: connection.id,
+      model: model.id,
+      name: connection.name,
+      baseUrl: textValue(connection.baseUrl),
+      accountId: textValue(connection.accountId),
+      protocol: textValue(connection.protocol),
+      defaultNegPrompt: textValue(connection.defaultNegPrompt),
+      customSystemPrompt: textValue(connection.customSystemPrompt)
+    }
     return {
       connection,
       selection,
-      provider: {
-        id: canonicalProviderId(connection, track),
-        providerId: connection.providerId,
-        connectionId: connection.id,
-        model: model.id,
-        name: connection.name
-      }
+      provider
     }
   }
   return null
@@ -227,14 +234,14 @@ function appendStyleToPrompt(prompt, style) {
 }
 
 /**
- * @param {unknown} config
+ * @param {ConfigPayload | null} config
  * @param {CanvasController} canvas
  * @param {((task: VideoQueueTaskInput) => VideoQueueTask | undefined)} onVideoTaskCreated
  * @param {string | null} activeConversationId
  * @param {((conversationId: string) => boolean)} isActiveConversation
  * @param {ConversationBridge | undefined} conversationBridge
  * @param {unknown} providerLists
- * @param {Record<string, unknown>} activeSelections
+ * @param {ActiveSelections} activeSelections
  */
 export default function useChat(config, canvas, onVideoTaskCreated, activeConversationId, isActiveConversation, conversationBridge, providerLists, activeSelections = {}) {
   const [messages, setMessages] = useState(/** @type {Message[]} */ ([]))
@@ -364,15 +371,15 @@ export default function useChat(config, canvas, onVideoTaskCreated, activeConver
     loadingRef.current = true
 
     const canonicalChat = canonicalModelSelection(config, activeSelections, 'chat')
-    const provider = canonicalChat?.provider
-    const lang = config?.general?.language || 'zh'
-    const chatProviderDef = findProviderDef('chat', providerLists, provider?.id)
+    const lang = textValue(config?.general?.language) || 'zh'
     if (!canonicalChat) {
       appendMessage(originConversationId, { role: 'assistant', content: t('configApiFirst', lang), id: nextId() })
       setLoading(false)
       loadingRef.current = false
       return true
     }
+    const provider = canonicalChat.provider
+    const chatProviderDef = findProviderDef('chat', providerLists, provider.id)
 
     try {
       const history = [...sourceMessages, userMsg].map(m => ({ role: m.role, content: m.content }))
@@ -546,23 +553,24 @@ ${modeRule}
       const imgProvider = canonicalImage?.provider
       if (!canonicalImage || !imgProvider?.id) throw new Error(t('configImageApi', lang))
       const providerDef = findProviderDef('image', providerLists, imgProvider.id) || IMG_PROVIDERS.find(p => p.id === imgProvider.id)
-      const protocol = imgProvider.protocol || providerDef?.protocol || 'openai_image'
+      const protocol = textValue(imgProvider.protocol) || textValue(providerDef?.protocol) || 'openai_image'
       const safeTask = coerceTaskForProvider('image', providerDef, task)
       const negativePrompt = textValue(task.negative_prompt) || textValue(imgProvider.defaultNegPrompt)
       const sourceImageId = cleanId(safeTask.source_image_id)
       const sourceAsset = sourceImageId ? getAssetFromConversation(originConversationId, sourceImageId) : null
       const sourceImageUrl = textValue(task.sourceImageUrl) || sourceAsset?.url || ''
       precheckGeneration('image', providerDef, { ...safeTask, negative_prompt: negativePrompt }, { lang })
+      /** @type {ImageFallbackParams} */
       const imageParams = {
         ...imgProvider,
-        id: imgProvider.id,
+        id: textValue(imgProvider.id),
         model: textValue(imgProvider.model),
         baseUrl: textValue(imgProvider.baseUrl),
         accountId: textValue(imgProvider.accountId),
         protocol,
         prompt: textValue(safeTask.prompt), ratio: textValue(safeTask.ratio) || '1:1', resolution: textValue(safeTask.resolution) || '1024',
-        negative_prompt: negativePrompt,
-        sourceImageUrl
+        negative_prompt: textValue(negativePrompt),
+        sourceImageUrl: textValue(sourceImageUrl)
       }
       const url = await generateImageProvider({
         action: 'generate',
@@ -632,17 +640,18 @@ ${modeRule}
       const vidProvider = canonicalVideo?.provider
       if (!canonicalVideo || !vidProvider?.id) throw new Error(t('configVideoApi', lang))
       const providerDef = findProviderDef('video', providerLists, vidProvider.id) || VID_PROVIDERS.find(p => p.id === vidProvider.id)
-      const protocol = vidProvider.protocol || providerDef?.protocol || 'ark_video_task'
+      const protocol = textValue(vidProvider.protocol) || textValue(providerDef?.protocol) || 'ark_video_task'
       /** @type {ProviderProfile} */
       const provider = { ...vidProvider, protocol }
       const sourceAsset = task.source_image_id ? getAssetFromConversation(originConversationId, task.source_image_id) : null
       const sourceImageUrl = textValue(task.sourceImageUrl) || sourceAsset?.url || ''
       const duration = parseDurationSeconds(task.duration, parseDurationSeconds(general.defaultDuration, 5))
       precheckGeneration('video', providerDef, { ...task, duration }, { sourceImageUrl, mode: task.intent, lang })
+      /** @type {VideoFallbackParams} */
       const videoParams = {
         ...provider,
-        prompt: task.prompt, ratio: task.ratio || '1:1', duration,
-        sourceImageUrl
+        prompt: textValue(task.prompt), ratio: textValue(task.ratio) || '1:1', duration,
+        sourceImageUrl: textValue(sourceImageUrl)
       }
       const result = normalizeVideoSubmitResult(await submitVideoProvider({
         action: 'submit',
@@ -669,8 +678,8 @@ ${modeRule}
       }
       const queuedTask = onVideoTaskCreated?.({
         taskId: result.taskId,
-        prompt: task.prompt,
-        label: task.label,
+        prompt: textValue(task.prompt),
+        label: textValue(task.label),
         provider,
         autoSave: general.autoSave !== false,
         onComplete: (result) => {

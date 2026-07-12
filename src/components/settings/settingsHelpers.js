@@ -9,10 +9,40 @@
  * overrides coming from the registry.
  */
 
+// @ts-check
+
+/** @typedef {import('../../types/domain').Track} Track */
+/** @typedef {Record<string, unknown>} UnknownRecord */
+/** @typedef {{ links: Partial<Record<string, string>>, billing: UnknownRecord, region: string, capabilities: UnknownRecord, constraints: UnknownRecord, customizable: UnknownRecord, description: string, descriptionZh: string, descriptionEn: string, nameZh: string, nameEn: string, relay: boolean }} ProviderInfoResult */
+
+/** @param {unknown} value @returns {value is UnknownRecord} */
+function isRecord(value) {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value))
+}
+
+/** @param {unknown} value @returns {UnknownRecord} */
+function recordOf(value) {
+  return isRecord(value) ? value : {}
+}
+
+/** @param {unknown} value @returns {string} */
+function text(value) {
+  return typeof value === 'string' ? value : ''
+}
+
+/** @param {...unknown} values @returns {UnknownRecord} */
+function firstRecord(...values) {
+  for (const value of values) {
+    if (isRecord(value) && Object.keys(value).length > 0) return value
+  }
+  return {}
+}
+
 /* ------------------------------------------------------------------ */
 /*  FALLBACK_PROVIDER_METADATA                                        */
 /* ------------------------------------------------------------------ */
 
+/** @type {Record<string, UnknownRecord>} */
 export const FALLBACK_PROVIDER_METADATA = {
   openai: {
     links: {
@@ -350,6 +380,7 @@ export const FALLBACK_PROVIDER_METADATA = {
 /*  TRACK_PROVIDER_METADATA  (per-track capability / constraint)      */
 /* ------------------------------------------------------------------ */
 
+/** @type {Partial<Record<Track, Record<string, UnknownRecord>>>} */
 const TRACK_PROVIDER_METADATA = {
   image: {
     openai: {
@@ -453,65 +484,69 @@ const TRACK_PROVIDER_METADATA = {
  *   provider.meta / provider.links / provider.billing  ->
  *   provider root fields
  *
- * @param {Object} provider - live provider object from the registry
- * @param {string} [track]  - 'chat' | 'image' | 'video'
- * @returns {Object} merged info object
+ * @param {unknown} provider - live provider object from the registry
+ * @param {Track} [track]  - 'chat' | 'image' | 'video'
+ * @returns {ProviderInfoResult} merged info object
  */
 export function providerInfo(provider = {}, track) {
-  const base = FALLBACK_PROVIDER_METADATA[provider.id] || {}
-  const trackMeta = TRACK_PROVIDER_METADATA[track]?.[provider.id] || {}
+  const input = recordOf(provider)
+  const providerId = text(input.id)
+  const providerMeta = recordOf(input.meta)
+  const providerCapabilities = recordOf(input.capabilities)
+  const providerCustomizable = recordOf(input.customizable)
+  const providerConstraints = recordOf(input.constraints)
+  const base = recordOf(FALLBACK_PROVIDER_METADATA[providerId])
+  const trackMeta = track ? recordOf(TRACK_PROVIDER_METADATA[track]?.[providerId]) : {}
+  const trackMetaMeta = recordOf(trackMeta.meta)
 
-  const capabilities =
-    provider.capabilities?.[track] ||
-    provider.meta?.capabilities?.[track] ||
-    trackMeta.capabilities?.[track] ||
-    provider.capabilities ||
-    {}
+  const capabilities = firstRecord(
+    track ? providerCapabilities[track] : null,
+    track ? recordOf(providerMeta.capabilities)[track] : null,
+    track ? recordOf(trackMeta.capabilities)[track] : null,
+    providerCapabilities
+  )
 
-  const customizable =
-    provider.customizable?.[track] ||
-    provider.meta?.customizable?.[track] ||
-    trackMeta.customizable?.[track] ||
-    provider.customizable ||
-    {}
+  const customizable = firstRecord(
+    track ? providerCustomizable[track] : null,
+    track ? recordOf(providerMeta.customizable)[track] : null,
+    track ? recordOf(trackMeta.customizable)[track] : null,
+    providerCustomizable
+  )
 
-  const billing =
-    provider.billing ||
-    provider.meta?.billing ||
-    trackMeta.billing ||
-    base.billing ||
-    { mode: 'unknown' }
+  const billing = { ...firstRecord(input.billing, providerMeta.billing, trackMeta.billing, base.billing) }
+  if (Object.keys(billing).length === 0) billing.mode = 'unknown'
 
   return {
     links: {
       ...(base.links || {}),
       ...(trackMeta.links || {}),
-      ...(provider.meta?.links || {}),
-      ...(provider.links || {})
+      ...recordOf(providerMeta.links),
+      ...recordOf(input.links)
     },
     billing,
-    region: provider.meta?.region || trackMeta.meta?.region || base.meta?.region || 'unknown',
+    region: text(providerMeta.region) || text(trackMetaMeta.region) || text(recordOf(base.meta).region) || 'unknown',
     capabilities,
-    constraints:
-      provider.constraints?.[track] ||
-      provider.meta?.constraints?.[track] ||
-      trackMeta.constraints ||
-      {},
+    constraints: firstRecord(
+      track ? providerConstraints[track] : null,
+      track ? recordOf(providerMeta.constraints)[track] : null,
+      trackMeta.constraints
+    ),
     customizable,
-    description: provider.meta?.description || base.meta?.description || '',
-    descriptionZh: provider.meta?.descriptionZh || base.meta?.descriptionZh || '',
+    description: text(providerMeta.description) || text(recordOf(base.meta).description),
+    descriptionZh: text(providerMeta.descriptionZh) || text(recordOf(base.meta).descriptionZh),
     descriptionEn:
-      provider.meta?.descriptionEn ||
-      provider.meta?.description ||
-      base.meta?.descriptionEn ||
-      base.meta?.description ||
+      text(providerMeta.descriptionEn) ||
+      text(providerMeta.description) ||
+      text(recordOf(base.meta).descriptionEn) ||
+      text(recordOf(base.meta).description) ||
       '',
-    nameZh: provider.meta?.nameZh || base.meta?.nameZh || '',
-    nameEn: provider.meta?.nameEn || base.meta?.nameEn || '',
-    relay:
-      provider.relayCompatible ||
+    nameZh: text(providerMeta.nameZh) || text(recordOf(base.meta).nameZh),
+    nameEn: text(providerMeta.nameEn) || text(recordOf(base.meta).nameEn),
+    relay: Boolean(
+      input.relayCompatible ||
       base.relayCompatible ||
       capabilities.relay ||
       customizable.relayCompatible
+    )
   }
 }

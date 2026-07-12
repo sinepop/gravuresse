@@ -1,17 +1,27 @@
+// @ts-check
+
 import { t } from '../../i18n'
 import Ic from '../icons'
 
+/** @typedef {import('../../types/domain').ProviderProfile} ProviderProfile */
+/** @typedef {import('../../types/domain').ProviderValidationStatus} ProviderValidationStatus */
+/** @typedef {import('../../types/domain').Track} Track */
+/** @typedef {{ key: string, labelKey: string, icon: Parameters<typeof Ic>[0]['n'] }} ProviderLinkButton */
+
 /* --- Constants --- */
 export const REDACTED_API_KEY = '********'
+/** @type {Track[]} */
 export const TRACKS = ['chat', 'image', 'video']
 
 /* --- Style Helpers --- */
+/** @returns {React.CSSProperties} */
 export const labelS = () => ({
   display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13,
   color: 'var(--text-secondary)', fontFamily: 'var(--font-body)',
   fontWeight: 400, letterSpacing: '0.2px'
 })
 
+/** @returns {React.CSSProperties} */
 export const inputS = () => ({
   background: 'var(--bg-input)', border: '1px solid var(--border-default)',
   borderRadius: 'var(--radius-sm)', padding: '9px 12px',
@@ -19,10 +29,12 @@ export const inputS = () => ({
   outline: 'none', transition: 'all 0.2s ease', lineHeight: 1.5
 })
 
+/** @returns {React.CSSProperties} */
 export const selectS = () => ({
   ...inputS(), appearance: 'auto', cursor: 'pointer', fontFamily: 'var(--font-body)'
 })
 
+/** @param {boolean} primary @returns {React.CSSProperties} */
 export const btnS = (primary) => ({
   padding: '8px 22px',
   background: primary ? 'var(--accent-gradient)' : 'var(--bg-surface)',
@@ -34,12 +46,14 @@ export const btnS = (primary) => ({
   boxShadow: primary ? 'var(--shadow-accent), inset 0 1px 0 rgba(255,255,255,0.12)' : 'none'
 })
 
+/** @param {string} [color='var(--text-muted)'] @returns {React.CSSProperties} */
 export const chipS = (color = 'var(--text-muted)') => ({
   display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 7px',
   borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)',
   background: 'var(--bg-surface)', color, fontSize: 'var(--font-size-meta)', lineHeight: 1.3
 })
 
+/** @param {unknown} mode @param {Track} track @returns {React.CSSProperties} */
 export function billingChipS(mode, track) {
   const highRisk = track === 'video' || mode === 'subscription'
   if (mode === 'paygo') return { ...chipS('var(--success)'), borderColor: 'var(--success-soft)', background: 'var(--success-soft)' }
@@ -49,16 +63,19 @@ export function billingChipS(mode, track) {
 }
 
 /* --- Text Helpers --- */
+/** @param {string} lang @param {string} zh @param {string} en */
 export function localText(lang, zh, en) {
   return lang === 'en' ? en : zh
 }
 
+/** @param {unknown} url */
 export function openExternal(url) {
-  if (!url) return
+  if (typeof url !== 'string' || !url) return
   window.electronAPI?.openExternal?.(url).catch?.(() => {})
 }
 
 /* --- Provider Display --- */
+/** @param {ProviderProfile} provider @param {string} lang @param {Track} [track='chat'] */
 export function providerDisplayName(provider = {}, lang, track = 'chat') {
   if (provider.id === 'volcengine') {
     if (track === 'image') return lang === 'en' ? 'Seedream / Jimeng' : 'Seedream / 即梦'
@@ -74,6 +91,7 @@ export function providerDisplayName(provider = {}, lang, track = 'chat') {
 }
 
 /* --- Label Helpers --- */
+/** @param {unknown} mode @param {string} lang */
 export function billingLabel(mode, lang) {
   if (mode === 'paygo') return t('billingPaygo', lang)
   if (mode === 'credits') return t('billingCredits', lang)
@@ -81,15 +99,20 @@ export function billingLabel(mode, lang) {
   return t('billingUnknown', lang)
 }
 
+/** @param {unknown} region @param {string} lang */
 export function regionLabel(region, lang) {
-  const key = {
+  const regionKey = typeof region === 'string' ? region : ''
+  /** @type {Record<string, string>} */
+  const keys = {
     global: 'regionGlobal',
     china: 'regionChina',
     both: 'regionBoth'
-  }[region] || 'regionUnknown'
+  }
+  const key = keys[regionKey] || 'regionUnknown'
   return t(key, lang)
 }
 
+/** @param {ProviderValidationStatus | null | undefined} validation @param {string} lang */
 export function validationEvidenceLabel(validation, lang) {
   if (!validation) return ''
   if (validation.evidence === 'assistant_output' || validation.outputVerified === true) {
@@ -104,7 +127,11 @@ export function validationEvidenceLabel(validation, lang) {
   return ''
 }
 
+/** @param {unknown} status @param {string} lang */
 export function statusLabel(status, lang) {
+  const statusKey = typeof status === 'string' ? status : ''
+  const locale = lang === 'en' ? 'en' : 'zh'
+  /** @type {Record<string, { zh: string, en: string }>} */
   const map = {
     verified: { zh: '已验证', en: 'Verified' },
     connected_unverified: { zh: '已连接·未验证', en: 'Connected · unverified' },
@@ -123,9 +150,10 @@ export function statusLabel(status, lang) {
     not_detected: { zh: '未检测到', en: 'Not found' },
     error: { zh: '错误', en: 'Error' },
   }
-  return map[status]?.[lang] || status || '—'
+  return map[statusKey]?.[locale] || statusKey || '—'
 }
 
+/** @param {unknown} status */
 export function statusColor(status) {
   if (status === 'verified') return 'var(--success)'
   if (status === 'detected' || status === 'available' || status === 'directory_verified') return 'var(--accent)'
@@ -134,31 +162,37 @@ export function statusColor(status) {
   return 'var(--text-muted)'
 }
 
+/** @param {number | null | undefined} ms */
 export function latencyText(ms) {
   if (!ms && ms !== 0) return ''
   return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`
 }
 
 /* --- Reusable Sub-Components --- */
+/** @param {{ labelKey: string, lang: string }} props */
 export function SectionHeading({ labelKey, lang }) {
   return <div style={{ color: 'var(--text-primary)', fontSize: 13, fontWeight: 600 }}>{t(labelKey, lang)}</div>
 }
 
+/** @param {{ status: string, size?: number }} props */
 export function StatusDot({ status, size = 8 }) {
   return <span style={{ width: size, height: size, borderRadius: size, background: statusColor(status), display: 'inline-block', flexShrink: 0 }} />
 }
 
+/** @param {{ status: string, lang: string }} props */
 export function StatusBadge({ status, lang }) {
   const color = statusColor(status)
   const bg = status === 'verified' ? 'var(--success-soft)' : status === 'detected' ? 'var(--accent-soft)' : 'var(--bg-surface)'
   return <span style={{ ...chipS(color), borderColor: color, background: bg }}>{statusLabel(status, lang)}</span>
 }
 
+/** @param {{ latencyMs?: number | null }} props */
 export function LatencyBadge({ latencyMs }) {
   if (!latencyMs && latencyMs !== 0) return null
   return <span style={chipS()}>{latencyText(latencyMs)}</span>
 }
 
+/** @param {{ links?: Partial<Record<string, string>>, lang: string, buttons?: ProviderLinkButton[] }} props */
 export function ProviderLinkButtons({ links, lang, buttons }) {
   if (!links || !buttons) return null
   const visible = buttons.filter(b => links[b.key])
@@ -175,6 +209,7 @@ export function ProviderLinkButtons({ links, lang, buttons }) {
   )
 }
 
+/** @param {{ message?: React.ReactNode }} props */
 export function EmptyState({ message }) {
   if (!message) return null
   return (

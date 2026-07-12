@@ -3,7 +3,14 @@ import ts from 'typescript'
 
 const entrypoints = [
   'src/App.jsx',
-  'src/hooks/useChat.js'
+  'src/hooks/useChat.js',
+  'src/components/ChatPanel.jsx',
+  'src/components/ModelSelector.jsx',
+  'src/components/Settings.jsx',
+  'src/components/settings/AccountsPage.jsx',
+  'src/components/settings/ApiKeysPage.jsx',
+  'src/components/settings/DefaultsPage.jsx',
+  'src/components/settings/RelaysPage.jsx'
 ]
 
 const rootDir = process.cwd()

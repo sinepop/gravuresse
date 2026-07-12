@@ -7,26 +7,29 @@ import Ic from './icons'
 
 /** @typedef {import('../types/domain').ConfigPayload} ConfigPayload */
 /** @typedef {import('../types/domain').ProviderLists} ProviderLists */
+/** @typedef {import('../types/domain').ProviderProfile} ProviderProfile */
 /** @typedef {import('../types/domain').Track} Track */
-/** @typedef {{ connectionId?: string, providerId?: string, modelId?: string, model?: string }} ActiveSelection */
+/** @typedef {{ connectionId?: string, providerId?: string, id?: string, modelId?: string, model?: string, name?: string, profileId?: string, baseUrl?: string }} ActiveSelection */
+
+/** @param {Track} track @param {ProviderLists} providerLists @param {ActiveSelection} profile */
 function findProviderDef(track, providerLists = {}, profile = {}) {
   const providers = providerLists?.[track] || []
   return providers.find(item => sameProviderId(track, item.id, profile.providerId || profile.id))
 }
 
-/** @param {Track} track @param {ProviderLists} providerLists @param {{ connectionId?: string, providerId?: string, modelId?: string, model?: string }} profile */
+/** @param {Track} track @param {ProviderLists} providerLists @param {ActiveSelection} profile */
 function providerName(track, providerLists = {}, profile = {}) {
   const provider = findProviderDef(track, providerLists, profile)
   return profile.name || provider?.name || profile.providerId || profile.id || t('provider', 'zh')
 }
 
-/** @param {{ connectionId?: string, providerId?: string, modelId?: string, model?: string }} current @param {{ connectionId?: string, providerId?: string, modelId?: string, model?: string }} profile */
+/** @param {ActiveSelection} current @param {ActiveSelection} profile */
 function sameProfile(current = {}, profile = {}) {
   return current.connectionId === profile.connectionId &&
     (current.modelId || '') === (profile.modelId || profile.model || '')
 }
 
-/** @param {{ track: Track, current?: ActiveSelection, profiles: Array<Record<string, unknown>>, providerLists: ProviderLists, onConnectionSelect?: (track: Track, selection: ActiveSelection) => void, lang: string }} props */
+/** @param {{ track: Track, current?: ActiveSelection, profiles: ProviderProfile[], providerLists: ProviderLists, onConnectionSelect?: (track: Track, selection: ActiveSelection) => void, lang: string }} props */
 function ModelPicker({ track, current, profiles, providerLists, onConnectionSelect, lang }) {
   const [open, setOpen] = useState(false)
   const ref = useRef(/** @type {HTMLDivElement | null} */ (null))
@@ -107,11 +110,14 @@ function ModelPicker({ track, current, profiles, providerLists, onConnectionSele
   )
 }
 
-/** @param {ConfigPayload} config @param {Track} track */
+/** @param {ConfigPayload | null} config @param {Track} track */
 function canonicalProfiles(config, track) {
-  const connections = config?.connections || {}
-  const all = [...(connections.accounts || []), ...(connections.apiKeys || []), ...(connections.relays || [])]
-  /** @type {Array<Record<string, unknown>>} */
+  const all = [
+    ...(config?.connections?.accounts || []),
+    ...(config?.connections?.apiKeys || []),
+    ...(config?.connections?.relays || [])
+  ]
+  /** @type {ProviderProfile[]} */
   const profiles = []
   for (const connection of all) {
     const validation = connection.validations?.[track]
@@ -135,9 +141,12 @@ function canonicalProfiles(config, track) {
   return profiles
 }
 
+/** @param {{ config: ConfigPayload | null, providerLists: ProviderLists, activeModule?: 'image' | 'video', activeSelections?: Partial<Record<Track, ActiveSelection>>, onConnectionModelChange?: (track: Track, selection: ActiveSelection) => void, lang: string }} props */
 export default function ModelSelector({ config, providerLists, activeModule = 'image', activeSelections = {}, onConnectionModelChange, lang }) {
   const mediaTrack = activeModule === 'video' ? 'video' : 'image'
-  const items = ['chat', mediaTrack].map(track => {
+  /** @type {Track[]} */
+  const tracks = ['chat', mediaTrack]
+  const items = tracks.map(track => {
     const profiles = canonicalProfiles(config, track)
     const current = activeSelections?.[track] || config?.connections?.defaults?.[track] || {}
     return profiles.length ? { track, current, profiles } : null

@@ -23,6 +23,8 @@ import useSafeMediaUrl from '../hooks/useSafeMediaUrl'
 /** @typedef {{ id: string, conversation: StoredConversation }} EnsureConversationResult */
 /** @typedef {{ nonce: number, asset: Asset }} ReferenceIntent */
 /** @typedef {{ nonce: number, text: string, parentAssetId: string, createdFrom: string }} ComposerIntent */
+/** @typedef {{ connectionId?: string, providerId?: string, modelId?: string, model?: string }} ActiveSelection */
+/** @typedef {Partial<Record<Track, ActiveSelection>>} ActiveSelections */
 
 /** @param {unknown} value @returns {value is UnknownRecord} */
 function isRecord(value) {
@@ -53,6 +55,38 @@ function providerProfileOf(value) {
 function mediaConstraintsOf(value) {
   const source = recordOf(value)
   return { ratios: stringList(source.ratios), resolutions: stringList(source.resolutions) }
+}
+
+/**
+ * Resolve the canonical provider selected by the connection-backed model picker.
+ * Legacy provider config remains a fallback for stores that have not migrated yet.
+ * @param {ConfigPayload | null} config
+ * @param {ActiveSelections} activeSelections
+ * @param {Track} track
+ * @returns {ProviderProfile}
+ */
+function selectedProviderProfile(config, activeSelections, track) {
+  const connections = config?.connections
+  const selection = activeSelections[track] || connections?.defaults?.[track] || null
+  const allConnections = [
+    ...(connections?.accounts || []),
+    ...(connections?.apiKeys || []),
+    ...(connections?.relays || [])
+  ]
+  const connection = selection?.connectionId
+    ? allConnections.find(item => item.id === selection.connectionId)
+    : null
+  if (connection) {
+    return {
+      id: connection.providerId,
+      providerId: connection.providerId,
+      connectionId: connection.id,
+      model: selection?.modelId || '',
+      name: connection.name,
+      baseUrl: connection.baseUrl || ''
+    }
+  }
+  return providerProfileOf(config?.providers?.[track])
 }
 
 /** @param {{ value: string, options: ChipOption[], onChange: (value: string) => void, style?: React.CSSProperties }} props */
@@ -185,7 +219,35 @@ const selectChipS = () => ({
   transition: 'all 0.15s',
 })
 
-export default function ChatPanel({ chat, config, providerLists, activeSelections, onConnectionModelChange, lang, generationMode = 'image', conversations, activeConvId, onSwitchConv, onNewConv, onDeleteConv, onRenameConv, onExportConv, onExportProject, onImportConv, onEnsureConversation, conversationBusy = false, canvas, referenceIntent, onReferenceIntentConsumed, composerIntent, onComposerIntentConsumed }) {
+/**
+ * @param {{
+ *   chat: ChatController,
+ *   config: ConfigPayload | null,
+ *   providerLists: ProviderLists,
+ *   activeSelections?: ActiveSelections,
+ *   onConnectionModelChange?: (track: Track, selection: ActiveSelection) => void,
+ *   lang: string,
+ *   generationMode?: 'image' | 'video',
+ *   conversations: StoredConversation[],
+ *   activeConvId: string | null,
+ *   onSwitchConv: (id: string) => unknown,
+ *   onNewConv: () => unknown,
+ *   onDeleteConv: (id: string) => unknown,
+ *   onRenameConv?: (id: string, title: string) => unknown,
+ *   onExportConv?: () => unknown,
+ *   onExportProject?: () => unknown,
+ *   onImportConv?: () => unknown,
+ *   onEnsureConversation?: (options?: { forSend?: boolean }) => Promise<EnsureConversationResult>,
+ *   conversationBusy?: boolean,
+ *   canvas: CanvasController,
+ *   referenceIntent?: ReferenceIntent | null,
+ *   onReferenceIntentConsumed?: (nonce: number) => void,
+ *   composerIntent?: ComposerIntent | null,
+ *   onComposerIntentConsumed?: (nonce: number) => void
+ * }} props
+ */
+export default function ChatPanel({ chat, config, providerLists, activeSelections = {}, onConnectionModelChange, lang, generationMode = 'image', conversations, activeConvId, onSwitchConv, onNewConv, onDeleteConv, onRenameConv, onExportConv, onExportProject, onImportConv, onEnsureConversation, conversationBusy = false, canvas, referenceIntent, onReferenceIntentConsumed, composerIntent, onComposerIntentConsumed }) {
+  const generalConfig = recordOf(config?.general)
   const [input, setInput] = useState('')
   const [showConvList, setShowConvList] = useState(false)
   const [showRefPicker, setShowRefPicker] = useState(false)
@@ -211,7 +273,7 @@ export default function ChatPanel({ chat, config, providerLists, activeSelection
   const hasReferenceAssets = referenceAssets.length > 0
   const modeHint = t(generationMode === 'video' ? 'videoModeHint' : 'imageModeHint', lang)
   const mediaTrack = generationMode === 'video' ? 'video' : 'image'
-  const mediaProvider = providerProfileOf(configuredProviders[mediaTrack])
+  const mediaProvider = selectedProviderProfile(config, activeSelections, mediaTrack)
   const mediaProviderId = text(mediaProvider.id) || (mediaTrack === 'image' ? 'custom-image' : 'custom-video')
   const mediaProviderDef = findProviderDef(mediaTrack, providerLists, mediaProvider)
   const definitionConstraints = recordOf(recordOf(mediaProviderDef?.constraints)[mediaTrack])
@@ -727,7 +789,7 @@ export default function ChatPanel({ chat, config, providerLists, activeSelection
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
               <span style={{ fontSize: 11, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{t('style', lang)}</span>
-              <ChipSelect value={genStyle} options={[{ value: '', label: t('noStyle', lang) }, ...STYLE_PRESETS.map(s => ({ value: s.value, label: s.label[lang] || s.value }))]} onChange={setGenStyle} style={selectChipS()} />
+              <ChipSelect value={genStyle} options={[{ value: '', label: t('noStyle', lang) }, ...STYLE_PRESETS.map(s => ({ value: s.value, label: s.label[lang === 'en' ? 'en' : 'zh'] || s.value }))]} onChange={setGenStyle} style={selectChipS()} />
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
               <span style={{ fontSize: 11, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{t('resolution', lang)}</span>

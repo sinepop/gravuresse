@@ -1,3 +1,5 @@
+// @ts-check
+
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Ic from '../icons'
 import {
@@ -8,13 +10,39 @@ import {
 } from './shared.jsx'
 import { providerInfo } from './settingsHelpers.js'
 
+/** @typedef {import('../../types/domain').ProviderConnection} ProviderConnection */
+/** @typedef {import('../../types/domain').ProviderConnectionsConfig} ProviderConnectionsConfig */
+/** @typedef {import('../../types/domain').ProviderLists} ProviderLists */
+/** @typedef {import('../../types/domain').ProviderProfile} ProviderProfile */
+/** @typedef {import('../../types/domain').ProviderValidationStatus} ProviderValidationStatus */
+/** @typedef {import('../../types/domain').Track} Track */
+
+/** @param {unknown} value @returns {value is Record<string, unknown>} */
+function isRecord(value) { return Boolean(value && typeof value === 'object' && !Array.isArray(value)) }
+
+/** @param {unknown} error @param {string} fallback */
+function errorMessage(error, fallback) { return error instanceof Error ? error.message : fallback }
+
+/** @param {unknown} value @returns {NonNullable<ProviderConnection['authType']>} */
+function connectionAuthType(value) {
+  if (typeof value === 'string') return { type: value }
+  const input = isRecord(value) ? value : {}
+  return {
+    type: typeof input.type === 'string' ? input.type : 'bearer',
+    ...(typeof input.headerName === 'string' ? { headerName: input.headerName } : {}),
+    ...(typeof input.paramName === 'string' ? { paramName: input.paramName } : {}),
+    ...(typeof input.key === 'string' ? { key: input.key } : {})
+  }
+}
+
+/** @param {ProviderLists} providerLists @returns {string[]} */
 function standardProviderIds(providerLists) {
   const ids = []
   const seen = new Set()
   for (const track of TRACKS) {
     for (const provider of providerLists?.[track] || []) {
       const id = String(provider?.id || '')
-      const authType = typeof provider?.authType === 'string' ? provider.authType : provider?.authType?.type
+      const authType = typeof provider?.authType === 'string' ? provider.authType : isRecord(provider?.authType) ? provider.authType.type : ''
       if (!id || seen.has(id) || id.startsWith('custom-') || authType === 'none') continue
       seen.add(id)
       ids.push(id)
@@ -23,6 +51,7 @@ function standardProviderIds(providerLists) {
   return ids
 }
 
+/** @param {string} providerId @param {unknown} baseUrl */
 function makeId(providerId, baseUrl) {
   const input = `${providerId}|${baseUrl || ''}|api-key`
   let hash = 2166136261
@@ -30,6 +59,7 @@ function makeId(providerId, baseUrl) {
   return `key-${(hash >>> 0).toString(36)}`
 }
 
+/** @param {ProviderLists} providerLists @param {string} providerId @returns {ProviderProfile} */
 function providerEntry(providerLists, providerId) {
   for (const track of TRACKS) {
     const entry = (providerLists?.[track] || []).find?.(item => item.id === providerId)
@@ -38,14 +68,17 @@ function providerEntry(providerLists, providerId) {
   return { id: providerId, name: providerId, chat: true }
 }
 
+/** @param {ProviderLists} providerLists @param {string} providerId @returns {Track[]} */
 function providerCapabilities(providerLists, providerId) {
   return TRACKS.filter(track => (providerLists?.[track] || []).some?.(item => item.id === providerId))
 }
 
+/** @param {ProviderConnection | null} connection @param {Track} track @returns {ProviderValidationStatus | null} */
 function validationFor(connection, track) {
   return connection?.validations?.[track] || null
 }
 
+/** @param {{ providerId: string, providerLists: ProviderLists, connections: ProviderConnection[], onRefresh?: () => unknown | Promise<unknown>, onRequestStart?: () => void, onRequestEnd?: () => void, lang: string }} props */
 function ApiKeyCard({ providerId, providerLists, connections, onRefresh, onRequestStart, onRequestEnd, lang }) {
   const entry = useMemo(() => providerEntry(providerLists, providerId), [providerLists, providerId])
   const displayName = providerDisplayName(entry, lang, 'chat') || providerId
@@ -73,8 +106,9 @@ function ApiKeyCard({ providerId, providerLists, connections, onRefresh, onReque
           id: connectionId,
           providerId,
           name: displayName,
+          kind: 'api-key',
           baseUrl: entry?.defaultUrl || '',
-          authType: entry?.authType || { type: 'bearer' },
+          authType: connectionAuthType(entry?.authType),
           capabilities,
           apiKey: key || REDACTED_API_KEY
         }
@@ -82,12 +116,12 @@ function ApiKeyCard({ providerId, providerLists, connections, onRefresh, onReque
       const failed = Object.values(result?.modelsResults || {}).find(item => item?.ok !== true) || (result?.modelsResult?.ok !== true ? result?.modelsResult : null)
       if (failed) setError(failed.message || localText(lang, '模型拉取失败', 'Model discovery failed'))
       await onRefresh?.()
-    } catch (err) {
-      setError(err?.message || localText(lang, '保存失败', 'Save failed'))
+    } catch (/** @type {unknown} */ err) {
+      setError(errorMessage(err, localText(lang, '保存失败', 'Save failed')))
     } finally { setSaving(false); onRequestEnd?.() }
   }, [draft, existing, lang, connectionId, providerId, displayName, entry, capabilities, onRefresh, onRequestStart, onRequestEnd])
 
-  const refreshModels = useCallback(async track => {
+  const refreshModels = useCallback(/** @param {Track} track */ async track => {
     if (!existing) return
     setBusyTrack(track); setError('')
     onRequestStart?.()
@@ -95,7 +129,7 @@ function ApiKeyCard({ providerId, providerLists, connections, onRefresh, onReque
       const result = await window.electronAPI?.providerModels?.refresh({ connectionId: existing.id, track })
       if (!result?.result?.ok) setError(result?.result?.message || localText(lang, '模型刷新失败', 'Model refresh failed'))
       await onRefresh?.()
-    } catch (err) { setError(err?.message || localText(lang, '模型刷新失败', 'Model refresh failed')) }
+    } catch (/** @type {unknown} */ err) { setError(errorMessage(err, localText(lang, '模型刷新失败', 'Model refresh failed'))) }
     finally { setBusyTrack(''); onRequestEnd?.() }
   }, [existing, lang, onRefresh, onRequestStart, onRequestEnd])
 
@@ -104,7 +138,7 @@ function ApiKeyCard({ providerId, providerLists, connections, onRefresh, onReque
     setBusyTrack('remove'); setError('')
     onRequestStart?.()
     try { await window.electronAPI?.providerConnection?.remove({ collection: 'apiKeys', id: existing.id }); await onRefresh?.() }
-    catch (err) { setError(err?.message || localText(lang, '删除失败', 'Remove failed')) }
+    catch (/** @type {unknown} */ err) { setError(errorMessage(err, localText(lang, '删除失败', 'Remove failed'))) }
     finally { setBusyTrack(''); onRequestEnd?.() }
   }, [existing, lang, onRefresh, onRequestStart, onRequestEnd])
 
@@ -138,15 +172,16 @@ function ApiKeyCard({ providerId, providerLists, connections, onRefresh, onReque
       {existing && <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
         <button onClick={remove} disabled={cardBusy} style={{ ...btnS(false), padding: '5px 10px', fontSize: 11, color: 'var(--danger)', opacity: cardBusy ? 0.55 : 1 }}><Ic n="trash" size={12} /> {localText(lang, '移除', 'Remove')}</button>
       </div>}
-      {existing?.models?.length > 0 && <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>{existing.models.map(model => <span key={model.id} style={chipS('var(--accent)')}>{model.id}</span>)}</div>}
+      {existing && (existing.models?.length || 0) > 0 && <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>{(existing.models || []).map(model => <span key={model.id} style={chipS('var(--accent)')}>{model.id}</span>)}</div>}
       {error && <div style={{ color: 'var(--danger)', fontSize: 11, lineHeight: 1.4 }}>{error}</div>}
       <ProviderLinkButtons links={info.links} lang={lang} buttons={[{ key: 'docs', icon: 'book', labelKey: 'linkDocs' }, { key: 'apiKey', icon: 'key', labelKey: 'linkGetKey' }, { key: 'pricing', icon: 'price', labelKey: 'linkPricing' }]} />
     </div>
   )
 }
 
+/** @param {{ providerLists: ProviderLists, lang: string, onCanonicalChange?: (connections: ProviderConnectionsConfig) => void, onBusyChange?: (busy: boolean) => void }} props */
 export default function ApiKeysPage({ providerLists, lang, onCanonicalChange, onBusyChange }) {
-  const [connections, setConnections] = useState([])
+  const [connections, setConnections] = useState(/** @type {ProviderConnection[]} */ ([]))
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [pendingRequests, setPendingRequests] = useState(0)
@@ -160,9 +195,9 @@ export default function ApiKeysPage({ providerLists, lang, onCanonicalChange, on
     try {
       const result = await window.electronAPI?.providerConnection?.list()
       setConnections(result?.connections?.apiKeys || [])
-      onCanonicalChange?.(result?.connections)
+      if (result?.connections) onCanonicalChange?.(result.connections)
       setError('')
-    } catch (err) { setError(err?.message || localText(lang, '无法读取提供商连接', 'Unable to load provider connections')) }
+    } catch (/** @type {unknown} */ err) { setError(errorMessage(err, localText(lang, '无法读取提供商连接', 'Unable to load provider connections'))) }
     finally { setLoading(false) }
   }, [lang, onCanonicalChange])
   useEffect(() => { refresh() }, [refresh])

@@ -1,3 +1,5 @@
+// @ts-check
+
 import { useCallback, useEffect, useState } from 'react'
 import Ic from '../icons'
 import { btnS, chipS, SectionHeading, StatusBadge, LatencyBadge, localText } from './shared.jsx'
@@ -11,13 +13,25 @@ import {
   shouldPollAuth
 } from './accountAuthState.js'
 
+/** @typedef {import('../../types/domain').ProviderConnectionsConfig} ProviderConnectionsConfig */
+/** @typedef {import('../../types/electron-api').ProviderAuthAttempt} ProviderAuthAttempt */
+/** @typedef {import('../../types/electron-api').ProviderConnectorStatus} ProviderConnectorStatus */
+/** @typedef {import('./accountAuthState.js').AuthConnectorView} AuthConnectorView */
+
+/** @param {unknown} error @param {string} fallback */
+function errorMessage(error, fallback) {
+  return error instanceof Error ? error.message : fallback
+}
+
+/** @param {unknown} mode @param {string} lang */
 function authorizationModeLabel(mode, lang) {
   if (mode === 'device_code') return localText(lang, '设备码', 'Device code')
   if (mode === 'browser_oauth') return localText(lang, '浏览器 OAuth', 'Browser OAuth')
   if (mode === 'local_detection') return localText(lang, '本机检测', 'Local detection')
-  return mode || ''
+  return typeof mode === 'string' ? mode : ''
 }
 
+/** @param {{ connector: AuthConnectorView, onConnect: (connector: AuthConnectorView) => unknown, onCancel: (connector: AuthConnectorView) => unknown, onOpen: (connector: AuthConnectorView) => unknown, onRefresh: (connector: AuthConnectorView) => unknown, onDisconnect: (connector: AuthConnectorView) => unknown, lang: string }} props */
 function ConnectorCard({ connector, onConnect, onCancel, onOpen, onRefresh, onDisconnect, lang }) {
   const [copied, setCopied] = useState(false)
   const canConnect = canBeginAuth(connector)
@@ -70,8 +84,9 @@ function ConnectorCard({ connector, onConnect, onCancel, onOpen, onRefresh, onDi
   </div>
 }
 
+/** @param {{ lang?: string, onCanonicalChange?: (connections: ProviderConnectionsConfig) => void, onBusyChange?: (busy: boolean) => void }} props */
 export default function AccountsPage({ lang = 'zh', onCanonicalChange, onBusyChange }) {
-  const [connectors, setConnectors] = useState([])
+  const [connectors, setConnectors] = useState(/** @type {AuthConnectorView[]} */ ([]))
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [pendingRequests, setPendingRequests] = useState(0)
@@ -79,7 +94,7 @@ export default function AccountsPage({ lang = 'zh', onCanonicalChange, onBusyCha
     onBusyChange?.(loading || pendingRequests > 0)
     return () => onBusyChange?.(false)
   }, [loading, pendingRequests, onBusyChange])
-  const withBusy = useCallback(async operation => {
+  const withBusy = useCallback(/** @template T @param {() => Promise<T>} operation @returns {Promise<T>} */ async operation => {
     setPendingRequests(count => count + 1)
     try { return await operation() } finally { setPendingRequests(count => Math.max(0, count - 1)) }
   }, [])
@@ -87,10 +102,10 @@ export default function AccountsPage({ lang = 'zh', onCanonicalChange, onBusyCha
     try {
       const [result, connectionList] = await Promise.all([window.electronAPI?.providerAuth?.status(), window.electronAPI?.providerConnection?.list()])
       setConnectors(Array.isArray(result) ? result : [])
-      onCanonicalChange?.(connectionList?.connections)
+      if (connectionList?.connections) onCanonicalChange?.(connectionList.connections)
       setError('')
-    } catch (err) {
-      setError(err?.message || localText(lang, '读取账号状态失败', 'Failed to load account status'))
+    } catch (/** @type {unknown} */ err) {
+      setError(errorMessage(err, localText(lang, '读取账号状态失败', 'Failed to load account status')))
     } finally {
       setLoading(false)
     }
@@ -103,26 +118,28 @@ export default function AccountsPage({ lang = 'zh', onCanonicalChange, onBusyCha
       for (const connector of active) {
         try {
           const result = await window.electronAPI?.providerAuth?.status({ attemptId: connector.attemptId })
-          if (!result) continue
+          if (!result || Array.isArray(result)) continue
           if (isTerminalAuthStatus(result.status)) await load()
           else setConnectors(prev => prev.map(item => item.id === connector.id ? mergeAuthAttempt(item, result) : item))
-        } catch (err) {
-          setError(err?.message || localText(lang, '授权状态读取失败', 'Failed to read authorization status'))
+        } catch (/** @type {unknown} */ err) {
+          setError(errorMessage(err, localText(lang, '授权状态读取失败', 'Failed to read authorization status')))
         }
       }
     }, 1000)
     return () => window.clearInterval(timer)
   }, [connectors, lang, load])
 
+  /** @param {AuthConnectorView} connector */
   const openAuthorization = async connector => {
     return withBusy(async () => { try {
       const url = authExternalUrl(connector)
       if (!url) throw new Error(localText(lang, '认证地址无效', 'Invalid authorization URL'))
       await window.electronAPI?.openExternal?.(url)
-    } catch (err) {
-      setError(err?.message || localText(lang, '无法打开认证页', 'Failed to open authorization page'))
+    } catch (/** @type {unknown} */ err) {
+      setError(errorMessage(err, localText(lang, '无法打开认证页', 'Failed to open authorization page')))
     } })
   }
+  /** @param {AuthConnectorView} connector */
   const begin = async connector => {
     return withBusy(async () => { setError('')
     try {
@@ -131,13 +148,16 @@ export default function AccountsPage({ lang = 'zh', onCanonicalChange, onBusyCha
       const external = authExternalUrl(result)
       if (external) await window.electronAPI?.openExternal?.(external)
       if (result?.status === 'error' || result?.status === 'unavailable' || result?.status === 'registration_required') setError(result.message || localText(lang, '连接失败', 'Connection failed'))
-    } catch (err) {
-      setError(err?.message || localText(lang, '连接失败', 'Connection failed'))
+    } catch (/** @type {unknown} */ err) {
+      setError(errorMessage(err, localText(lang, '连接失败', 'Connection failed')))
     } })
   }
-  const cancel = async connector => withBusy(async () => { try { await window.electronAPI?.providerAuth?.cancel({ attemptId: connector.attemptId }); await load() } catch (err) { setError(err?.message || localText(lang, '取消失败', 'Cancel failed')) } })
-  const reverify = async connector => withBusy(async () => { setError(''); try { if (connector.mode === 'cli' || !connector.connectionId) { await load(); return } const result = await window.electronAPI?.providerModels?.refresh({ connectionId: connector.connectionId, track: 'chat' }); if (!result?.result?.ok) setError(result?.result?.message || localText(lang, '模型拉取失败', 'Model discovery failed')); await load() } catch (err) { setError(err?.message || localText(lang, '模型拉取失败', 'Model discovery failed')) } })
-  const disconnect = async connector => withBusy(async () => { try { await window.electronAPI?.providerAuth?.disconnect({ connectorId: connector.id }); await load() } catch (err) { setError(err?.message || localText(lang, '断开失败', 'Disconnect failed')) } })
+  /** @param {AuthConnectorView} connector */
+  const cancel = async connector => withBusy(async () => { try { if (!connector.attemptId) return; await window.electronAPI?.providerAuth?.cancel({ attemptId: connector.attemptId }); await load() } catch (/** @type {unknown} */ err) { setError(errorMessage(err, localText(lang, '取消失败', 'Cancel failed'))) } })
+  /** @param {AuthConnectorView} connector */
+  const reverify = async connector => withBusy(async () => { setError(''); try { if (connector.mode === 'cli' || !connector.connectionId) { await load(); return } const result = await window.electronAPI?.providerModels?.refresh({ connectionId: connector.connectionId, track: 'chat' }); if (!result?.result?.ok) setError(result?.result?.message || localText(lang, '模型拉取失败', 'Model discovery failed')); await load() } catch (/** @type {unknown} */ err) { setError(errorMessage(err, localText(lang, '模型拉取失败', 'Model discovery failed'))) } })
+  /** @param {AuthConnectorView} connector */
+  const disconnect = async connector => withBusy(async () => { try { await window.electronAPI?.providerAuth?.disconnect({ connectorId: connector.id, connectionId: connector.connectionId }); await load() } catch (/** @type {unknown} */ err) { setError(errorMessage(err, localText(lang, '断开失败', 'Disconnect failed'))) } })
 
   if (loading) return <div style={{ padding: 24, color: 'var(--text-muted)' }}>{localText(lang, '正在加载…', 'Loading…')}</div>
   return <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>

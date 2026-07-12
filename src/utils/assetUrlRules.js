@@ -95,7 +95,9 @@ function sanitizeHttpsUrl(value) {
   return parsed.href
 }
 
+/** @param {unknown} value @param {unknown} [type='image'] @returns {string} */
 export function sanitizeMediaCacheUrl(value, type = 'image') {
+  if (typeof value !== 'string') return ''
   let parsed
   try { parsed = new URL(value) } catch { return '' }
   if (parsed.protocol !== 'gravuresse-media:' || parsed.hostname !== 'cache') return ''

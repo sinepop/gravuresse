@@ -865,7 +865,15 @@ const agentIconBtnStyle = {
   borderRadius: 'var(--radius-sm)'
 }
 
-/** @param {{ canvas: CanvasController, lang: string, onContextMenu?: (event: React.MouseEvent, asset: Asset) => void, onAssetAction?: (action: string, asset: Asset) => void | Promise<void>, onImportImages?: (options: { files?: File[], position?: { x: number, y: number } | null }) => Promise<{ canceled: boolean, imported: unknown[], rejected: unknown[] }>, generationMode?: 'image' | 'video', videoEnabled?: boolean, referenceEnabled?: boolean }} props */
+/** @param {File | null} file @returns {file is File} */
+function isSupportedImageFile(file) {
+  return file instanceof File && (
+    ['image/png', 'image/jpeg', 'image/webp'].includes(String(file.type || '').toLowerCase()) || /\.(png|jpe?g|webp)$/i.test(file.name || '')
+  )
+}
+
+/** @typedef {{ name: string, reason: string }} RejectedImageImport */
+/** @param {{ canvas: CanvasController, lang: string, onContextMenu?: (event: React.MouseEvent, asset: Asset) => void, onAssetAction?: (action: string, asset: Asset) => void | Promise<void>, onImportImages?: (options: { files?: File[], position?: { x: number, y: number } | null }) => Promise<{ canceled: boolean, imported: unknown[], rejected: RejectedImageImport[] }>, generationMode?: 'image' | 'video', videoEnabled?: boolean, referenceEnabled?: boolean }} props */
 export default function CanvasPanel({ canvas, lang, onContextMenu, onAssetAction, onImportImages, generationMode = 'image', videoEnabled = false, referenceEnabled = false }) {
   const { selectedAsset, selectedId, setSelectedId, viewMode, setViewMode } = canvas
   const modeAssets = (canvas.assets || []).filter(asset => asset.type === generationMode)
@@ -893,11 +901,9 @@ export default function CanvasPanel({ canvas, lang, onContextMenu, onAssetAction
   const dragCleanupRef = useRef(/** @type {(() => void) | null} */ (null))
   const viewportRef = useRef(/** @type {HTMLDivElement | null} */ (null))
 
-  const imageFiles = useCallback(files => Array.from(files || []).filter(file =>
-    ['image/png', 'image/jpeg', 'image/webp'].includes(String(file.type || '').toLowerCase()) || /\.(png|jpe?g|webp)$/i.test(file.name || '')
-  ), [])
+  const imageFiles = useCallback(/** @param {FileList | Array<File | null> | null | undefined} files @returns {File[]} */ files => Array.from(files || []).filter(isSupportedImageFile), [])
 
-  const canvasPoint = useCallback((clientX, clientY) => {
+  const canvasPoint = useCallback(/** @param {number} clientX @param {number} clientY @returns {{ x: number, y: number } | null} */ (clientX, clientY) => {
     if (viewMode !== 'free' || !viewportRef.current) return null
     const rect = viewportRef.current.getBoundingClientRect()
     return {
@@ -906,7 +912,7 @@ export default function CanvasPanel({ canvas, lang, onContextMenu, onAssetAction
     }
   }, [viewMode, offset.x, offset.y, scale])
 
-  const runImageImport = useCallback(async (files = [], position = null) => {
+  const runImageImport = useCallback(/** @param {File[]} [files] @param {{ x: number, y: number } | null} [position] */ async (files = [], position = null) => {
     if (!onImportImages || importingImages) return
     setImportingImages(true)
     setImportMessage('')
@@ -920,18 +926,19 @@ export default function CanvasPanel({ canvas, lang, onContextMenu, onAssetAction
       } else if (accepted > 0) {
         setImportMessage(`${t('importImagesSuccess', lang)} (${accepted})`)
       }
-    } catch (error) {
-      setImportMessage(`${t('importImagesFail', lang)}: ${error?.message || ''}`)
+    } catch (/** @type {unknown} */ error) {
+      setImportMessage(`${t('importImagesFail', lang)}: ${error instanceof Error ? error.message : ''}`)
     } finally {
       setImportingImages(false)
     }
   }, [importingImages, lang, onImportImages])
 
   useEffect(() => {
+    /** @param {ClipboardEvent} event */
     const onPaste = event => {
       const target = event.target
-      const tag = target?.tagName
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable) return
+      const tag = target instanceof HTMLElement ? target.tagName : ''
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (target instanceof HTMLElement && target.isContentEditable)) return
       let files = imageFiles(event.clipboardData?.files)
       if (files.length === 0) {
         files = imageFiles(Array.from(event.clipboardData?.items || []).map(item => item.kind === 'file' ? item.getAsFile() : null).filter(Boolean))
@@ -1133,7 +1140,7 @@ export default function CanvasPanel({ canvas, lang, onContextMenu, onAssetAction
           className={assets.length === 0 ? 'canvas-surface' : undefined}
           onDragEnter={event => { if (imageFiles(event.dataTransfer?.files).length > 0) { event.preventDefault(); setDraggingFiles(true) } }}
           onDragOver={event => { if (imageFiles(event.dataTransfer?.files).length > 0) { event.preventDefault(); event.dataTransfer.dropEffect = 'copy' } }}
-          onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget)) setDraggingFiles(false) }}
+          onDragLeave={event => { if (!(event.relatedTarget instanceof Node) || !event.currentTarget.contains(event.relatedTarget)) setDraggingFiles(false) }}
           onDrop={event => {
             const files = imageFiles(event.dataTransfer?.files)
             setDraggingFiles(false)

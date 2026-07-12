@@ -1,3 +1,5 @@
+// @ts-check
+
 import { useState, useEffect, useCallback } from 'react'
 import { CHAT_PROVIDERS } from '../providers/chatProviders'
 import { IMG_PROVIDERS } from '../providers/imageProviders'
@@ -13,10 +15,19 @@ import DefaultsPage from './settings/DefaultsPage.jsx'
 /** @typedef {import('../types/domain').ConfigPayload} ConfigPayload */
 /** @typedef {import('../types/domain').ProviderLists} ProviderLists */
 /** @typedef {import('../types/domain').ProviderProfile} ProviderProfile */
+/** @typedef {import('../types/domain').ProviderConnectionsConfig} ProviderConnectionsConfig */
 /** @typedef {Record<string, unknown>} UnknownRecord */
 /** @typedef {(section: string, patch: unknown) => void} SettingsChange */
+/** @typedef {{ zh: string, en: string }} LocalizedLabel */
+/** @typedef {{ id: string, label: LocalizedLabel }} NavChild */
+/** @typedef {{ id: string, label: LocalizedLabel, icon: Parameters<typeof Ic>[0]['n'], children: NavChild[] }} NavSection */
 
-/** @type {{ id: string, labelKey: string, icon: Parameters<typeof Ic>[0]['n'], children: { id: string, labelKey: string }[] }[]} */
+const SETTINGS_COPY = {
+  'General': '\u901a\u7528',
+  'General settings': '\u901a\u7528\u8bbe\u7f6e'
+}
+
+/** @type {NavSection[]} */
 const NAV_SECTIONS = [
   { id: 'api', label: { zh: '提供商设置', en: 'Provider Settings' }, icon: 'link', children: [
     { id: 'accounts', label: { zh: '账号', en: 'Accounts' } },
@@ -26,6 +37,22 @@ const NAV_SECTIONS = [
   ]},
 ]
 
+/** @param {unknown} value @returns {value is UnknownRecord} */
+function isRecord(value) {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value))
+}
+
+/** @param {unknown} value @returns {UnknownRecord} */
+function recordOf(value) {
+  return isRecord(value) ? value : {}
+}
+
+/** @param {unknown} value @returns {string} */
+function text(value) {
+  return typeof value === 'string' ? value : ''
+}
+
+/** @param {unknown} page @returns {string} */
 function normalizeSettingsPage(page) {
   if (page === 'appearance' || page === 'lang' || page === 'other' || page === 'general') return 'accounts'
   if (page === 'chat' || page === 'image' || page === 'video') return 'accounts'
@@ -35,9 +62,10 @@ function normalizeSettingsPage(page) {
   if (page === 'provider-api-keys') return 'api-keys'
   if (page === 'provider-gateways') return 'relays'
   if (page === 'api') return 'accounts'
-  return page || 'accounts'
+  return typeof page === 'string' && page ? page : 'accounts'
 }
 
+/** @param {{ label: React.ReactNode, value: string, onChange: (value: string) => void, children: React.ReactNode, disabled?: boolean }} props */
 function PreferenceSelect({ label, value, onChange, children, disabled }) {
   return <label style={{ display: 'grid', gap: 4, minWidth: 120, color: 'var(--text-muted)', fontSize: 11 }}>
     {label}
@@ -45,6 +73,7 @@ function PreferenceSelect({ label, value, onChange, children, disabled }) {
   </label>
 }
 
+/** @param {{ label: React.ReactNode, checked: boolean, onChange: (value: boolean) => void, disabled?: boolean }} props */
 function PreferenceToggle({ label, checked, onChange, disabled }) {
   return <label style={{ display: 'flex', alignItems: 'center', gap: 7, minHeight: 30, color: 'var(--text-secondary)', fontSize: 11, cursor: disabled ? 'wait' : 'pointer' }}>
     <input type="checkbox" checked={checked} onChange={event => onChange(event.target.checked)} disabled={disabled} />
@@ -52,10 +81,11 @@ function PreferenceToggle({ label, checked, onChange, disabled }) {
   </label>
 }
 
+/** @param {{ config: ConfigPayload | null, providerLists: ProviderLists, onSave: (config: ConfigPayload) => void | Promise<void>, onClose: () => void, onCanonicalChange?: (connections: ProviderConnectionsConfig) => void, initialPage?: string }} props */
 export default function Settings({ config, providerLists, onSave, onClose, onCanonicalChange, initialPage = 'accounts' }) {
   const [page, setPage] = useState(() => normalizeSettingsPage(initialPage))
-  const [local, setLocal] = useState(config)
-  const [expanded, setExpanded] = useState({ api: true })
+  const [local, setLocal] = useState(/** @type {ConfigPayload | null} */ (config))
+  const [expanded, setExpanded] = useState(/** @type {Record<string, boolean>} */ ({ api: true }))
   const [saving, setSaving] = useState(false)
   const [pageBusy, setPageBusy] = useState(true)
   const [saveError, setSaveError] = useState('')
@@ -68,6 +98,7 @@ export default function Settings({ config, providerLists, onSave, onClose, onCan
   }, [initialPage])
 
   useEffect(() => {
+    /** @param {KeyboardEvent} e */
     const handler = (e) => { if (e.key === 'Escape' && !saving && !pageBusy) onClose() }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
@@ -77,12 +108,13 @@ export default function Settings({ config, providerLists, onSave, onClose, onCan
 
   // Provider pages persist credentials in the main process immediately. Keep
   // the modal snapshot canonical so the footer Save cannot overwrite them.
-  const handleCanonicalConnections = useCallback((connections) => {
+  const handleCanonicalConnections = useCallback(/** @param {ProviderConnectionsConfig} connections */ (connections) => {
     if (!connections) return
-    setLocal(prev => ({ ...prev, connections }))
+    setLocal(prev => prev ? ({ ...prev, connections }) : prev)
     onCanonicalChange?.(connections)
   }, [onCanonicalChange])
 
+  /** @param {UnknownRecord} patch */
   const saveGeneral = async (patch) => {
     if (!local || saving || pageBusy) return
     const previous = local
@@ -110,7 +142,7 @@ export default function Settings({ config, providerLists, onSave, onClose, onCan
         <div className="settings-chrome" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid var(--border-subtle)' }}>
           <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)' }}>{lang === 'en' ? 'Provider Settings' : '提供商设置'}</span>
           <button onClick={() => setShowGeneral(value => !value)} aria-expanded={showGeneral} style={{ marginLeft: 'auto', marginRight: 8, ...btnS(false), height: 32, padding: '0 12px' }}>
-            <Ic n="gear" size={14} sw={1.8} /> {lang === 'en' ? 'General' : '通用'}
+            <Ic n="gear" size={14} sw={1.8} /> {lang === 'en' ? 'General' : SETTINGS_COPY.General}
           </button>
           <button onClick={() => { if (!busy) onClose() }} disabled={busy} aria-label={lang === 'en' ? 'Close settings' : '关闭设置'} style={{
             background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer',
@@ -122,14 +154,14 @@ export default function Settings({ config, providerLists, onSave, onClose, onCan
           ><Ic n="close" size={16} sw={2} /></button>
         </div>
         {showGeneral && <div className="settings-preferences solid-surface" style={{ padding: '14px 20px', borderBottom: '1px solid var(--border-subtle)', display: 'flex', flexWrap: 'wrap', alignItems: 'end', gap: '10px 16px' }}>
-          <div style={{ flexBasis: '100%', color: 'var(--text-primary)', fontSize: 'var(--font-size-lg)', fontWeight: 650 }}>{lang === 'en' ? 'General settings' : '通用设置'}</div>
-          <PreferenceSelect label={lang === 'en' ? 'Language' : '语言'} value={local.general?.language || 'zh'} onChange={value => saveGeneral({ language: value })} disabled={busy}>
+          <div style={{ flexBasis: '100%', color: 'var(--text-primary)', fontSize: 'var(--font-size-lg)', fontWeight: 650 }}>{lang === 'en' ? 'General settings' : SETTINGS_COPY['General settings']}</div>
+          <PreferenceSelect label={lang === 'en' ? 'Language' : '语言'} value={text(local.general?.language) || 'zh'} onChange={value => saveGeneral({ language: value })} disabled={busy}>
             <option value="zh">中文</option><option value="en">English</option>
           </PreferenceSelect>
-          <PreferenceSelect label={lang === 'en' ? 'Theme' : '主题'} value={local.general?.theme || 'light'} onChange={value => saveGeneral({ theme: value })} disabled={busy}>
+          <PreferenceSelect label={lang === 'en' ? 'Theme' : '主题'} value={text(local.general?.theme) || 'light'} onChange={value => saveGeneral({ theme: value })} disabled={busy}>
             <option value="light">{lang === 'en' ? 'Light' : '浅色'}</option><option value="dark">{lang === 'en' ? 'Dark' : '深色'}</option><option value="system">{lang === 'en' ? 'System' : '跟随系统'}</option>
           </PreferenceSelect>
-          <PreferenceSelect label={lang === 'en' ? 'Font size' : '字号'} value={local.general?.fontSize || 'medium'} onChange={value => saveGeneral({ fontSize: value })} disabled={busy}>
+          <PreferenceSelect label={lang === 'en' ? 'Font size' : '字号'} value={text(local.general?.fontSize) || 'medium'} onChange={value => saveGeneral({ fontSize: value })} disabled={busy}>
             <option value="small">{lang === 'en' ? 'Small' : '小'}</option><option value="medium">{lang === 'en' ? 'Medium' : '中'}</option><option value="large">{lang === 'en' ? 'Large' : '大'}</option>
           </PreferenceSelect>
           <PreferenceToggle label={lang === 'en' ? 'Reference images' : '参考图'} checked={local.general?.enableReference === true} onChange={value => saveGeneral({ enableReference: value })} disabled={busy} />
@@ -143,21 +175,21 @@ export default function Settings({ config, providerLists, onSave, onClose, onCan
               <div key={section.id}>
                 <button onClick={() => section.children.length ? setExpanded(current => ({ ...current, [section.id]: !current[section.id] })) : setPage(section.id)} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '10px 16px', background: page === section.id ? 'var(--accent-soft)' : 'none', border: 'none', borderRight: page === section.id ? '2px solid var(--accent)' : '2px solid transparent', color: page === section.id ? 'var(--accent)' : 'var(--text-muted)', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px', cursor: 'pointer', fontFamily: 'var(--font-body)', textAlign: 'left' }}>
                   <Ic n={section.icon} size={13} sw={2} />
-                  {section.label ? (section.label[lang] || section.label.zh) : t(section.labelKey, lang)}
+                  {section.label[lang === 'en' ? 'en' : 'zh']}
                   <span aria-hidden="true" style={{ marginLeft: 'auto', display: 'flex', transition: 'transform 0.15s', transform: expanded[section.id] ? 'rotate(0)' : 'rotate(-90deg)' }}><Ic n="chevDown" size={12} /></span>
                 </button>
-                {expanded[section.id] && section.children.filter(child => !child.requiresVideo || local?.general?.enableVideo === true).map(child => (
+                {expanded[section.id] && section.children.map(child => (
                   <button key={child.id} onClick={() => { if (!busy && child.id !== page) { setPageBusy(true); setPage(child.id) } }} disabled={busy} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '7px 16px 7px 36px', background: page === child.id ? 'var(--accent-soft)' : 'transparent', border: 'none', borderRight: page === child.id ? '2px solid var(--accent)' : '2px solid transparent', color: page === child.id ? 'var(--accent)' : 'var(--text-secondary)', fontSize: 'var(--font-size-base)', cursor: busy ? 'wait' : 'pointer', opacity: busy && page !== child.id ? 0.55 : 1, fontFamily: 'var(--font-body)', fontWeight: page === child.id ? 500 : 400 }}
                     onMouseEnter={e => { if (page !== child.id) e.currentTarget.style.background = 'var(--bg-hover)' }}
                     onMouseLeave={e => { if (page !== child.id) e.currentTarget.style.background = 'transparent' }}
-                  >{child.label ? (child.label[lang] || child.label.zh) : t(child.labelKey, lang)}</button>
+                  >{child.label[lang === 'en' ? 'en' : 'zh']}</button>
                 ))}
               </div>
             ))}
           </div>
           <div className="settings-content solid-surface" style={{ flex: 1, overflow: 'auto', padding: 20 }}>
             {page === 'accounts' && <AccountsPage onCanonicalChange={handleCanonicalConnections} onBusyChange={setPageBusy} lang={lang} />}
-            {page === 'api-keys' && <ApiKeysPage providerLists={providers} onCanonicalChange={handleCanonicalConnections} onBusyChange={setPageBusy} lang={lang} />}
+            {page === 'api-keys' && <ApiKeysPage providerLists={providerLists} onCanonicalChange={handleCanonicalConnections} onBusyChange={setPageBusy} lang={lang} />}
             {page === 'relays' && <RelaysPage onCanonicalChange={handleCanonicalConnections} onBusyChange={setPageBusy} lang={lang} />}
             {page === 'defaults' && <DefaultsPage onCanonicalChange={handleCanonicalConnections} onBusyChange={setPageBusy} lang={lang} />}
           </div>

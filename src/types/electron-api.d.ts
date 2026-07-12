@@ -75,6 +75,12 @@ export interface ProviderConnectorStatus extends ProviderValidationStatus {
   connectionId?: string
   attemptId?: string
   userCode?: string
+  registrationAvailable?: boolean
+  runtimeAvailable?: boolean
+  authorizationMode?: string
+  authorizationUrl?: string
+  verificationUri?: string
+  expiresAt?: string
 }
 
 export interface ProviderAuthAttempt {
@@ -131,7 +137,7 @@ export interface ElectronAPI {
 
   providerConnection?: {
     list(): Promise<{ connections: ProviderConnectionsConfig; accountConnectors: ProviderConnectorStatus[] }>
-    save(params: { collection: 'accounts' | 'apiKeys' | 'relays'; connection: ProviderConnection; track?: Track }): Promise<{ connection: ProviderConnection; modelsResult: ProviderValidationStatus | null }>
+    save(params: { collection: 'accounts' | 'apiKeys' | 'relays'; connection: Partial<ProviderConnection> & { id: string }; track?: Track }): Promise<{ connection: ProviderConnection; modelsResult: ProviderValidationStatus | null; modelsResults?: Partial<Record<Track, ProviderValidationStatus>>; detectionResult?: ProviderValidationStatus | null }>
     remove(params: { collection: 'accounts' | 'apiKeys' | 'relays'; id: string }): Promise<{ ok: boolean }>
   }
   providerAuth?: {
@@ -147,7 +153,7 @@ export interface ElectronAPI {
     run(params: { connectionId: string; track: Track; modelId?: string }): Promise<ProviderValidationStatus>
   }
   providerDefaults?: {
-    save(params: { defaults: Record<Track, ProviderDefaultSelection | null> }): Promise<Record<Track, ProviderDefaultSelection | null>>
+    save(params: { defaults: Partial<Record<Track, ProviderDefaultSelection | null>> }): Promise<Record<Track, ProviderDefaultSelection | null>>
   }
 
   saveAssetToDisk(params: SaveAssetParams): Promise<string>

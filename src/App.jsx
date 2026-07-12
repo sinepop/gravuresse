@@ -28,7 +28,9 @@ import './styles/global.css'
 /** @typedef {import('./types/domain').Conversation} Conversation */
 /** @typedef {import('./types/domain').ConversationBridge} ConversationBridge */
 /** @typedef {import('./types/domain').Message} Message */
+/** @typedef {import('./types/domain').ProviderConnectionsConfig} ProviderConnectionsConfig */
 /** @typedef {import('./types/domain').StoredConversation} StoredConversation */
+/** @typedef {import('./types/domain').Track} Track */
 /** @typedef {Record<string, unknown>} UnknownRecord */
 /** @typedef {'image' | 'video'} WorkspaceModule */
 /** @typedef {{ id: WorkspaceModule, icon: 'image' | 'film', labels: Record<string, string> }} WorkspaceModuleDefinition */
@@ -39,6 +41,7 @@ import './styles/global.css'
 /** @typedef {{ x: number, y: number, asset: Asset }} ContextMenuState */
 /** @typedef {{ nonce: number, asset: Pick<Asset, 'id' | 'url' | 'type' | 'label'> }} ReferenceIntent */
 /** @typedef {{ nonce: number, text: string, parentAssetId: string, createdFrom: string }} ComposerIntent */
+/** @typedef {{ connectionId?: string, providerId?: string, modelId?: string, model?: string }} ActiveSelection */
 
 /** @param {unknown} value @returns {value is UnknownRecord} */
 function isRecord(value) {
@@ -83,8 +86,8 @@ const MODULES = [
 
 export default function App() {
   const { config, providerLists, save } = useConfig()
-  const [liveConnections, setLiveConnections] = useState(/** @type {Record<string, unknown> | null} */ (null))
-  const [activeSelections, setActiveSelections] = useState(/** @type {Record<string, unknown>} */ ({}))
+  const [liveConnections, setLiveConnections] = useState(/** @type {ProviderConnectionsConfig | null} */ (null))
+  const [activeSelections, setActiveSelections] = useState(/** @type {Partial<Record<Track, ActiveSelection>>} */ ({}))
   const runtimeConfig = useMemo(() => liveConnections && config ? { ...config, connections: liveConnections } : config, [config, liveConnections])
   const canvas = useCanvas()
   const taskQueue = useTaskQueue(canvas)
@@ -94,7 +97,8 @@ export default function App() {
   const [activeModule, setActiveModule] = useState(/** @type {WorkspaceModule} */ ('image'))
   const [referenceIntent, setReferenceIntent] = useState(/** @type {ReferenceIntent | null} */ (null))
   const [composerIntent, setComposerIntent] = useState(/** @type {ComposerIntent | null} */ (null))
-  const lang = textOr(recordOf(runtimeConfig?.general).language, 'zh')
+  const generalConfig = recordOf(runtimeConfig?.general)
+  const lang = textOr(generalConfig.language, 'zh')
 
   // Conversation management
   const [conversations, setConversations] = useState(/** @type {StoredConversation[]} */ ([]))
@@ -519,7 +523,7 @@ export default function App() {
     }
   }, [applyConversation, flushActiveConversation, lang])
 
-  const handleImportImages = useCallback(async ({ files = [], position = null } = {}) => {
+  const handleImportImages = useCallback(/** @param {{ files?: File[], position?: { x: number, y: number } | null }} [options] */ async ({ files = /** @type {File[]} */ ([]), position = null } = {}) => {
     const ensured = await ensureActiveConversation()
     if (!ensured?.id) throw new Error(t('importImagesFail', lang))
     const results = []
@@ -532,8 +536,8 @@ export default function App() {
             mime: file.type || '',
             bytes
           }))
-        } catch (error) {
-          results.push({ canceled: false, imported: [], rejected: [{ name: file.name || 'image', reason: error?.message || t('importImagesFail', lang) }] })
+        } catch (/** @type {unknown} */ error) {
+          results.push({ canceled: false, imported: [], rejected: [{ name: file.name || 'image', reason: error instanceof Error ? error.message : t('importImagesFail', lang) }] })
         }
       }
     } else {
@@ -620,7 +624,7 @@ export default function App() {
       patchStoredConversation(activeConvIdRef.current, conv => updateConversationAsset(conv, asset.id, { isMaterial }))
     }
     if (action === 'useAsReference') {
-      if (runtimeConfig?.general?.enableReference !== true) return
+      if (generalConfig.enableReference !== true) return
       if (!asset?.url) return
       setReferenceIntent({
         nonce: Date.now(),
@@ -637,7 +641,7 @@ export default function App() {
       if (asset.type && asset.type !== 'image') return
       const ensured = await ensureActiveConversation({ forSend: true })
       if (ensured?.id) {
-        const lang = runtimeConfig?.general?.language || 'zh'
+        const lang = textOr(generalConfig.language, 'zh')
         chat.regenerateDirectly(asset, lang, { conversationId: ensured.id })
       }
     }
@@ -645,13 +649,13 @@ export default function App() {
       if (asset.type && asset.type !== 'image') return
       const ensured = await ensureActiveConversation({ forSend: true })
       if (ensured?.id) {
-        const lang = runtimeConfig?.general?.language || 'zh'
+        const lang = textOr(generalConfig.language, 'zh')
         chat.createDerivedImageDirectly(asset, lang, { conversationId: ensured.id, createdFrom: 'variation' })
       }
     }
     if (action === 'restyle') {
       if (asset.type && asset.type !== 'image') return
-      const lang = runtimeConfig?.general?.language || 'zh'
+      const lang = textOr(generalConfig.language, 'zh')
       const styleDirection = window.prompt(t('styleDirectionPrompt', lang), '')
       if (!styleDirection?.trim()) return
       const ensured = await ensureActiveConversation({ forSend: true })
@@ -660,7 +664,7 @@ export default function App() {
       }
     }
     if (action === 'toVideo') {
-      if (runtimeConfig?.general?.enableVideo !== true) return
+      if (generalConfig.enableVideo !== true) return
       const ensured = await ensureActiveConversation({ forSend: true })
       if (!ensured?.id) return
       setActiveModule('video')
@@ -677,15 +681,15 @@ export default function App() {
         sourceImageId: asset.id
       })
     }
-  }, [canvas, chat, runtimeConfig, ensureActiveConversation, activeModule, patchStoredConversation, lang])
+  }, [canvas, chat, generalConfig, ensureActiveConversation, activeModule, patchStoredConversation, lang])
 
   const openSettings = useCallback(/** @param {string} [page] */ (page = 'accounts') => {
     setSettingsPage(page)
     setSettingsOpen(true)
   }, [])
 
-  const videoEnabled = runtimeConfig?.general?.enableVideo === true
-  const referenceEnabled = runtimeConfig?.general?.enableReference === true
+  const videoEnabled = generalConfig.enableVideo === true
+  const referenceEnabled = generalConfig.enableReference === true
   const visibleModules = useMemo(
     () => MODULES.filter(module => module.id !== 'video' || videoEnabled),
     [videoEnabled]
@@ -721,7 +725,7 @@ export default function App() {
         <main className="module-content">
           <div className="workspace-main">
             <div className="chat-pane">
-                <ChatPanel chat={chat} config={runtimeConfig} providerLists={providerLists} activeSelections={activeSelections} onConnectionModelChange={(track, selection) => setActiveSelections(current => ({ ...current, [track]: selection }))} lang={lang} generationMode={activeModule}
+                <ChatPanel chat={chat} config={runtimeConfig} providerLists={providerLists} activeSelections={activeSelections} onConnectionModelChange={/** @param {Track} track @param {ActiveSelection} selection */ (track, selection) => setActiveSelections(current => ({ ...current, [track]: selection }))} lang={lang} generationMode={activeModule}
                   conversations={conversations} activeConvId={activeConvId}
                   onSwitchConv={handleSwitchConv} onNewConv={handleNewConv} onDeleteConv={handleDeleteConv}
                   onRenameConv={handleRenameConv} onExportConv={handleExportConv} onExportProject={handleExportProject} onImportConv={handleImportConv}

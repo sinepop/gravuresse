@@ -1,7 +1,52 @@
+// @ts-check
+
 import { useCallback, useEffect, useState } from 'react'
 import Ic from '../icons'
 import { REDACTED_API_KEY, labelS, inputS, btnS, chipS, SectionHeading, localText, LatencyBadge, StatusBadge, validationEvidenceLabel } from './shared.jsx'
 
+/** @typedef {import('../../types/domain').ProviderConnectionsConfig} ProviderConnectionsConfig */
+/** @typedef {import('../../types/domain').ProviderValidationStatus} ProviderValidationStatus */
+/** @typedef {Record<string, unknown>} UnknownRecord */
+/** @typedef {{ id: string, baseUrl: string, persistedBaseUrl: string, apiKey: string, hasCredential: boolean, detectedProtocol: string, detectedAt: string, detectedEndpoints: UnknownRecord | null, modelsCount: number, modelCounts: { chat: number, image: number, video: number }, validation: ProviderValidationStatus | null, cardError: string, diagnostic: string, diagnosticCopied: boolean }} RelayDraft */
+
+/** @param {unknown} value @returns {value is UnknownRecord} */
+function isRecord(value) { return Boolean(value && typeof value === 'object' && !Array.isArray(value)) }
+
+/** @param {unknown} value @returns {UnknownRecord} */
+function recordOf(value) { return isRecord(value) ? value : {} }
+
+/** @param {unknown} value @returns {string} */
+function text(value) { return typeof value === 'string' ? value : '' }
+
+/** @param {unknown} error @param {string} fallback */
+function errorMessage(error, fallback) { return error instanceof Error ? error.message : fallback }
+
+/** @param {unknown} value @returns {ProviderValidationStatus['evidence'] | undefined} */
+function validationEvidence(value) {
+  if (value === 'assistant_output' || value === 'protocol_response' || value === 'model_directory' || value === 'capability' || value === 'none') return value
+  return undefined
+}
+
+/** @param {unknown} value @returns {ProviderValidationStatus | null} */
+function validationOf(value) {
+  if (!isRecord(value)) return null
+  const evidence = validationEvidence(value.evidence)
+  return {
+    ok: value.ok === true,
+    status: text(value.status),
+    level: text(value.level),
+    checkedAt: text(value.checkedAt),
+    latencyMs: typeof value.latencyMs === 'number' ? value.latencyMs : null,
+    endpointHost: text(value.endpointHost),
+    modelId: text(value.modelId),
+    errorCode: text(value.errorCode),
+    message: text(value.message),
+    error: text(value.error),
+    ...(evidence ? { evidence } : {})
+  }
+}
+
+/** @returns {RelayDraft} */
 const EMPTY = () => ({
   id: `relay-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
   baseUrl: '',
@@ -19,11 +64,13 @@ const EMPTY = () => ({
   diagnosticCopied: false,
 })
 
+/** @param {unknown} value @returns {string} */
 function endpointHost(value) {
-  if (!value) return ''
+  if (typeof value !== 'string' || !value) return ''
   try { return new URL(value).host } catch { return '' }
 }
 
+/** @param {unknown} endpoints @returns {string} */
 function firstEndpointHost(endpoints) {
   if (!endpoints || typeof endpoints !== 'object') return ''
   for (const value of Object.values(endpoints)) {
@@ -34,20 +81,22 @@ function firstEndpointHost(endpoints) {
 }
 
 // Deliberately copy only renderer-editable fields and public detection metadata.
+/** @param {unknown} item @returns {RelayDraft} */
 export function normalizeRelay(item) {
-  const validation = item?.validation || item?.validations?.chat || null
-  const models = Array.isArray(item?.models) ? item.models : []
+  const input = recordOf(item)
+  const validation = validationOf(input.validation || recordOf(input.validations).chat)
+  const models = Array.isArray(input.models) ? input.models.filter(isRecord) : []
   return {
     ...EMPTY(),
-    id: String(item?.id || EMPTY().id),
-    baseUrl: String(item?.baseUrl || ''),
-    persistedBaseUrl: String(item?.baseUrl || ''),
+    id: String(input.id || EMPTY().id),
+    baseUrl: String(input.baseUrl || ''),
+    persistedBaseUrl: String(input.baseUrl || ''),
     apiKey: '',
-    hasCredential: item?.apiKey === REDACTED_API_KEY || Boolean(item?.hasCredential),
-    detectedProtocol: String(item?.detectedProtocol || ''),
-    detectedAt: String(item?.detectedAt || validation?.checkedAt || ''),
-    detectedEndpoints: item?.detectedEndpoints && typeof item.detectedEndpoints === 'object' ? item.detectedEndpoints : null,
-    modelsCount: models.length || Number(item?.modelsCount || 0),
+    hasCredential: input.apiKey === REDACTED_API_KEY || Boolean(input.hasCredential),
+    detectedProtocol: String(input.detectedProtocol || ''),
+    detectedAt: String(input.detectedAt || validation?.checkedAt || ''),
+    detectedEndpoints: isRecord(input.detectedEndpoints) ? input.detectedEndpoints : null,
+    modelsCount: models.length || Number(input.modelsCount || 0),
     modelCounts: {
       chat: models.filter(model => model.capability === 'chat').length,
       image: models.filter(model => model.capability === 'image').length,
@@ -57,10 +106,12 @@ export function normalizeRelay(item) {
   }
 }
 
+/** @param {RelayDraft} relay @param {string} lang */
 function relayName(relay, lang) {
   return endpointHost(relay.baseUrl) || localText(lang, '新中转', 'New relay')
 }
 
+/** @param {unknown} value @param {string} [secret=''] */
 function redactDiagnosticText(value, secret = '') {
   let text = String(value || '')
   if (secret && secret !== REDACTED_API_KEY) text = text.split(secret).join('[REDACTED]')
@@ -72,41 +123,47 @@ function redactDiagnosticText(value, secret = '') {
     .replace(/file:\/\/\/[^\s"']+/gi, '[LOCAL_PATH]')
 }
 
+/** @param {unknown} failure @param {string} lang */
 function relayFailureMessage(failure, lang) {
-  const protocol = ['openai', 'anthropic', 'gemini'].includes(failure?.protocol)
-    ? failure.protocol[0].toUpperCase() + failure.protocol.slice(1)
+  const input = recordOf(failure)
+  const protocolValue = text(input.protocol)
+  const protocol = ['openai', 'anthropic', 'gemini'].includes(protocolValue)
+    ? protocolValue[0].toUpperCase() + protocolValue.slice(1)
     : ''
-  const stage = failure?.stage === 'directory'
+  const stage = input.stage === 'directory'
     ? localText(lang, '模型目录', 'Model directory')
-    : failure?.stage === 'inference'
+    : input.stage === 'inference'
       ? localText(lang, '最小推理', 'Minimal inference')
-      : failure?.stage === 'normalize'
+      : input.stage === 'normalize'
         ? localText(lang, '地址解析', 'URL normalization')
         : ''
-  const status = Number.isInteger(failure?.statusCode) ? `HTTP ${failure.statusCode}` : ''
-  const path = /^\/[A-Za-z0-9._~!$&'()*+,;=:@{}/-]*$/.test(String(failure?.endpointPath || '')) ? failure.endpointPath : ''
-  const message = String(failure?.message || '')
+  const status = Number.isInteger(input.statusCode) ? `HTTP ${input.statusCode}` : ''
+  const path = /^\/[A-Za-z0-9._~!$&'()*+,;=:@{}/-]*$/.test(String(input.endpointPath || '')) ? text(input.endpointPath) : ''
+  const message = text(input.message)
   return [protocol, stage, status, path, message].filter(Boolean).join(' · ')
 }
 
+/** @param {unknown} failure @param {RelayDraft} relay @param {string} [secret=''] */
 export function relayFailureDiagnostic(failure, relay, secret = '') {
-  const reportedHost = String(failure?.endpointHost || '')
+  const input = recordOf(failure)
+  const reportedHost = text(input.endpointHost)
   const safeHost = /^[a-z0-9.-]+(?::\d+)?$/i.test(reportedHost) ? reportedHost : endpointHost(relay?.baseUrl)
-  const reportedTime = String(failure?.checkedAt || '')
+  const reportedTime = text(input.checkedAt)
   return JSON.stringify({
-    protocol: ['openai', 'anthropic', 'gemini'].includes(failure?.protocol) ? failure.protocol : 'unknown',
-    stage: failure?.stage === 'inference' ? 'inference' : failure?.stage === 'directory' ? 'directory' : 'unknown',
-    statusCode: Number.isInteger(failure?.statusCode) ? failure.statusCode : null,
-    errorCode: redactDiagnosticText(failure?.errorCode || failure?.code || 'RELAY_CONNECTION_FAILED', secret),
-    status: redactDiagnosticText(failure?.status || 'error', secret),
+    protocol: ['openai', 'anthropic', 'gemini'].includes(text(input.protocol)) ? text(input.protocol) : 'unknown',
+    stage: input.stage === 'inference' ? 'inference' : input.stage === 'directory' ? 'directory' : 'unknown',
+    statusCode: Number.isInteger(input.statusCode) ? input.statusCode : null,
+    errorCode: redactDiagnosticText(input.errorCode || input.code || 'RELAY_CONNECTION_FAILED', secret),
+    status: redactDiagnosticText(input.status || 'error', secret),
     endpointHost: safeHost || '',
-    endpointPath: /^\/[A-Za-z0-9._~!$&'()*+,;=:@{}/-]*$/.test(String(failure?.endpointPath || '')) ? failure.endpointPath : '',
+    endpointPath: /^\/[A-Za-z0-9._~!$&'()*+,;=:@{}/-]*$/.test(String(input.endpointPath || '')) ? text(input.endpointPath) : '',
     checkedAt: /^\d{4}-\d{2}-\d{2}T/.test(reportedTime) ? reportedTime : new Date().toISOString(),
-    latencyMs: Number.isFinite(failure?.latencyMs) ? failure.latencyMs : null,
-    message: redactDiagnosticText(failure?.message || 'Relay connection failed', secret),
+    latencyMs: typeof input.latencyMs === 'number' && Number.isFinite(input.latencyMs) ? input.latencyMs : null,
+    message: redactDiagnosticText(input.message || 'Relay connection failed', secret),
   }, null, 2)
 }
 
+/** @param {{ relay: RelayDraft, lang: string }} props */
 function RelaySummary({ relay, lang }) {
   const validation = relay.validation
   const host = validation?.endpointHost || firstEndpointHost(relay.detectedEndpoints) || endpointHost(relay.baseUrl)
@@ -134,6 +191,7 @@ function RelaySummary({ relay, lang }) {
   </div>
 }
 
+/** @param {{ relay: RelayDraft, onPatch: (changes: Partial<RelayDraft>) => void, onSave: () => unknown, onRemove: () => unknown, busy: boolean, busyAction: string, lang: string }} props */
 function RelayCard({ relay, onPatch, onSave, onRemove, busy, busyAction, lang }) {
   const canReuseCredential = relay.hasCredential && relay.baseUrl.trim() === relay.persistedBaseUrl
   const hasKey = Boolean(relay.apiKey) || canReuseCredential
@@ -173,8 +231,9 @@ function RelayCard({ relay, onPatch, onSave, onRemove, busy, busyAction, lang })
   </div>
 }
 
+/** @param {{ lang: string, onCanonicalChange?: (connections: ProviderConnectionsConfig) => void, onBusyChange?: (busy: boolean) => void }} props */
 export default function RelaysPage({ lang, onCanonicalChange, onBusyChange }) {
-  const [relays, setRelays] = useState([])
+  const [relays, setRelays] = useState(/** @type {RelayDraft[]} */ ([]))
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [busyId, setBusyId] = useState('')
@@ -188,10 +247,10 @@ export default function RelaysPage({ lang, onCanonicalChange, onBusyChange }) {
     try {
       const result = await window.electronAPI?.providerConnection?.list()
       setRelays((result?.connections?.relays || []).map(normalizeRelay))
-      onCanonicalChange?.(result?.connections)
+      if (result?.connections) onCanonicalChange?.(result.connections)
       setError('')
-    } catch (err) {
-      setError(err?.message || localText(lang, '读取失败', 'Load failed'))
+    } catch (/** @type {unknown} */ err) {
+      setError(errorMessage(err, localText(lang, '读取失败', 'Load failed')))
     } finally {
       setLoading(false)
     }
@@ -199,8 +258,10 @@ export default function RelaysPage({ lang, onCanonicalChange, onBusyChange }) {
 
   useEffect(() => { refresh() }, [refresh])
 
+  /** @param {string} id @param {Partial<RelayDraft>} changes */
   const patch = (id, changes) => setRelays(current => current.map(item => item.id === id ? { ...item, ...changes } : item))
 
+  /** @param {RelayDraft} relay */
   const save = async relay => {
     setBusyId(relay.id)
     setBusyAction('save')
@@ -223,12 +284,13 @@ export default function RelaysPage({ lang, onCanonicalChange, onBusyChange }) {
         return
       }
       await refresh()
-    } catch (err) {
+    } catch (/** @type {unknown} */ err) {
+      const error = recordOf(err)
       const failure = {
-        errorCode: err?.errorCode || err?.code || 'NETWORK_ERROR',
-        status: err?.status || 'error',
+        errorCode: text(error.errorCode) || text(error.code) || 'NETWORK_ERROR',
+        status: text(error.status) || 'error',
         endpointHost: endpointHost(relay.baseUrl),
-        message: err?.message || localText(lang, '连接失败', 'Connection failed'),
+        message: text(error.message) || errorMessage(err, localText(lang, '连接失败', 'Connection failed')),
       }
       const safeMessage = redactDiagnosticText(failure.message, credential)
       patch(relay.id, {
@@ -243,6 +305,7 @@ export default function RelaysPage({ lang, onCanonicalChange, onBusyChange }) {
     }
   }
 
+  /** @param {RelayDraft} relay */
   const remove = async relay => {
     if (!window.confirm(localText(lang, '确定删除此中转？', 'Delete this relay?'))) return
     setBusyId(relay.id)
@@ -250,8 +313,8 @@ export default function RelaysPage({ lang, onCanonicalChange, onBusyChange }) {
     try {
       await window.electronAPI?.providerConnection?.remove({ collection: 'relays', id: relay.id })
       await refresh()
-    } catch (err) {
-      setError(err?.message || localText(lang, '删除失败', 'Delete failed'))
+    } catch (/** @type {unknown} */ err) {
+      setError(errorMessage(err, localText(lang, '删除失败', 'Delete failed')))
     } finally { setBusyId(''); setBusyAction('') }
   }
 

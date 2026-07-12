@@ -107,6 +107,8 @@ export interface ConversationStorePayload {
 export interface ProviderProfile {
   id?: string
   providerId?: string
+  connectionId?: string
+  modelId?: string
   accountId?: string
   accountKind?: string
   baseUrl?: string
@@ -319,6 +321,7 @@ export interface ProviderValidationStatus {
   modelId: string
   errorCode: string
   message: string
+  error?: string
   evidence?: 'assistant_output' | 'protocol_response' | 'model_directory' | 'capability' | 'none'
   outputVerified?: boolean
   protocol?: 'openai' | 'anthropic' | 'gemini' | string
