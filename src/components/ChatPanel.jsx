@@ -1,3 +1,5 @@
+// @ts-check
+
 import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react'
 import MessageBubble from './MessageBubble'
 import ModelSelector from './ModelSelector'
@@ -5,11 +7,61 @@ import { t } from '../i18n'
 import Ic from './icons'
 import useSafeMediaUrl from '../hooks/useSafeMediaUrl'
 
+/** @typedef {import('../types/domain').Asset} Asset */
+/** @typedef {import('../types/domain').CanvasController} CanvasController */
+/** @typedef {import('../types/domain').ChatController} ChatController */
+/** @typedef {import('../types/domain').ConfigPayload} ConfigPayload */
+/** @typedef {import('../types/domain').GenerationSettings} GenerationSettings */
+/** @typedef {import('../types/domain').ProviderDefinition} ProviderDefinition */
+/** @typedef {import('../types/domain').ProviderLists} ProviderLists */
+/** @typedef {import('../types/domain').ProviderProfile} ProviderProfile */
+/** @typedef {import('../types/domain').StoredConversation} StoredConversation */
+/** @typedef {import('../types/domain').Track} Track */
+/** @typedef {Record<string, unknown>} UnknownRecord */
+/** @typedef {{ value: string, label: string }} ChipOption */
+/** @typedef {{ ratios?: string[], resolutions?: string[] }} MediaConstraints */
+/** @typedef {{ id: string, conversation: StoredConversation }} EnsureConversationResult */
+/** @typedef {{ nonce: number, asset: Asset }} ReferenceIntent */
+/** @typedef {{ nonce: number, text: string, parentAssetId: string, createdFrom: string }} ComposerIntent */
+
+/** @param {unknown} value @returns {value is UnknownRecord} */
+function isRecord(value) {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value))
+}
+
+/** @param {unknown} value @returns {UnknownRecord} */
+function recordOf(value) {
+  return isRecord(value) ? value : {}
+}
+
+/** @param {unknown} value @returns {string} */
+function text(value) {
+  return typeof value === 'string' ? value : ''
+}
+
+/** @param {unknown} value @returns {string[]} */
+function stringList(value) {
+  return Array.isArray(value) ? value.filter((item) => typeof item === 'string') : []
+}
+
+/** @param {unknown} value @returns {ProviderProfile} */
+function providerProfileOf(value) {
+  return recordOf(value)
+}
+
+/** @param {unknown} value @returns {MediaConstraints} */
+function mediaConstraintsOf(value) {
+  const source = recordOf(value)
+  return { ratios: stringList(source.ratios), resolutions: stringList(source.resolutions) }
+}
+
+/** @param {{ value: string, options: ChipOption[], onChange: (value: string) => void, style?: React.CSSProperties }} props */
 function ChipSelect({ value, options, onChange, style }) {
   const [open, setOpen] = useState(false)
-  const ref = useRef(null)
+  const ref = useRef(/** @type {HTMLDivElement | null} */ (null))
   useEffect(() => {
-    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    /** @param {MouseEvent} e */
+    const handler = (e) => { if (ref.current && e.target instanceof Node && !ref.current.contains(e.target)) setOpen(false) }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [])
@@ -61,14 +113,19 @@ const STYLE_PRESETS = [
   { value: 'paper cutout', label: { zh: '剪纸', en: 'Paper cutout' } },
 ]
 
+/** @param {string} value @param {string} lang */
 function styleLabel(value, lang) {
-  return STYLE_PRESETS.find(item => item.value === value || item.label.zh === value)?.label?.[lang] || value
+  const locale = lang === 'en' ? 'en' : 'zh'
+  return STYLE_PRESETS.find(item => item.value === value || item.label.zh === value)?.label?.[locale] || value
 }
 
+/** @param {unknown} value */
 function normalizeStyleValue(value) {
-  return STYLE_PRESETS.find(item => item.value === value || item.label.zh === value)?.value || value || ''
+  const input = text(value)
+  return STYLE_PRESETS.find(item => item.value === input || item.label.zh === input)?.value || input
 }
 
+/** @param {{ asset: Asset }} props */
 function SafeReferenceThumb({ asset }) {
   const { src } = useSafeMediaUrl(asset?.url, asset?.type)
   if (!src) return null
@@ -96,15 +153,19 @@ const FALLBACK_MEDIA_CONSTRAINTS = {
   }
 }
 
+/** @param {'image' | 'video'} track @param {ProviderLists} providerLists @param {ProviderProfile} current */
 function findProviderDef(track, providerLists = {}, current = {}) {
   const id = current?.id || current?.providerId || ''
   return (providerLists?.[track] || []).find(provider => provider.id === id) || null
 }
 
+/** @param {string} value @param {string} lang */
 function resolutionLabel(value, lang) {
-  return RESOLUTIONS.find(item => item.value === value)?.label?.[lang] || value
+  const locale = lang === 'en' ? 'en' : 'zh'
+  return RESOLUTIONS.find(item => item.value === value)?.label?.[locale] || value
 }
 
+/** @param {boolean} active @returns {React.CSSProperties} */
 const chipBtnS = (active) => ({
   background: active ? 'var(--accent-soft)' : 'var(--bg-surface)',
   border: `1px solid ${active ? 'var(--border-accent)' : 'var(--border-subtle)'}`,
@@ -115,6 +176,7 @@ const chipBtnS = (active) => ({
   display: 'flex', alignItems: 'center', gap: 4,
 })
 
+/** @returns {React.CSSProperties} */
 const selectChipS = () => ({
   background: 'var(--select-bg)', border: '1px solid var(--border-subtle)',
   borderRadius: 'var(--radius-sm)', padding: '3px 6px',
@@ -123,24 +185,52 @@ const selectChipS = () => ({
   transition: 'all 0.15s',
 })
 
+/**
+ * @param {{
+ *   chat: ChatController,
+ *   config: ConfigPayload | null,
+ *   providerLists: ProviderLists,
+ *   onProviderChange: (track: Track, patch: UnknownRecord) => void,
+ *   lang: string,
+ *   generationMode?: 'image' | 'video',
+ *   conversations: StoredConversation[],
+ *   activeConvId: string | null,
+ *   onSwitchConv: (id: string) => void,
+ *   onNewConv: () => void,
+ *   onDeleteConv: (id: string) => void,
+ *   onRenameConv: (id: string, title: string) => void,
+ *   onExportConv: () => void,
+ *   onExportProject?: () => void,
+ *   onImportConv?: () => void,
+ *   onEnsureConversation?: (options: { forSend?: boolean }) => Promise<EnsureConversationResult>,
+ *   conversationBusy?: boolean,
+ *   canvas: CanvasController,
+ *   referenceIntent?: ReferenceIntent | null,
+ *   onReferenceIntentConsumed?: (nonce: number) => void,
+ *   composerIntent?: ComposerIntent | null,
+ *   onComposerIntentConsumed?: (nonce: number) => void
+ * }} props
+ */
 export default function ChatPanel({ chat, config, providerLists, onProviderChange, lang, generationMode = 'image', conversations, activeConvId, onSwitchConv, onNewConv, onDeleteConv, onRenameConv, onExportConv, onExportProject, onImportConv, onEnsureConversation, conversationBusy = false, canvas, referenceIntent, onReferenceIntentConsumed, composerIntent, onComposerIntentConsumed }) {
+  const generalConfig = recordOf(config?.general)
+  const configuredProviders = recordOf(config?.providers)
   const [input, setInput] = useState('')
   const [showConvList, setShowConvList] = useState(false)
   const [showRefPicker, setShowRefPicker] = useState(false)
   const [showMaterialRefsOnly, setShowMaterialRefsOnly] = useState(false)
-  const [references, setReferences] = useState([])
-  const [composerGenerationMeta, setComposerGenerationMeta] = useState(null)
-  const [editingConvId, setEditingConvId] = useState(null)
+  const [references, setReferences] = useState(/** @type {Asset[]} */ ([]))
+  const [composerGenerationMeta, setComposerGenerationMeta] = useState(/** @type {GenerationSettings | null} */ (null))
+  const [editingConvId, setEditingConvId] = useState(/** @type {string | null} */ (null))
   const [editTitle, setEditTitle] = useState('')
-  const [genRatio, setGenRatio] = useState(config?.general?.defaultRatio || '1:1')
-  const [genStyle, setGenStyle] = useState(normalizeStyleValue(config?.general?.defaultStyle))
-  const [genResolution, setGenResolution] = useState(config?.general?.defaultResolution || '1024')
+  const [genRatio, setGenRatio] = useState(text(generalConfig.defaultRatio) || '1:1')
+  const [genStyle, setGenStyle] = useState(normalizeStyleValue(generalConfig.defaultStyle))
+  const [genResolution, setGenResolution] = useState(text(generalConfig.defaultResolution) || '1024')
   const [showGenSettings, setShowGenSettings] = useState(false)
-  const endRef = useRef(null)
-  const textareaRef = useRef(null)
+  const endRef = useRef(/** @type {HTMLDivElement | null} */ (null))
+  const textareaRef = useRef(/** @type {HTMLTextAreaElement | null} */ (null))
   const sendingRef = useRef(false)
 
-  const enableReference = config?.general?.enableReference === true
+  const enableReference = generalConfig.enableReference === true
   const referenceAssets = (canvas?.allAssets || []).filter(asset => asset.url)
   const materialReferenceAssets = referenceAssets.filter(asset => asset.isMaterial === true)
   const visibleReferenceAssets = (showMaterialRefsOnly ? materialReferenceAssets : referenceAssets)
@@ -149,13 +239,13 @@ export default function ChatPanel({ chat, config, providerLists, onProviderChang
   const hasReferenceAssets = referenceAssets.length > 0
   const modeHint = t(generationMode === 'video' ? 'videoModeHint' : 'imageModeHint', lang)
   const mediaTrack = generationMode === 'video' ? 'video' : 'image'
-  const mediaProvider = config?.providers?.[mediaTrack] || {}
-  const mediaProviderId = mediaProvider.id || (mediaTrack === 'image' ? 'custom-image' : 'custom-video')
+  const mediaProvider = providerProfileOf(configuredProviders[mediaTrack])
+  const mediaProviderId = text(mediaProvider.id) || (mediaTrack === 'image' ? 'custom-image' : 'custom-video')
   const mediaProviderDef = findProviderDef(mediaTrack, providerLists, mediaProvider)
-  const mediaConstraints = mediaProviderDef?.constraints?.[mediaTrack] ||
-    mediaProviderDef?.meta?.constraints?.[mediaTrack] ||
-    FALLBACK_MEDIA_CONSTRAINTS[mediaTrack]?.[mediaProviderId] ||
-    {}
+  const definitionConstraints = recordOf(recordOf(mediaProviderDef?.constraints)[mediaTrack])
+  const metadataConstraints = recordOf(recordOf(recordOf(mediaProviderDef?.meta).constraints)[mediaTrack])
+  const fallbackConstraints = mediaTrack === 'image' ? recordOf(recordOf(FALLBACK_MEDIA_CONSTRAINTS.image)[mediaProviderId]) : {}
+  const mediaConstraints = mediaConstraintsOf(Object.keys(definitionConstraints).length ? definitionConstraints : Object.keys(metadataConstraints).length ? metadataConstraints : fallbackConstraints)
   const ratioOptions = useMemo(() => {
     const ratios = Array.isArray(mediaConstraints.ratios) && mediaConstraints.ratios.length ? mediaConstraints.ratios : ASPECT_RATIOS
     return ratios.map(ratio => ({ value: ratio, label: ratio }))
@@ -170,11 +260,11 @@ export default function ChatPanel({ chat, config, providerLists, onProviderChang
   // Sync settings when config changes
   useEffect(() => {
     if (config?.general) {
-      setGenRatio(config.general.defaultRatio || '1:1')
-      setGenStyle(normalizeStyleValue(config.general.defaultStyle))
-      setGenResolution(config.general.defaultResolution || '1024')
+      setGenRatio(text(generalConfig.defaultRatio) || '1:1')
+      setGenStyle(normalizeStyleValue(generalConfig.defaultStyle))
+      setGenResolution(text(generalConfig.defaultResolution) || '1024')
     }
-  }, [config?.general?.defaultRatio, config?.general?.defaultStyle, config?.general?.defaultResolution])
+  }, [config?.general, generalConfig.defaultRatio, generalConfig.defaultStyle, generalConfig.defaultResolution])
 
   useEffect(() => {
     if (ratioOptions.length > 0 && !ratioOptions.some(option => option.value === genRatio)) {
@@ -187,15 +277,15 @@ export default function ChatPanel({ chat, config, providerLists, onProviderChang
 
   // Elapsed timer for thinking state
   const [elapsed, setElapsed] = useState(0)
-  const timerRef = useRef(null)
+  const timerRef = useRef(/** @type {ReturnType<typeof setInterval> | null} */ (null))
   useEffect(() => {
     if (chat.loading) {
       setElapsed(0)
       timerRef.current = setInterval(() => setElapsed(p => p + 1), 1000)
     } else {
-      clearInterval(timerRef.current)
+      if (timerRef.current) clearInterval(timerRef.current)
     }
-    return () => clearInterval(timerRef.current)
+    return () => { if (timerRef.current) clearInterval(timerRef.current) }
   }, [chat.loading])
 
   useEffect(() => {
@@ -224,7 +314,7 @@ export default function ChatPanel({ chat, config, providerLists, onProviderChang
         style: genStyle,
         resolution: genResolution,
         generationMode,
-        ...composerGenerationMeta,
+        ...(composerGenerationMeta || {}),
         conversationId: ensured?.id,
         conversationSnapshot: ensured?.conversation
       })
@@ -238,19 +328,20 @@ export default function ChatPanel({ chat, config, providerLists, onProviderChang
     }
   }, [input, chat, references, genRatio, genStyle, genResolution, generationMode, composerGenerationMeta, onEnsureConversation, conversationBusy])
 
-  const addReference = useCallback((asset) => {
+  const addReference = useCallback(/** @param {Asset} asset */ (asset) => {
     if (references.find(r => r.id === asset.id)) return
     setReferences(prev => [...prev, { id: asset.id, url: asset.url, type: asset.type, label: asset.label }])
     setShowRefPicker(false)
   }, [references])
 
   useEffect(() => {
-    const asset = referenceIntent?.asset
-    if (!asset?.id || !asset.url) return
+    const intent = referenceIntent
+    const asset = intent?.asset
+    if (!intent || !asset?.id || !asset.url) return
     addReference(asset)
     setShowRefPicker(false)
     textareaRef.current?.focus()
-    onReferenceIntentConsumed?.(referenceIntent.nonce)
+    onReferenceIntentConsumed?.(intent.nonce)
   }, [referenceIntent?.nonce, addReference, onReferenceIntentConsumed])
 
   useEffect(() => {
@@ -265,16 +356,17 @@ export default function ChatPanel({ chat, config, providerLists, onProviderChang
     onComposerIntentConsumed?.(composerIntent.nonce)
   }, [composerIntent?.nonce, onComposerIntentConsumed])
 
-  const removeReference = useCallback((id) => {
+  const removeReference = useCallback(/** @param {string} id */ (id) => {
     setReferences(prev => prev.filter(r => r.id !== id))
   }, [])
 
+  /** @param {React.KeyboardEvent<HTMLTextAreaElement>} e */
   const handleKeyDown = (e) => {
-    if (e.nativeEvent?.isComposing || e.isComposing) return
+    if (e.nativeEvent?.isComposing) return
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() }
   }
 
-  const startRename = useCallback((conv) => {
+  const startRename = useCallback(/** @param {StoredConversation} conv */ (conv) => {
     setEditingConvId(conv.id)
     setEditTitle(conv.title || '')
   }, [])
@@ -292,17 +384,19 @@ export default function ChatPanel({ chat, config, providerLists, onProviderChang
     setEditTitle('')
   }, [])
 
+  /** @param {string | undefined} iso */
   const formatDate = (iso) => {
     if (!iso) return ''
     const d = new Date(iso)
     const now = new Date()
-    const diff = now - d
+    const diff = now.getTime() - d.getTime()
     if (diff < 60000) return t('now', lang)
     if (diff < 3600000) return `${Math.floor(diff / 60000)}m`
     if (diff < 86400000) return `${Math.floor(diff / 3600000)}h`
     return d.toLocaleDateString()
   }
 
+  /** @param {number} s */
   const formatElapsed = (s) => {
     const m = Math.floor(s / 60)
     const sec = s % 60
@@ -431,8 +525,8 @@ export default function ChatPanel({ chat, config, providerLists, onProviderChang
               </div>
               <button onClick={(e) => { e.stopPropagation(); if (window.confirm(t('deleteConvConfirm', lang))) onDeleteConv(conv.id) }}
                 style={{ background: 'none', border: 'none', color: 'var(--text-ghost)', cursor: 'pointer', padding: 2, opacity: 0.5, transition: 'opacity 0.15s' }}
-                onMouseEnter={e => e.currentTarget.style.opacity = 1}
-                onMouseLeave={e => e.currentTarget.style.opacity = 0.5}
+                onMouseEnter={e => e.currentTarget.style.opacity = '1'}
+                onMouseLeave={e => e.currentTarget.style.opacity = '0.5'}
               >
                 <Ic n="trash" size={10} />
               </button>
@@ -661,7 +755,7 @@ export default function ChatPanel({ chat, config, providerLists, onProviderChang
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
               <span style={{ fontSize: 10, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{t('style', lang)}</span>
-              <ChipSelect value={genStyle} options={[{ value: '', label: t('noStyle', lang) }, ...STYLE_PRESETS.map(s => ({ value: s.value, label: s.label[lang] || s.value }))]} onChange={setGenStyle} style={selectChipS()} />
+              <ChipSelect value={genStyle} options={[{ value: '', label: t('noStyle', lang) }, ...STYLE_PRESETS.map(s => ({ value: s.value, label: s.label[lang === 'en' ? 'en' : 'zh'] || s.value }))]} onChange={setGenStyle} style={selectChipS()} />
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
               <span style={{ fontSize: 10, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{t('resolution', lang)}</span>

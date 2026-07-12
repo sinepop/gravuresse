@@ -1,8 +1,14 @@
+// @ts-check
+
 import { useState, useRef, useCallback, useEffect } from 'react'
 import Ic from './icons'
 import { t } from '../i18n'
 import useSafeMediaUrl from '../hooks/useSafeMediaUrl'
 
+/** @typedef {import('../types/domain').Asset} Asset */
+/** @typedef {Parameters<typeof Ic>[0]['n']} IconName */
+
+/** @param {{ src: string, alt?: string }} props */
 function ZoomableImage({ src, alt }) {
   const [scale, setScale] = useState(1)
   const [offset, setOffset] = useState({ x: 0, y: 0 })
@@ -11,16 +17,17 @@ function ZoomableImage({ src, alt }) {
   const dragStart = useRef({ x: 0, y: 0 })
   const offsetStart = useRef({ x: 0, y: 0 })
   const offsetRef = useRef({ x: 0, y: 0 })
-  const containerRef = useRef(null)
+  const containerRef = useRef(/** @type {HTMLDivElement | null} */ (null))
 
   useEffect(() => { offsetRef.current = offset }, [offset])
 
+  /** @param {number} s */
   const clampScale = (s) => Math.min(Math.max(s, 0.2), 10)
   const resetZoom = () => { setScale(1); setOffset({ x: 0, y: 0 }) }
   const zoomIn = () => setScale(prev => clampScale(prev * 1.3))
   const zoomOut = () => setScale(prev => clampScale(prev / 1.3))
 
-  const handleWheel = useCallback((e) => {
+  const handleWheel = useCallback(/** @param {React.WheelEvent<HTMLDivElement>} e */ (e) => {
     e.preventDefault()
     e.stopPropagation()
     setScale(prev => clampScale(prev * (e.deltaY > 0 ? 0.9 : 1.1)))
@@ -29,6 +36,7 @@ function ZoomableImage({ src, alt }) {
   useEffect(() => {
     const container = containerRef.current
     if (!container) return
+    /** @param {MouseEvent} e */
     const onMouseDown = (e) => {
       if (e.button !== 0) return
       e.preventDefault()
@@ -37,6 +45,7 @@ function ZoomableImage({ src, alt }) {
       dragStart.current = { x: e.clientX, y: e.clientY }
       offsetStart.current = { ...offsetRef.current }
     }
+    /** @param {MouseEvent} e */
     const onMouseMove = (e) => {
       if (!dragging.current) return
       setOffset({
@@ -95,12 +104,14 @@ function ZoomableImage({ src, alt }) {
   )
 }
 
+/** @type {React.CSSProperties} */
 const zoomBtnStyle = {
   background: 'transparent', border: 'none', color: 'var(--text-white)', cursor: 'pointer',
   width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center',
   borderRadius: 4, padding: 0
 }
 
+/** @param {{ label: string, value: React.ReactNode }} props */
 function DetailRow({ label, value }) {
   if (value === undefined || value === null || value === '') return null
   return (
@@ -111,6 +122,7 @@ function DetailRow({ label, value }) {
   )
 }
 
+/** @param {{ asset: Asset }} props */
 function LinkedAssetPreview({ asset }) {
   const { src } = useSafeMediaUrl(asset?.url, asset?.type)
   if (!src) return null
@@ -121,8 +133,9 @@ function LinkedAssetPreview({ asset }) {
   )
 }
 
+/** @param {{ label: string, ids?: string[], assets?: Asset[], onSelectAsset?: (id: string) => void, lang: string }} props */
 function AssetLinksRow({ label, ids = [], assets = [], onSelectAsset, lang }) {
-  const [hoveredId, setHoveredId] = useState(null)
+  const [hoveredId, setHoveredId] = useState(/** @type {string | null} */ (null))
   const refs = ids.map(id => {
     const asset = assets.find(item => item.id === id)
     return { id, asset, label: assetNameById(assets, id, lang) }
@@ -187,6 +200,7 @@ function AssetLinksRow({ label, ids = [], assets = [], onSelectAsset, lang }) {
   )
 }
 
+/** @param {{ icon: IconName, label: string, onClick?: () => void, danger?: boolean, disabled?: boolean }} props */
 function ActionButton({ icon, label, onClick, danger = false, disabled = false }) {
   return (
     <button onClick={onClick} disabled={disabled} style={{
@@ -210,6 +224,7 @@ function ActionButton({ icon, label, onClick, danger = false, disabled = false }
   )
 }
 
+/** @param {Asset[]} assets @param {string} id @param {string} lang */
 function assetNameById(assets, id, lang) {
   if (!id) return ''
   const asset = assets?.find(item => item.id === id)
@@ -217,6 +232,19 @@ function assetNameById(assets, id, lang) {
   return asset.label
 }
 
+/**
+ * @param {{
+ *   asset: Asset,
+ *   allAssets?: Asset[],
+ *   onClose: () => void,
+ *   onDelete: () => void,
+ *   onAction?: (action: string, asset: Asset) => void | Promise<void>,
+ *   onSelectAsset?: (id: string) => void,
+ *   lang: string,
+ *   videoEnabled?: boolean,
+ *   referenceEnabled?: boolean
+ * }} props
+ */
 export default function AssetDetail({ asset, allAssets = [], onClose, onDelete, onAction, onSelectAsset, lang, videoEnabled = false, referenceEnabled = false }) {
   const [lightbox, setLightbox] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -240,6 +268,7 @@ export default function AssetDetail({ asset, allAssets = [], onClose, onDelete, 
 
   useEffect(() => {
     if (!lightbox) return
+    /** @param {KeyboardEvent} e */
     const handler = (e) => { if (e.key === 'Escape') setLightbox(false) }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
@@ -249,7 +278,7 @@ export default function AssetDetail({ asset, allAssets = [], onClose, onDelete, 
     if (!asset?.url || saving) return
     setSaving(true)
     try {
-      await window.electronAPI.saveAssetWithDialog({ url: asset.url, label: asset.label, type: asset.type })
+      await window.electronAPI?.saveAssetWithDialog({ url: asset.url, label: asset.label, type: asset.type })
     } catch (e) {
       console.error('Save failed:', e)
     } finally {

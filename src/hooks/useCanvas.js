@@ -1,23 +1,39 @@
+// @ts-check
+
 import { useState, useCallback, useMemo, useRef } from 'react'
 import { createAsset, mergeAsset } from '../utils/assetFactory'
 
+/** @typedef {import('../types/domain').Asset} Asset */
+/** @typedef {import('../types/domain').AssetMutationOptions} AssetMutationOptions */
+/** @typedef {import('../types/domain').CanvasController} CanvasController */
+/** @typedef {import('../types/domain').CanvasViewMode} CanvasViewMode */
+/** @typedef {Record<string, unknown>} UnknownRecord */
+
+/** @param {unknown} value @returns {value is UnknownRecord} */
+function isRecord(value) {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value))
+}
+
+/** @param {Asset[]} assets @returns {Asset[]} */
 function cloneAssets(assets) {
   if (typeof structuredClone === 'function') return structuredClone(assets)
   return JSON.parse(JSON.stringify(assets))
 }
 
+/** @param {unknown} assets @returns {Asset[]} */
 function normalizeAssets(assets) {
   return Array.isArray(assets) ? assets.map(asset => createAsset(asset)) : []
 }
 
+/** @returns {CanvasController} */
 export default function useCanvas() {
-  const [assets, setAssets] = useState([])
-  const [selectedId, setSelectedId] = useState(null)
-  const [viewMode, setViewMode] = useState('grid')
-  const undoStack = useRef([])
-  const redoStack = useRef([])
+  const [assets, setAssets] = useState(/** @type {Asset[]} */ ([]))
+  const [selectedId, setSelectedId] = useState(/** @type {string | null} */ (null))
+  const [viewMode, setViewMode] = useState(/** @type {CanvasViewMode} */ ('grid'))
+  const undoStack = useRef(/** @type {Asset[][]} */ ([]))
+  const redoStack = useRef(/** @type {Asset[][]} */ ([]))
 
-  const commitAssets = useCallback((updater, options = {}) => {
+  const commitAssets = useCallback(/** @param {Asset[] | ((assets: Asset[]) => Asset[])} updater @param {AssetMutationOptions} [options] */ (updater, options = {}) => {
     setAssets(prev => {
       const next = typeof updater === 'function' ? updater(prev) : updater
       if (next === prev) return prev
@@ -30,13 +46,14 @@ export default function useCanvas() {
     })
   }, [])
 
-  const addAsset = useCallback((asset, options = {}) => {
+  const addAsset = useCallback(/** @param {unknown} asset @param {AssetMutationOptions} [options] */ (asset, options = {}) => {
     const item = createAsset(asset)
     commitAssets(prev => [item, ...prev], options)
     return item
   }, [commitAssets])
 
-  const addPlaceholder = useCallback((label, asset = {}, options = {}) => {
+  const addPlaceholder = useCallback(/** @param {string} label @param {unknown} [asset] @param {AssetMutationOptions} [options] */ (label, asset = {}, options = {}) => {
+    const source = isRecord(asset) ? asset : {}
     const item = createAsset({
       type: 'image',
       label: label || 'Generating...',
@@ -45,19 +62,19 @@ export default function useCanvas() {
       model: '',
       ratio: '1:1',
       style: '',
-      ...asset,
+      ...source,
       _generating: true
     })
     commitAssets(prev => [item, ...prev], options)
     return item.id
   }, [commitAssets])
 
-  const removeAsset = useCallback((id, options = {}) => {
+  const removeAsset = useCallback(/** @param {string} id @param {AssetMutationOptions} [options] */ (id, options = {}) => {
     commitAssets(prev => prev.filter(a => a.id !== id), options)
     setSelectedId(prev => prev === id ? null : prev)
   }, [commitAssets])
 
-  const replaceAssets = useCallback((nextAssets) => {
+  const replaceAssets = useCallback(/** @param {unknown} nextAssets */ (nextAssets) => {
     const normalized = normalizeAssets(nextAssets)
     undoStack.current = []
     redoStack.current = []
@@ -65,15 +82,16 @@ export default function useCanvas() {
     return normalized
   }, [])
 
-  const updateAsset = useCallback((id, patch, options = {}) => {
+  const updateAsset = useCallback(/** @param {string} id @param {unknown} patch @param {AssetMutationOptions} [options] */ (id, patch, options = {}) => {
     commitAssets(prev => prev.map(a => a.id === id ? mergeAsset(a, patch) : a), options)
   }, [commitAssets])
 
-  const updateAssets = useCallback((patches, options = {}) => {
-    commitAssets(prev => prev.map(a => patches[a.id] ? mergeAsset(a, patches[a.id]) : a), options)
+  const updateAssets = useCallback(/** @param {unknown} patches @param {AssetMutationOptions} [options] */ (patches, options = {}) => {
+    const patchMap = isRecord(patches) ? patches : {}
+    commitAssets(prev => prev.map(a => patchMap[a.id] ? mergeAsset(a, patchMap[a.id]) : a), options)
   }, [commitAssets])
 
-  const getAssetById = useCallback((id) => assets.find(a => a.id === id), [assets])
+  const getAssetById = useCallback(/** @param {string} id */ (id) => assets.find(a => a.id === id), [assets])
 
   const clear = useCallback(() => {
     commitAssets([], { history: true })
@@ -84,6 +102,7 @@ export default function useCanvas() {
     setAssets(prev => {
       if (undoStack.current.length === 0) return prev
       const next = undoStack.current.pop()
+      if (!next) return prev
       redoStack.current.push(cloneAssets(prev))
       return cloneAssets(next)
     })
@@ -93,6 +112,7 @@ export default function useCanvas() {
     setAssets(prev => {
       if (redoStack.current.length === 0) return prev
       const next = redoStack.current.pop()
+      if (!next) return prev
       undoStack.current.push(cloneAssets(prev))
       return cloneAssets(next)
     })
@@ -100,7 +120,7 @@ export default function useCanvas() {
 
   const selectedAsset = assets.find(a => a.id === selectedId) || null
   const sortedAssets = useMemo(
-    () => [...assets].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)),
+    () => [...assets].sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()),
     [assets]
   )
 

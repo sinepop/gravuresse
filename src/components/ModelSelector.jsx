@@ -1,36 +1,60 @@
+// @ts-check
+
 import { useEffect, useRef, useState } from 'react'
 import { t } from '../i18n'
 import { sameProviderId } from '../providers/aliases'
 import { createProviderProfilePatch, buildConfigProviderProfiles } from '../utils/providerConfig.js'
+import { normalizeAuthType } from '../utils/authType'
 import Ic from './icons'
 
-function normalizeAuthType(type) {
-  return String(type || '').toLowerCase().replace(/_/g, '-')
+/** @typedef {import('../types/domain').ConfigPayload} ConfigPayload */
+/** @typedef {import('../types/domain').ProviderDefinition} ProviderDefinition */
+/** @typedef {import('../types/domain').ProviderLists} ProviderLists */
+/** @typedef {import('../types/domain').ProviderProfile} ProviderProfile */
+/** @typedef {import('../types/domain').Track} Track */
+/** @typedef {Record<string, unknown>} UnknownRecord */
+/** @typedef {{ track: Track, current?: ProviderProfile, profiles: ProviderProfile[] }} PickerItem */
+
+/** @param {unknown} value @returns {value is UnknownRecord} */
+function isRecord(value) {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value))
 }
 
+/** @param {unknown} value @returns {UnknownRecord} */
+function recordOf(value) {
+  return isRecord(value) ? value : {}
+}
+
+/** @param {Track} track @param {ProviderLists} providerLists @param {ProviderProfile} profile */
 function findProviderDef(track, providerLists = {}, profile = {}) {
   const providers = providerLists?.[track] || []
   return providers.find(item => sameProviderId(track, item.id, profile.providerId || profile.id))
 }
 
-function isExecutableProvider(provider = {}) {
-  return Boolean(provider) && provider.executable !== false && provider.integrationStatus !== 'metadata'
+/** @param {ProviderDefinition | undefined} provider */
+function isExecutableProvider(provider) {
+  return Boolean(provider && provider.executable !== false && provider.integrationStatus !== 'metadata')
 }
 
-function hasCredential(profile = {}, providerDef = {}) {
+/** @param {ProviderProfile} profile @param {ProviderDefinition | undefined} providerDef */
+function hasCredential(profile = {}, providerDef) {
   if (profile.accountId && profile.accountKind !== 'oauth-placeholder') return true
   const customType = normalizeAuthType(profile.customAuth?.type)
-  const type = customType || normalizeAuthType(profile.authType?.type || providerDef?.authType?.type)
-  if (type === 'none') return Boolean(profile.providerId || profile.id || providerDef.id)
+  const profileAuth = recordOf(profile.authType)
+  const providerAuth = recordOf(providerDef?.authType)
+  const type = customType || normalizeAuthType(profileAuth.type || providerAuth.type)
+  if (type === 'none') return Boolean(profile.providerId || profile.id || providerDef?.id)
   if (type === 'session') return Boolean(profile.sessionToken)
   return Boolean(profile.apiKey)
 }
 
+/** @param {Track} track @param {ProviderLists} providerLists @param {ProviderProfile} profile */
 function providerName(track, providerLists = {}, profile = {}) {
   const provider = findProviderDef(track, providerLists, profile)
   return profile.name || provider?.name || profile.providerId || profile.id || t('provider', 'zh')
 }
 
+/** @param {Track} track @param {ProviderProfile} current @param {ProviderProfile} profile */
 function sameProfile(track, current = {}, profile = {}) {
   // Config-array profiles share the same id; use _configProviderIndex to disambiguate
   if (typeof profile._configProviderIndex === 'number' && typeof current._configProviderIndex === 'number') {
@@ -42,20 +66,32 @@ function sameProfile(track, current = {}, profile = {}) {
     (current?.model || '') === (profile.model || '')
 }
 
-function ModelPicker({ track, current, profiles, providerLists, onSelect, lang }) {
+/**
+ * @param {{
+ *   track: Track,
+ *   current?: ProviderProfile,
+ *   profiles: ProviderProfile[],
+ *   providerLists: ProviderLists,
+ *   onSelect: (track: Track, patch: UnknownRecord) => void,
+ *   lang: string
+ * }} props
+ */
+function ModelPicker({ track, current = {}, profiles, providerLists, onSelect, lang }) {
   const [open, setOpen] = useState(false)
-  const ref = useRef(null)
+  const ref = useRef(/** @type {HTMLDivElement | null} */ (null))
   const currentProfile = profiles.find(profile => sameProfile(track, current, profile))
   const displayModel = currentProfile?.model || current?.model || profiles[0]?.model || t('modelSelector', lang)
 
   useEffect(() => {
+    /** @param {MouseEvent} event */
     const handler = (event) => {
-      if (ref.current && !ref.current.contains(event.target)) setOpen(false)
+      if (ref.current && event.target instanceof Node && !ref.current.contains(event.target)) setOpen(false)
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
+  /** @param {ProviderProfile} profile */
   const selectProfile = (profile) => {
     onSelect(track, createProviderProfilePatch(profile))
     setOpen(false)
@@ -135,9 +171,20 @@ function ModelPicker({ track, current, profiles, providerLists, onSelect, lang }
   )
 }
 
+/**
+ * @param {{
+ *   config: ConfigPayload | null,
+ *   providerLists: ProviderLists,
+ *   activeModule?: 'image' | 'video',
+ *   onProviderChange: (track: Track, patch: UnknownRecord) => void,
+ *   lang: string
+ * }} props
+ */
 export default function ModelSelector({ config, providerLists, activeModule = 'image', onProviderChange, lang }) {
   const mediaTrack = activeModule === 'video' ? 'video' : 'image'
-  const items = ['chat', mediaTrack].map(track => {
+  /** @type {Track[]} */
+  const tracks = ['chat', mediaTrack]
+  const items = tracks.map(track => {
     const current = config?.providers?.[track]
     const savedProfiles = (config?.providerProfiles?.[track] || []).filter(profile => {
       const providerDef = findProviderDef(track, providerLists, profile)
@@ -149,7 +196,7 @@ export default function ModelSelector({ config, providerLists, activeModule = 'i
         const providerDef = findProviderDef(track, providerLists, profile)
         return isExecutableProvider(providerDef) && hasCredential(profile, providerDef) && profile.model
       })
-      const seen = new Set()
+      const seen = new Set(/** @type {string[]} */ ([]))
       profiles = [...customProfiles, ...savedProfiles].filter(profile => {
         const key = `${profile.providerId || profile.id}|${profile.baseUrl || ''}|${profile.model || ''}`
         if (seen.has(key)) return false
@@ -158,7 +205,7 @@ export default function ModelSelector({ config, providerLists, activeModule = 'i
       })
     }
     return profiles.length ? { track, current, profiles } : null
-  }).filter(Boolean)
+  }).filter((item) => item !== null)
 
   if (items.length === 0) {
     return (

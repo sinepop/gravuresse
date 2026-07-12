@@ -56,8 +56,8 @@ function genericTemplateProtocol(capKey) {
  * @param {'chat'|'image'|'video'} params.action - Which capability to use
  * @param {string} params.providerId - Provider id from registry (e.g. 'openai', 'anthropic')
  * @param {Object} [params.credentials] - { apiKey?, sessionToken? }
- * @param {...*} [params.*] - Action-specific payload (messages, prompt, ratio, etc.)
- * @returns {Promise<{ok: boolean, data?: any, error?: {code: string, message: string}}>}
+ * Additional properties contain the action-specific payload (messages, prompt, ratio, etc.).
+ * @returns {Promise<{ok: boolean, data?: unknown, error?: {code: string, message: string}}>}
  */
 async function execute(params) {
   const { action, providerId, credentials, ...payload } = params

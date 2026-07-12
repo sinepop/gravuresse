@@ -1,5 +1,9 @@
+// @ts-check
+
 import Ic from './icons'
 import { t } from '../i18n'
+
+/** @typedef {import('../types/domain').VideoQueueTask} VideoQueueTask */
 
 const STATUS_MAP = {
   pending: { color: 'var(--text-muted)' },
@@ -8,6 +12,14 @@ const STATUS_MAP = {
   failed: { color: 'var(--danger)' }
 }
 
+/**
+ * @param {{
+ *   tasks: VideoQueueTask[],
+ *   onRetry: (task: VideoQueueTask) => void,
+ *   onRemove: (id: string) => void,
+ *   lang: string
+ * }} props
+ */
 export default function TaskQueue({ tasks, onRetry, onRemove, lang }) {
   return (
     <div style={{ borderTop: '1px solid var(--border-subtle)', background: 'var(--bg-elevated)', maxHeight: 160, overflow: 'auto' }}>

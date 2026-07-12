@@ -1,4 +1,4 @@
-import { access, stat } from 'node:fs/promises'
+import { access, readFile, readdir, stat } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import path from 'node:path'
 
@@ -25,38 +25,88 @@ function requireFromRoot(modulePath) {
 }
 
 async function checkDistRuntime() {
+  const mainEntry = path.join(rootDir, 'dist', 'main', 'main.js')
+  const preloadEntry = path.join(rootDir, 'dist', 'preload', 'preload.js')
   const sharedDir = path.join(rootDir, 'dist', 'shared')
   const sharedFile = path.join(sharedDir, 'modelCapabilities.cjs')
 
+  await assertFile(mainEntry, 'dist/main/main.js')
+  await assertFile(preloadEntry, 'dist/preload/preload.js')
   await assertDirectory(sharedDir, 'dist/shared')
   await assertFile(sharedFile, 'dist/shared/modelCapabilities.cjs')
-
+  const compiledModels = path.join(rootDir, 'dist', 'main', 'api', 'models.js')
+  await assertFile(compiledModels, 'compiled dist/main/api/models.js')
+  await assertCompiledRequireGraph(path.join(rootDir, 'dist', 'main'))
   try {
     requireFromRoot('./dist/main/api/models.js')
   } catch (error) {
-    console.error(`Runtime check failed: require('./dist/main/api/models.js') did not load.`)
+    console.error(`Runtime check failed: compiled dist/main/api/models.js did not load.`)
     console.error(error?.message || error)
     process.exit(1)
   }
 
-  console.log('Runtime check passed: dist/shared exists and dist/main/api/models.js loads.')
+  console.log('Runtime check passed: compiled main module graph, preload entry, and shared runtime asset exist.')
 }
 
 async function checkPackagedAsar() {
   const appAsar = path.join(rootDir, 'release', 'win-unpacked', 'resources', 'app.asar')
-  const entry = '/dist/shared/modelCapabilities.cjs'
+  const entries = [
+    'dist/main/main.js',
+    'dist/preload/preload.js',
+    'dist/shared/modelCapabilities.cjs'
+  ]
 
   await assertFile(appAsar, 'release/win-unpacked/resources/app.asar')
 
   const { listPackage } = requireFromRoot('@electron/asar')
   const files = listPackage(appAsar) || []
   const normalizedFiles = new Set(files.map(file => String(file).replace(/\\/g, '/').replace(/^\/+/, '')))
-  if (!normalizedFiles.has(entry.slice(1))) {
-    console.error(`ASAR check failed: ${entry.slice(1)} is missing from release/win-unpacked/resources/app.asar`)
-    process.exit(1)
+  for (const entry of entries) {
+    if (!normalizedFiles.has(entry)) {
+      console.error(`ASAR check failed: ${entry} is missing from release/win-unpacked/resources/app.asar`)
+      process.exit(1)
+    }
   }
 
-  console.log(`ASAR check passed: ${entry.slice(1)} is packaged.`)
+  console.log(`ASAR check passed: ${entries.join(', ')} are packaged.`)
+}
+
+async function assertCompiledRequireGraph(directory) {
+  const files = await listJavaScriptFiles(directory)
+  for (const file of files) {
+    const source = await readFile(file, 'utf8')
+    const requirePattern = /require\(["'](\.{1,2}\/[^"']+)["']\)/g
+    for (const match of source.matchAll(requirePattern)) {
+      const target = path.resolve(path.dirname(file), match[1])
+      const candidates = path.extname(target)
+        ? [target]
+        : [`${target}.js`, `${target}.cjs`, path.join(target, 'index.js')]
+      if (!(await firstExistingFile(candidates))) {
+        console.error(`Runtime check failed: ${path.relative(rootDir, file)} requires missing ${match[1]}`)
+        process.exit(1)
+      }
+    }
+  }
+}
+
+async function listJavaScriptFiles(directory) {
+  const files = []
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const entryPath = path.join(directory, entry.name)
+    if (entry.isDirectory()) files.push(...await listJavaScriptFiles(entryPath))
+    else if (/\.(?:js|cjs)$/.test(entry.name)) files.push(entryPath)
+  }
+  return files
+}
+
+async function firstExistingFile(candidates) {
+  for (const candidate of candidates) {
+    try {
+      const info = await stat(candidate)
+      if (info.isFile()) return candidate
+    } catch {}
+  }
+  return null
 }
 
 async function assertDirectory(filePath, label) {

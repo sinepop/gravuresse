@@ -1,6 +1,11 @@
+// @ts-check
+
+/** @typedef {import('../types/domain').AssetType} AssetType */
+
 const MAX_REMOTE_URL_LENGTH = 4096
 const MAX_DATA_URL_LENGTH = 100 * 1024 * 1024
 
+/** @type {Record<AssetType, Set<string>>} */
 const ASSET_TYPE_MIMES = {
   image: new Set(['image/png', 'image/jpeg', 'image/webp']),
   video: new Set(['video/mp4'])
@@ -14,6 +19,10 @@ const BLOCKED_HOSTNAMES = new Set([
   '169.254.170.2'
 ])
 
+/**
+ * @param {string} ip
+ * @returns {boolean}
+ */
 function isPrivateIPv4(ip) {
   const parts = ip.split('.').map(Number)
   if (parts.length !== 4 || parts.some(p => !Number.isInteger(p) || p < 0 || p > 255)) return false
@@ -29,6 +38,10 @@ function isPrivateIPv4(ip) {
   )
 }
 
+/**
+ * @param {string} ip
+ * @returns {boolean}
+ */
 function isPrivateIPv6(ip) {
   const lower = ip.toLowerCase()
   if (lower === '::1' || lower === '::' || lower === '::ffff:0:0') return true
@@ -39,6 +52,10 @@ function isPrivateIPv6(ip) {
   return Boolean(mapped && isPrivateIPv4(mapped[1]))
 }
 
+/**
+ * @param {unknown} hostname
+ * @returns {boolean}
+ */
 function isBlockedHost(hostname) {
   const host = String(hostname || '').replace(/^\[|]$/g, '').toLowerCase()
   if (!host || BLOCKED_HOSTNAMES.has(host)) return true
@@ -47,6 +64,11 @@ function isBlockedHost(hostname) {
   return false
 }
 
+/**
+ * @param {string} value
+ * @param {AssetType} type
+ * @returns {string}
+ */
 function sanitizeDataUrl(value, type) {
   if (value.length > MAX_DATA_URL_LENGTH) return ''
   const match = /^data:([\w.+-]+\/[\w.+-]+);base64,([a-z0-9+/=\s]+)$/i.exec(value)
@@ -55,6 +77,10 @@ function sanitizeDataUrl(value, type) {
   return ASSET_TYPE_MIMES[type]?.has(mime) ? value : ''
 }
 
+/**
+ * @param {string} value
+ * @returns {string}
+ */
 function sanitizeHttpsUrl(value) {
   if (value.length > MAX_REMOTE_URL_LENGTH) return ''
   let parsed
@@ -69,6 +95,11 @@ function sanitizeHttpsUrl(value) {
   return parsed.href
 }
 
+/**
+ * @param {unknown} url
+ * @param {unknown} [type='image']
+ * @returns {string}
+ */
 export function sanitizeAssetUrl(url, type = 'image') {
   if (typeof url !== 'string') return ''
   const cleanType = type === 'video' ? 'video' : 'image'

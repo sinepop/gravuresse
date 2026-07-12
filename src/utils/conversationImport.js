@@ -1,21 +1,43 @@
+// @ts-check
+
 import { createAsset } from './assetFactory.js'
+
+/** @typedef {import('../types/domain').Asset} Asset */
+/** @typedef {import('../types/domain').Conversation} Conversation */
+/** @typedef {import('../types/domain').Message} Message */
+/** @typedef {import('../types/domain').MessageTask} MessageTask */
+/** @typedef {import('../types/domain').TaskStatus} TaskStatus */
+/** @typedef {Record<string, unknown>} UnknownRecord */
 
 let _messageCounter = 0
 
+/** @returns {string} */
 function makeMessageId() {
   return `import_msg_${Date.now()}_${(++_messageCounter) % 1000}`
 }
 
+/**
+ * @param {unknown} value
+ * @returns {value is UnknownRecord}
+ */
 function isRecord(value) {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value))
 }
 
+/**
+ * @param {unknown} value
+ * @returns {string | null}
+ */
 function toOptionalId(value) {
   if (typeof value !== 'string' && typeof value !== 'number') return null
   const id = String(value)
   return id ? id : null
 }
 
+/**
+ * @param {unknown} value
+ * @returns {string[]}
+ */
 function toIdList(value) {
   const list = Array.isArray(value) ? value : value ? [value] : []
   return list
@@ -24,29 +46,49 @@ function toIdList(value) {
     .filter(Boolean)
 }
 
+/**
+ * @param {unknown} value
+ * @returns {number | undefined}
+ */
 function toNumber(value) {
   const number = Number(value)
   return Number.isFinite(number) ? number : undefined
 }
 
-export function getConversationTitle(messages = []) {
-  const list = Array.isArray(messages) ? messages : []
-  const message = list.find(m => m?.role === 'user' && typeof m.content === 'string' && m.content.trim())
-  return message ? message.content.slice(0, 30) : ''
+/**
+ * @param {unknown} value
+ * @returns {number | string | null}
+ */
+function toDuration(value) {
+  return typeof value === 'number' || typeof value === 'string' ? value : null
 }
 
+/**
+ * @param {unknown} messages
+ * @returns {string}
+ */
+export function getConversationTitle(messages = []) {
+  const list = Array.isArray(messages) ? messages : []
+  const message = list.find(m => isRecord(m) && m.role === 'user' && typeof m.content === 'string' && m.content.trim())
+  return isRecord(message) && typeof message.content === 'string' ? message.content.slice(0, 30) : ''
+}
+
+/**
+ * @param {unknown} source
+ * @returns {source is UnknownRecord}
+ */
 function isImportableConversation(source) {
-  return Boolean(
-    source &&
-    typeof source === 'object' &&
-    (
-      Array.isArray(source.messages) ||
-      Array.isArray(source.assets) ||
-      typeof source.title === 'string'
-    )
+  return isRecord(source) && (
+    Array.isArray(source.messages) ||
+    Array.isArray(source.assets) ||
+    typeof source.title === 'string'
   )
 }
 
+/**
+ * @param {unknown} assets
+ * @returns {Asset[]}
+ */
 function normalizeImportedAssets(assets = []) {
   const seenIds = new Set()
   return (Array.isArray(assets) ? assets : []).filter(asset => {
@@ -86,14 +128,20 @@ function normalizeImportedAssets(assets = []) {
   })
 }
 
+/**
+ * @param {unknown} task
+ * @returns {MessageTask | null}
+ */
 function normalizeImportedTask(task = {}) {
   if (!isRecord(task)) return null
-  const activeStatus = ['generating', 'queued', 'running'].includes(task.status)
+  const rawStatus = typeof task.status === 'string' ? task.status : ''
+  const activeStatus = ['generating', 'queued', 'running'].includes(rawStatus)
   const error = typeof task.error === 'string' ? task.error : ''
+  /** @type {TaskStatus} */
   const status = activeStatus
     ? 'error'
-    : ['pending', 'done', 'error', 'partial'].includes(task.status)
-      ? task.status
+    : rawStatus === 'done' || rawStatus === 'error' || rawStatus === 'partial'
+      ? rawStatus
       : 'pending'
   return {
     id: toOptionalId(task.id) || 't1',
@@ -116,7 +164,7 @@ function normalizeImportedTask(task = {}) {
     taskId: toOptionalId(task.taskId),
     assetId: toOptionalId(task.assetId),
     queueId: toOptionalId(task.queueId),
-    duration: task.duration ?? null,
+    duration: toDuration(task.duration),
     elapsed: toNumber(task.elapsed),
     startTime: toNumber(task.startTime),
     batchTotal: toNumber(task.batchTotal),
@@ -125,6 +173,10 @@ function normalizeImportedTask(task = {}) {
   }
 }
 
+/**
+ * @param {unknown} messages
+ * @returns {Message[]}
+ */
 function normalizeImportedMessages(messages = []) {
   const seenIds = new Set()
   return (Array.isArray(messages) ? messages : []).filter(isRecord).map(message => {
@@ -133,39 +185,51 @@ function normalizeImportedMessages(messages = []) {
     seenIds.add(id)
     const tasks = (Array.isArray(message.tasks) ? message.tasks : message.task ? [message.task] : [])
       .map(normalizeImportedTask)
-      .filter(Boolean)
+      .filter((task) => task !== null)
+    /** @type {Message} */
     const normalized = {
       id,
       role: message.role === 'user' ? 'user' : 'assistant',
       content: typeof message.content === 'string' ? message.content : '',
       thinking: typeof message.thinking === 'string' ? message.thinking : undefined,
       model: typeof message.model === 'string' ? message.model : undefined,
-      error: message.error === true
+      error: message.error === true,
+      ...(tasks.length > 0 ? { tasks } : {})
     }
-    delete normalized.task
-    if (tasks.length > 0) normalized.tasks = tasks
-    else delete normalized.tasks
     return normalized
   })
 }
 
+/**
+ * @param {unknown} payload
+ * @returns {Conversation[]}
+ */
 export function normalizeImportedConversations(payload) {
+  const record = isRecord(payload) ? payload : {}
   const sources = Array.isArray(payload)
     ? payload
-    : Array.isArray(payload?.conversations)
-      ? payload.conversations
-      : [payload?.conversation || payload].filter(Boolean)
+    : Array.isArray(record.conversations)
+      ? record.conversations
+      : [record.conversation || payload].filter(Boolean)
 
-  return sources.filter(isImportableConversation).map(source => normalizeConversationRecord(source))
+  return sources
+    .filter(isImportableConversation)
+    .map(source => normalizeConversationRecord(source))
+    .filter((conversation) => conversation !== null)
 }
 
+/**
+ * @param {unknown} source
+ * @returns {Conversation | null}
+ */
 export function normalizeConversationRecord(source = {}) {
   if (!isRecord(source)) return null
   const messages = normalizeImportedMessages(source.messages)
   const assets = normalizeImportedAssets(source.assets)
   const title = typeof source.title === 'string' ? source.title.slice(0, 80) : getConversationTitle(messages)
+  const id = toOptionalId(source.id)
   return {
-    ...(toOptionalId(source.id) ? { id: toOptionalId(source.id) } : {}),
+    ...(id ? { id } : {}),
     title,
     ...(typeof source.createdAt === 'string' ? { createdAt: source.createdAt } : {}),
     ...(typeof source.updatedAt === 'string' ? { updatedAt: source.updatedAt } : {}),
@@ -175,6 +239,12 @@ export function normalizeConversationRecord(source = {}) {
   }
 }
 
+/**
+ * @param {string} label
+ * @param {unknown} error
+ * @returns {string}
+ */
 export function formatErrorAlert(label, error) {
-  return error?.message ? `${label}\n${error.message}` : label
+  const message = isRecord(error) && typeof error.message === 'string' ? error.message : ''
+  return message ? `${label}\n${message}` : label
 }

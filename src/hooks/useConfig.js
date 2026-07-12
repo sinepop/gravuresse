@@ -1,3 +1,5 @@
+// @ts-check
+
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { CHAT_PROVIDERS } from '../providers/chatProviders.js'
 import { IMG_PROVIDERS } from '../providers/imageProviders.js'
@@ -6,85 +8,46 @@ import { PROVIDER_ID_ALIASES } from '../providers/aliases.js'
 import { firstProviderModel, normalizeProviderTemplate, resolveChatProvider, applyChatProviderPatch, getProvidersFromConfig } from '../utils/providerConfig.js'
 import { migrateProviderAccounts, providerPatchFromAccount, findProviderAccount } from '../utils/providerAccounts.js'
 
+/** @typedef {import('../types/domain').ConfigPayload} ConfigPayload */
+/** @typedef {import('../types/domain').Track} Track */
+/** @typedef {Record<string, unknown>} UnknownRecord */
+/** @typedef {Record<Track, UnknownRecord[]>} ProviderMap */
+/** @typedef {ProviderMap & { _config?: UnknownRecord }} ProviderCollections */
+
+/** @param {unknown} value @returns {value is UnknownRecord} */
+function isRecord(value) {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value))
+}
+
+/** @param {unknown} value @returns {UnknownRecord} */
+function recordOf(value) {
+  return isRecord(value) ? value : {}
+}
+
+/** @param {unknown} value @returns {string} */
+function text(value) {
+  return typeof value === 'string' ? value : ''
+}
+
+/** @param {unknown} value @returns {value is Track} */
+function isTrack(value) {
+  return value === 'chat' || value === 'image' || value === 'video'
+}
+
+/** @param {unknown} value @returns {UnknownRecord[]} */
+function recordList(value) {
+  return Array.isArray(value) ? value.filter(isRecord) : []
+}
+
+/** @type {ProviderMap} */
 const PROVIDER_MAP = { chat: CHAT_PROVIDERS, image: IMG_PROVIDERS, video: VID_PROVIDERS }
+/** @type {Track[]} */
 const TRACKS = ['chat', 'image', 'video']
 
-/**
- * Build a legacy-compatible providers.chat object from the new array format.
- * Returns null if the config doesn't use the array format (i.e. already legacy).
- */
-function buildChatCompat(config) {
-  if (!Array.isArray(config?.providers)) return null
-  const arr = config.providers
-  const first = arr.find(p => p.enabled !== false) || arr[0]
-  if (!first) return {}
-  return {
-    id: 'custom-chat',
-    name: first.name,
-    platform: 'Custom',
-    baseUrl: first.baseUrl || '',
-    apiKey: first.apiKey || '',
-    model: config?.savedChatModel || first.defaultModel || '',
-    defaultModel: first.defaultModel || '',
-    authType: { type: 'bearer' },
-    capabilities: { chat: { text: true, openaiCompatible: true, relay: true } },
-    customSystemPrompt: first.customSystemPrompt || '',
-    _configProviderIndex: arr.indexOf(first),
-    _configProvider: first
-  }
-}
-
-/**
- * Wrap a config object (that uses the new providers array) so that
- * `config.providers.chat` returns a legacy-compatible object.
- * Image and video tracks are left untouched.
- */
-function wrapWithChatCompat(config) {
-  if (!Array.isArray(config?.providers)) return config
-  const chatCompat = buildChatCompat(config)
-  return {
-    ...config,
-    _rawProviders: config.providers,
-    providers: {
-      _isArray: true,
-      _raw: config.providers,
-      chat: chatCompat,
-      image: config.providers.image,
-      video: config.providers.video
-    }
-  }
-}
-
-/**
- * Strip the compat wrapper from providers before saving.
- * Restores the array format + savedChatModel from the compat chat object.
- */
-function unwrapChatCompat(config) {
-  if (!config?.providers?._isArray) return config
-  const raw = config._rawProviders || config.providers._raw
-  if (!Array.isArray(raw)) return config
-  const { _isArray, _raw, chat, image, video, ...rest } = config.providers
-  const patch = {}
-  if (chat) {
-    if (chat.model) patch.savedChatModel = chat.model
-    if (chat.baseUrl || chat.apiKey || chat.customSystemPrompt) {
-      const arr = [...raw]
-      const idx = typeof chat._configProviderIndex === 'number' ? chat._configProviderIndex : arr.findIndex(p => p.enabled !== false)
-      if (idx >= 0 && idx < arr.length) {
-        arr[idx] = { ...arr[idx] }
-        if (chat.baseUrl) arr[idx].baseUrl = chat.baseUrl
-        if (chat.apiKey && chat.apiKey !== '********') arr[idx].apiKey = chat.apiKey
-        if (chat.customSystemPrompt !== undefined) arr[idx].customSystemPrompt = chat.customSystemPrompt
-      }
-      patch.providers = arr
-    }
-  }
-  return { ...config, ...patch, providers: patch.providers || raw }
-}
-
+/** @param {unknown} cfg @param {Track} track @returns {UnknownRecord[]} */
 function providerProfileList(cfg, track) {
-  const profiles = cfg?.providerProfiles?.[track]
-  return Array.isArray(profiles) ? profiles : []
+  const profiles = recordOf(recordOf(cfg).providerProfiles)[track]
+  return recordList(profiles)
 }
 
 const DEPRECATED_MODELS = ['pollinations']
@@ -135,52 +98,72 @@ const FALLBACK_MODEL_CATALOGS = {
   }
 }
 
+/** @param {unknown} primary @param {unknown} fallback @returns {UnknownRecord[]} */
 function mergeProviderLists(primary, fallback) {
-  return [...primary, ...fallback.filter(p => !primary.some(item => item.id === p.id))]
+  const primaryList = recordList(primary)
+  return [...primaryList, ...recordList(fallback).filter(p => !primaryList.some(item => text(item.id) === text(p.id)))]
 }
 
+/** @param {unknown} provider */
 function isExecutableProvider(provider) {
-  return provider?.executable !== false && provider?.integrationStatus !== 'metadata'
+  const record = recordOf(provider)
+  return record.executable !== false && record.integrationStatus !== 'metadata'
 }
 
+/** @param {unknown} provider */
 function providerCallMode(provider = {}) {
-  const caps = provider.capabilities || {}
-  if (isExecutableProvider(provider)) return provider.platform === 'Custom' || provider.id?.startsWith('custom-') ? 'custom-api' : 'direct-api'
-  if (caps.webSubscription || caps.codingPlan || provider.billing?.mode === 'subscription') return 'subscription-reference'
+  const record = recordOf(provider)
+  const caps = recordOf(record.capabilities)
+  const billing = recordOf(record.billing)
+  if (isExecutableProvider(record)) return record.platform === 'Custom' || text(record.id).startsWith('custom-') ? 'custom-api' : 'direct-api'
+  if (caps.webSubscription || caps.codingPlan || billing.mode === 'subscription') return 'subscription-reference'
   return 'reference'
 }
 
-function isTemplateConfigurableMediaProvider(track, provider = {}, caps = provider.capabilities || {}) {
-  if (!['image', 'video'].includes(track)) return false
-  if (!provider.protocol || !provider.defaultUrl) return false
-  if (provider.integrationStatus !== 'metadata' && provider.executable !== false) return false
-  if (caps.relay || caps.customTemplate || caps.customBaseUrl) return true
-  if (track === 'image') return Boolean(caps.textToImage || caps.imageToImage || caps.imageEdit)
-  return Boolean(caps.textToVideo || caps.imageToVideo || caps.async)
+/** @param {unknown} track @param {unknown} provider @param {unknown} caps */
+function isTemplateConfigurableMediaProvider(track, provider = {}, caps = {}) {
+  const record = recordOf(provider)
+  const capabilities = recordOf(caps)
+  if (track !== 'image' && track !== 'video') return false
+  if (!text(record.protocol) || !text(record.defaultUrl)) return false
+  if (record.integrationStatus !== 'metadata' && record.executable !== false) return false
+  if (capabilities.relay || capabilities.customTemplate || capabilities.customBaseUrl) return true
+  if (track === 'image') return Boolean(capabilities.textToImage || capabilities.imageToImage || capabilities.imageEdit)
+  return Boolean(capabilities.textToVideo || capabilities.imageToVideo || capabilities.async)
 }
 
+/** @param {unknown} provider */
 function providerSetupMode(provider = {}) {
-  const caps = provider.capabilities || {}
-  const authOptions = Array.isArray(provider.customizable?.auth) ? provider.customizable.auth : []
-  if (!isExecutableProvider(provider)) return (caps.webSubscription || caps.codingPlan || provider.billing?.mode === 'subscription') ? 'subscription-reference' : 'reference'
-  if (provider.platform === 'Custom' || provider.id?.startsWith('custom-') || caps.customBaseUrl || caps.customTemplate || provider.integrationStatus === 'custom-template') return 'custom-api'
+  const record = recordOf(provider)
+  const caps = recordOf(record.capabilities)
+  const customizable = recordOf(record.customizable)
+  const billing = recordOf(record.billing)
+  const authOptions = Array.isArray(customizable.auth) ? customizable.auth.filter(item => typeof item === 'string') : []
+  if (!isExecutableProvider(record)) return (caps.webSubscription || caps.codingPlan || billing.mode === 'subscription') ? 'subscription-reference' : 'reference'
+  if (record.platform === 'Custom' || text(record.id).startsWith('custom-') || caps.customBaseUrl || caps.customTemplate || record.integrationStatus === 'custom-template') return 'custom-api'
   if (authOptions.includes('session')) return 'api-key-or-session'
-  if (provider.authType?.type === 'none') return 'no-auth'
+  if (recordOf(record.authType).type === 'none') return 'no-auth'
   return 'api-key'
 }
 
+/** @param {unknown} provider @returns {UnknownRecord} */
 function defaultAuthType(provider = {}) {
-  if (provider.format === 'gemini' || provider.id === 'google') return { type: 'query', key: 'key' }
-  if (provider.format === 'anthropic' || provider.id === 'anthropic') return { type: 'header', key: 'x-api-key' }
-  if (provider.authType) return provider.authType
+  const record = recordOf(provider)
+  if (record.format === 'gemini' || record.id === 'google') return { type: 'query', key: 'key' }
+  if (record.format === 'anthropic' || record.id === 'anthropic') return { type: 'header', key: 'x-api-key' }
+  if (isRecord(record.authType)) return record.authType
   return { type: 'bearer' }
 }
 
+/** @param {unknown} track @param {unknown} provider @returns {unknown} */
 function defaultCustomizable(track, provider = {}) {
-  if (provider.customizable) return provider.customizable
-  const isCustom = provider.platform === 'Custom' || provider.id?.startsWith('custom-')
-  const caps = provider.capabilities?.[track] || provider.capabilities || {}
-  if (!isCustom && !isTemplateConfigurableMediaProvider(track, provider, caps)) return provider.customizable
+  const record = recordOf(provider)
+  if (record.customizable) return record.customizable
+  if (!isTrack(track)) return undefined
+  const isCustom = record.platform === 'Custom' || text(record.id).startsWith('custom-')
+  const allCaps = recordOf(record.capabilities)
+  const caps = isTrack(track) ? recordOf(allCaps[track] || allCaps) : allCaps
+  if (!isCustom && !isTemplateConfigurableMediaProvider(track, record, caps)) return record.customizable
   return {
     [track]: {
       auth: ['bearer', 'api-key', 'header', 'query', 'session'],
@@ -196,10 +179,14 @@ function defaultCustomizable(track, provider = {}) {
   }
 }
 
+/** @param {unknown} track @param {unknown} providers @returns {UnknownRecord[]} */
 export function normalizeProviderList(track, providers = []) {
-  return providers.map(provider => {
-    const caps = provider.capabilities?.[track] || provider.capabilities || {}
+  return recordList(providers).map(provider => {
+    const allCaps = recordOf(provider.capabilities)
+    const caps = isTrack(track) ? recordOf(allCaps[track] || allCaps) : allCaps
     const templateConfigurable = isTemplateConfigurableMediaProvider(track, provider, caps)
+    const fallbackModels = isTrack(track) ? recordOf(FALLBACK_MODEL_CATALOGS[track])[text(provider.id)] : []
+    /** @type {UnknownRecord} */
     const normalized = {
       ...provider,
       executable: templateConfigurable ? true : provider.executable,
@@ -208,11 +195,11 @@ export function normalizeProviderList(track, providers = []) {
       customizable: defaultCustomizable(track, provider),
       authType: defaultAuthType(provider),
       modelCatalog: Array.isArray(provider.modelCatalog)
-        ? provider.modelCatalog
+        ? provider.modelCatalog.filter(model => typeof model === 'string')
         : [
-            provider.defaultModel,
-            ...(FALLBACK_MODEL_CATALOGS[track]?.[provider.id] || [])
-          ].filter(Boolean)
+            text(provider.defaultModel),
+            ...(Array.isArray(fallbackModels) ? fallbackModels.filter(model => typeof model === 'string') : [])
+          ].filter(model => typeof model === 'string' && model)
     }
     normalized.callMode = templateConfigurable ? 'custom-api' : provider.callMode || providerCallMode(normalized)
     normalized.setupMode = templateConfigurable ? 'custom-api' : provider.setupMode || providerSetupMode(normalized)
@@ -220,19 +207,24 @@ export function normalizeProviderList(track, providers = []) {
   })
 }
 
+/** @param {unknown} track @param {unknown} id */
 function canonicalProviderId(track, id) {
-  return PROVIDER_ID_ALIASES[track]?.[id] || id || ''
+  const value = text(id)
+  return isTrack(track) ? PROVIDER_ID_ALIASES[track][value] || value : value
 }
 
+/** @param {unknown} track @param {unknown} provider */
 function profileKey(track, provider = {}) {
+  const record = recordOf(provider)
   return [
-    track,
-    canonicalProviderId(track, provider.providerId || provider.id),
-    provider.baseUrl || '',
-    provider.model || ''
+    text(track),
+    canonicalProviderId(track, text(record.providerId) || text(record.id)),
+    text(record.baseUrl),
+    text(record.model)
   ].join('|')
 }
 
+/** @param {string} value */
 function hashString(value) {
   let hash = 0
   for (let i = 0; i < value.length; i += 1) {
@@ -241,94 +233,112 @@ function hashString(value) {
   return Math.abs(hash).toString(36)
 }
 
+/** @param {unknown} track @param {unknown} id @param {unknown} providerLists @returns {UnknownRecord | undefined} */
 function findProviderDef(track, id, providerLists = PROVIDER_MAP) {
+  if (!isTrack(track)) return undefined
   const canonicalId = canonicalProviderId(track, id)
-  return (providerLists?.[track] || PROVIDER_MAP[track] || []).find(provider =>
+  const lists = recordOf(providerLists)
+  const candidates = recordList(lists[track] || PROVIDER_MAP[track])
+  return candidates.find(provider =>
     provider.id === id || provider.id === canonicalId || canonicalProviderId(track, provider.id) === canonicalId
   )
 }
 
+/** @param {unknown} currentModel @param {unknown} provider */
 function modelForProviderSwitch(currentModel, provider = {}) {
-  const catalog = Array.isArray(provider.modelCatalog) ? provider.modelCatalog : []
-  if (currentModel && catalog.includes(currentModel)) return currentModel
-  if (currentModel && catalog.length === 0 && provider.defaultModel === currentModel) return currentModel
-  return firstProviderModel(provider)
+  const record = recordOf(provider)
+  const model = text(currentModel)
+  const catalog = Array.isArray(record.modelCatalog) ? record.modelCatalog.filter(item => typeof item === 'string') : []
+  if (model && catalog.includes(model)) return model
+  if (model && catalog.length === 0 && record.defaultModel === model) return model
+  return firstProviderModel(record)
 }
 
+/** @param {unknown} type */
 function normalizeAuthType(type) {
   return String(type || '').toLowerCase().replace(/_/g, '-')
 }
 
+/** @param {unknown} providerConfig @param {unknown} providerDef */
 function providerCredentialReady(providerConfig = {}, providerDef = {}) {
-  if (providerConfig.accountId && providerConfig.accountKind !== 'oauth-placeholder') return true
-  const customType = normalizeAuthType(providerConfig.customAuth?.type)
-  const type = customType || normalizeAuthType(providerConfig.authType?.type || providerDef?.authType?.type)
+  const config = recordOf(providerConfig)
+  const definition = recordOf(providerDef)
+  if (text(config.accountId) && config.accountKind !== 'oauth-placeholder') return true
+  const customType = normalizeAuthType(recordOf(config.customAuth).type)
+  const type = customType || normalizeAuthType(recordOf(config.authType).type || recordOf(definition.authType).type)
   if (type === 'none') return true
-  if (type === 'session') return Boolean(providerConfig.sessionToken)
-  return Boolean(providerConfig.apiKey)
+  if (type === 'session') return Boolean(text(config.sessionToken))
+  return Boolean(text(config.apiKey))
 }
 
+/** @param {Track} track @param {unknown} providerConfig @param {unknown} providerLists @returns {UnknownRecord | null} */
 function profileFromProvider(track, providerConfig = {}, providerLists = PROVIDER_MAP) {
-  const providerDef = findProviderDef(track, providerConfig.id, providerLists)
-  const model = providerConfig.model || firstProviderModel(providerDef)
-  if (!providerConfig?.id || !model || !providerCredentialReady(providerConfig, providerDef)) return null
-  const account = findProviderAccount(providerLists?._config || {}, providerConfig.accountId)
-  const key = profileKey(track, { ...providerConfig, model })
+  const config = recordOf(providerConfig)
+  const lists = recordOf(providerLists)
+  const providerDef = findProviderDef(track, config.id, lists)
+  const model = text(config.model) || firstProviderModel(providerDef)
+  if (!text(config.id) || !model || !providerCredentialReady(config, providerDef)) return null
+  const account = findProviderAccount(lists._config || {}, config.accountId)
+  const key = profileKey(track, { ...config, model })
   return {
     profileId: `profile_${hashString(key)}`,
-    accountId: providerConfig.accountId || account?.accountId || '',
-    accountKind: providerConfig.accountKind || account?.kind || '',
-    providerId: providerConfig.id,
-    name: providerDef?.name || providerConfig.id,
-    apiKey: providerConfig.apiKey || '',
-    sessionToken: providerConfig.sessionToken || '',
-    baseUrl: providerConfig.baseUrl || providerDef?.defaultUrl || '',
+    accountId: text(config.accountId) || text(account?.accountId),
+    accountKind: text(config.accountKind) || text(account?.kind),
+    providerId: text(config.id),
+    name: text(providerDef?.name) || text(config.id),
+    apiKey: text(config.apiKey),
+    sessionToken: text(config.sessionToken),
+    baseUrl: text(config.baseUrl) || text(providerDef?.defaultUrl),
     model,
-    protocol: providerConfig.protocol || providerDef?.protocol,
-    format: providerConfig.format || providerDef?.format,
-    authType: providerConfig.authType || providerDef?.authType,
-    customAuth: providerConfig.customAuth || {},
-    template: normalizeProviderTemplate(providerConfig),
-    pathPrefix: providerConfig.pathPrefix || '',
-    modelListPath: providerConfig.modelListPath || providerConfig.modelsPath || '',
-    timeout: providerConfig.timeout || '',
-    pollInterval: providerConfig.pollInterval || '',
-    defaultNegPrompt: providerConfig.defaultNegPrompt || '',
-    customSystemPrompt: providerConfig.customSystemPrompt || ''
+    protocol: config.protocol || providerDef?.protocol,
+    format: config.format || providerDef?.format,
+    authType: config.authType || providerDef?.authType,
+    customAuth: recordOf(config.customAuth),
+    template: normalizeProviderTemplate(config),
+    pathPrefix: text(config.pathPrefix),
+    modelListPath: text(config.modelListPath) || text(config.modelsPath),
+    timeout: typeof config.timeout === 'number' || typeof config.timeout === 'string' ? config.timeout : '',
+    pollInterval: typeof config.pollInterval === 'number' || typeof config.pollInterval === 'string' ? config.pollInterval : '',
+    defaultNegPrompt: text(config.defaultNegPrompt),
+    customSystemPrompt: text(config.customSystemPrompt)
   }
 }
 
+/** @param {unknown} cfg @param {ProviderCollections} providerLists @returns {UnknownRecord} */
 function upsertProviderProfiles(cfg, providerLists = PROVIDER_MAP) {
-  cfg = migrateProviderAccounts(cfg, providerLists)
-  const deletedKeys = new Set(cfg?._deletedProfileKeys || [])
+  const migrated = recordOf(migrateProviderAccounts(cfg, providerLists))
+  const deletedKeys = new Set(Array.isArray(migrated._deletedProfileKeys) ? migrated._deletedProfileKeys.filter(item => typeof item === 'string') : [])
+  /** @type {UnknownRecord & { providerProfiles: Record<Track, UnknownRecord[]> }} */
   const next = {
-    ...cfg,
+    ...migrated,
     providerProfiles: {
-      chat: [...providerProfileList(cfg, 'chat')],
-      image: [...providerProfileList(cfg, 'image')],
-      video: [...providerProfileList(cfg, 'video')]
+      chat: [...providerProfileList(migrated, 'chat')],
+      image: [...providerProfileList(migrated, 'image')],
+      video: [...providerProfileList(migrated, 'video')]
     }
   }
   delete next._deletedProfileKeys
   for (const track of TRACKS) {
-    const currentProvider = next.providers?.[track] || {}
+    const providers = recordOf(next.providers)
+    const currentProvider = recordOf(providers[track])
     const account = findProviderAccount(next, currentProvider.accountId)
     if (account?.accountId) {
       const accountProviderDef = findProviderDef(track, account.providerId, providerLists)
       const keepModel = currentProvider.id === account.providerId ? currentProvider.model : ''
-      next.providers[track] = {
+      providers[track] = {
         ...currentProvider,
         ...providerPatchFromAccount(account, accountProviderDef),
         model: modelForProviderSwitch(keepModel, accountProviderDef)
       }
     }
-    const effectiveProvider = next.providers?.[track] || {}
+    const effectiveProvider = recordOf(providers[track])
     const providerDef = findProviderDef(track, effectiveProvider.id, providerLists)
     const recommendedModel = firstProviderModel(providerDef)
     if (effectiveProvider.id && !effectiveProvider.model && recommendedModel) {
-      next.providers[track] = { ...effectiveProvider, model: recommendedModel }
+      providers[track] = { ...effectiveProvider, model: recommendedModel }
     }
-    const profile = profileFromProvider(track, next.providers?.[track], { ...providerLists, _config: next })
+    next.providers = providers
+    const profile = profileFromProvider(track, providers[track], { ...providerLists, _config: next })
     if (!profile) continue
     const key = profileKey(track, { providerId: profile.providerId, baseUrl: profile.baseUrl, model: profile.model })
     if (deletedKeys.has(key)) continue
@@ -343,24 +353,27 @@ function upsertProviderProfiles(cfg, providerLists = PROVIDER_MAP) {
   return next
 }
 
+/** @param {unknown} action @returns {Promise<UnknownRecord[]>} */
 export async function loadProviders(action) {
-  const fallback = normalizeProviderList(action, PROVIDER_MAP[action] || [])
+  if (!isTrack(action)) return []
+  const fallback = normalizeProviderList(action, PROVIDER_MAP[action])
   if (!window.electronAPI?.providerAPI?.list) return fallback
   try {
     const providers = await window.electronAPI.providerAPI.list(action)
     if (!Array.isArray(providers) || providers.length === 0) return fallback
-    return normalizeProviderList(action, providers.map(provider => {
+    return normalizeProviderList(action, providers.filter(isRecord).map(provider => {
       const fallbackProvider = fallback.find(item =>
-        item.id === provider.id || PROVIDER_ID_ALIASES[action]?.[item.id] === provider.id
+        item.id === provider.id || PROVIDER_ID_ALIASES[action][text(item.id)] === provider.id
       )
-      const capability = provider[action] || provider.capabilities?.[action] || {}
+      const capability = recordOf(provider[action] || recordOf(provider.capabilities)[action])
+      const defaults = recordOf(provider.defaults)
       return {
         ...provider,
-        defaultUrl: provider.defaultUrl || provider.defaults?.baseUrl || capability.baseUrl || fallbackProvider?.defaultUrl || '',
-        defaultModel: provider.defaultModel || capability.defaultModel || fallbackProvider?.defaultModel || '',
-        pathPrefix: provider.pathPrefix || capability.pathPrefix || fallbackProvider?.pathPrefix || '',
-        modelListPath: provider.modelListPath || provider.modelsPath || capability.modelListPath || capability.modelsPath || fallbackProvider?.modelListPath || '',
-        modelCatalog: Array.isArray(provider.modelCatalog) ? provider.modelCatalog : (fallbackProvider?.modelCatalog || []),
+        defaultUrl: text(provider.defaultUrl) || text(defaults.baseUrl) || text(capability.baseUrl) || text(fallbackProvider?.defaultUrl),
+        defaultModel: text(provider.defaultModel) || text(capability.defaultModel) || text(fallbackProvider?.defaultModel),
+        pathPrefix: text(provider.pathPrefix) || text(capability.pathPrefix) || text(fallbackProvider?.pathPrefix),
+        modelListPath: text(provider.modelListPath) || text(provider.modelsPath) || text(capability.modelListPath) || text(capability.modelsPath) || text(fallbackProvider?.modelListPath),
+        modelCatalog: Array.isArray(provider.modelCatalog) ? provider.modelCatalog.filter(model => typeof model === 'string') : (Array.isArray(fallbackProvider?.modelCatalog) ? fallbackProvider.modelCatalog : []),
         protocol: provider.protocol || capability.protocol || fallbackProvider?.protocol,
         format: provider.format || capability.format || fallbackProvider?.format,
         authType: provider.authType || fallbackProvider?.authType
@@ -371,31 +384,36 @@ export async function loadProviders(action) {
   }
 }
 
+/** @param {unknown} cfg @param {ProviderMap} providerMap @returns {UnknownRecord} */
 function migrateConfig(cfg, providerMap = PROVIDER_MAP) {
-  if (!cfg?.providers) return cfg
+  const source = recordOf(cfg)
+  if (!source.providers) return source
+  const sourceProviders = recordOf(source.providers)
+  const general = recordOf(source.general)
   const next = {
-    ...cfg,
+    ...source,
     general: {
-      ...cfg.general,
-      enableVideo: cfg.general?.enableVideo === true
+      ...general,
+      enableVideo: general.enableVideo === true
     },
-    providers: { ...cfg.providers },
+    providers: { ...sourceProviders },
     providerProfiles: {
-      chat: providerProfileList(cfg, 'chat'),
-      image: providerProfileList(cfg, 'image'),
-      video: providerProfileList(cfg, 'video')
+      chat: providerProfileList(source, 'chat'),
+      image: providerProfileList(source, 'image'),
+      video: providerProfileList(source, 'video')
     }
   }
-  for (const [track, providers] of Object.entries(providerMap)) {
-    const saved = next.providers[track]
-    if (!saved?.id) continue
+  for (const track of TRACKS) {
+    const providers = providerMap[track]
+    const saved = recordOf(next.providers[track])
+    if (!text(saved.id)) continue
     const savedCanonicalId = canonicalProviderId(track, saved.id)
     const matchedProvider = providers.find(p => canonicalProviderId(track, p.id) === savedCanonicalId)
     if (!matchedProvider || !isExecutableProvider(matchedProvider)) {
       const fallback = providers.find(isExecutableProvider) || providers[0]
       if (!fallback) continue
       next.providers[track] = { id: fallback.id, apiKey: '', baseUrl: fallback.defaultUrl, model: firstProviderModel(fallback) }
-    } else if (DEPRECATED_MODELS.includes(saved.model)) {
+    } else if (DEPRECATED_MODELS.includes(text(saved.model))) {
       next.providers[track] = { ...saved, id: matchedProvider.id, model: firstProviderModel(matchedProvider) }
     } else if (!saved.model && firstProviderModel(matchedProvider)) {
       next.providers[track] = { ...saved, id: matchedProvider.id, model: firstProviderModel(matchedProvider) }
@@ -407,9 +425,9 @@ function migrateConfig(cfg, providerMap = PROVIDER_MAP) {
 }
 
 export default function useConfig() {
-  const [config, setConfig] = useState(null)
-  const [providerLists, setProviderLists] = useState(PROVIDER_MAP)
-  const configRef = useRef(null)
+  const [config, setConfig] = useState(/** @type {UnknownRecord | null} */ (null))
+  const [providerLists, setProviderLists] = useState(/** @type {ProviderMap} */ (PROVIDER_MAP))
+  const configRef = useRef(/** @type {UnknownRecord | null} */ (null))
 
   useEffect(() => {
     let cancelled = false
@@ -423,13 +441,13 @@ export default function useConfig() {
       const loadedProviderLists = { chat, image, video }
       setProviderLists(loadedProviderLists)
       if (!c) return
-      const migrationProviderMap = Object.fromEntries(
-        Object.entries(loadedProviderLists).map(([track, providers]) => [
-          track,
-          mergeProviderLists(providers, PROVIDER_MAP[track])
-        ])
-      )
-      const migrated = migrateProviderAccounts(migrateConfig(c, migrationProviderMap), migrationProviderMap)
+      /** @type {ProviderMap} */
+      const migrationProviderMap = {
+        chat: mergeProviderLists(chat, PROVIDER_MAP.chat),
+        image: mergeProviderLists(image, PROVIDER_MAP.image),
+        video: mergeProviderLists(video, PROVIDER_MAP.video)
+      }
+      const migrated = recordOf(migrateProviderAccounts(migrateConfig(c, migrationProviderMap), migrationProviderMap))
       configRef.current = migrated
       setConfig(migrated)
     }).catch(() => {
@@ -439,7 +457,7 @@ export default function useConfig() {
     return () => { cancelled = true }
   }, [])
 
-  const save = useCallback(async (newCfg) => {
+  const save = useCallback(/** @param {unknown} newCfg */ async (newCfg) => {
     // Persist first, then reload the redacted config from the main process.
     // Keeping the plaintext key the user just typed in renderer state risks
     // exposure via a heap snapshot / XSS; main is the sole custodian. The
@@ -453,15 +471,16 @@ export default function useConfig() {
     try {
       const redacted = await window.electronAPI?.getConfig?.()
       if (redacted) {
-        configRef.current = redacted
-        setConfig(redacted)
+        const safeRedacted = recordOf(redacted)
+        configRef.current = safeRedacted
+        setConfig(safeRedacted)
       }
     } catch {
       // Persisted fine; if reload fails we keep the previous redacted state.
     }
   }, [providerLists])
 
-  const updateProvider = useCallback((track, patch) => {
+  const updateProvider = useCallback(/** @param {Track} track @param {unknown} patch */ (track, patch) => {
     const current = configRef.current
     if (!current) return
     // Chat track: new array format uses savedChatModel + providers array
@@ -470,17 +489,18 @@ export default function useConfig() {
       save(next)
       return
     }
+    const providers = recordOf(current.providers)
     const next = {
       ...current,
-      providers: { ...current.providers, [track]: { ...current.providers[track], ...patch } }
+      providers: { ...providers, [track]: { ...recordOf(providers[track]), ...recordOf(patch) } }
     }
     save(next)
   }, [save])
 
-  const updateGeneral = useCallback((patch) => {
+  const updateGeneral = useCallback(/** @param {unknown} patch */ (patch) => {
     const current = configRef.current
     if (!current) return
-    const next = { ...current, general: { ...current.general, ...patch } }
+    const next = { ...current, general: { ...recordOf(current.general), ...recordOf(patch) } }
     save(next)
   }, [save])
 

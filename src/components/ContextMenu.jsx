@@ -1,7 +1,14 @@
+// @ts-check
+
 import { useEffect, useRef, useState } from 'react'
 import Ic from './icons'
 import { t } from '../i18n'
 
+/** @typedef {import('../types/domain').Asset} Asset */
+/** @typedef {Parameters<typeof Ic>[0]['n']} IconName */
+/** @typedef {{ id: string, key?: string, icon: IconName, type?: 'image' | 'video', requiresUrl?: boolean, requiresPrompt?: boolean, danger?: boolean }} MenuItem */
+
+/** @type {MenuItem[]} */
 const MENU_ITEMS = [
   { id: 'view', key: 'viewImage', icon: 'eye' },
   { id: 'download', key: 'downloadFile', icon: 'download' },
@@ -16,12 +23,26 @@ const MENU_ITEMS = [
   { id: 'delete', key: 'delete', icon: 'trash', danger: true }
 ]
 
+/**
+ * @param {{
+ *   x: number,
+ *   y: number,
+ *   asset: Asset,
+ *   onClose: () => void,
+ *   onAction: (action: string, asset: Asset) => void | Promise<void>,
+ *   lang?: string,
+ *   videoEnabled?: boolean,
+ *   referenceEnabled?: boolean
+ * }} props
+ */
 export default function ContextMenu({ x, y, asset, onClose, onAction, lang, videoEnabled = false, referenceEnabled = false }) {
-  const ref = useRef(null)
+  const ref = useRef(/** @type {HTMLDivElement | null} */ (null))
   const [position, setPosition] = useState({ left: x, top: y })
 
   useEffect(() => {
-    const onMouseDown = (e) => { if (ref.current && !ref.current.contains(e.target)) onClose() }
+    /** @param {MouseEvent} e */
+    const onMouseDown = (e) => { if (ref.current && e.target instanceof Node && !ref.current.contains(e.target)) onClose() }
+    /** @param {KeyboardEvent} e */
     const onKeyDown = (e) => { if (e.key === 'Escape') onClose() }
     document.addEventListener('mousedown', onMouseDown)
     window.addEventListener('keydown', onKeyDown)

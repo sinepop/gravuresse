@@ -1,3 +1,5 @@
+// @ts-check
+
 import {
   Send, Settings, X, ChevronDown, Trash2, Download, Upload, Image, Film,
   Sparkles, Grid3X3, Link, Check, AlertTriangle, RefreshCw, Eye, Zap,
@@ -53,6 +55,7 @@ const ICONS = {
   redo: Redo2,
 }
 
+/** @param {{ n: keyof typeof ICONS, size?: number, color?: string, sw?: number }} props */
 export default function Ic({ n, size = 15, color = 'currentColor', sw = 1.5 }) {
   const Icon = ICONS[n]
   if (!Icon) return null

@@ -1,9 +1,16 @@
+// @ts-check
+
 import { useEffect, useState } from 'react'
 import { sanitizeAssetUrl } from '../utils/mediaSecurity.js'
 
+/** @typedef {import('../types/domain').AssetType} AssetType */
+/** @typedef {'empty' | 'blocked' | 'direct' | 'remote'} PreviewUrlKind */
+
 const CACHE_FILE_RE = /^[a-f0-9]{64}\.(png|jpg|webp|mp4)$/
 
+/** @param {unknown} url @param {unknown} type @returns {string} */
 function sanitizeMediaCacheUrl(url = '', type = 'image') {
+  if (typeof url !== 'string') return ''
   let parsed
   try {
     parsed = new URL(url)
@@ -18,6 +25,7 @@ function sanitizeMediaCacheUrl(url = '', type = 'image') {
   return isVideo ? '' : parsed.href
 }
 
+/** @param {unknown} url @param {unknown} type @returns {{ kind: PreviewUrlKind, url: string }} */
 export function normalizePreviewUrl(url = '', type = 'image') {
   const mediaType = type === 'video' ? 'video' : 'image'
   const value = typeof url === 'string' ? url.trim() : ''
@@ -32,6 +40,7 @@ export function normalizePreviewUrl(url = '', type = 'image') {
   return { kind: 'remote', url: safeUrl }
 }
 
+/** @param {unknown} url @param {unknown} type */
 export default function useSafeMediaUrl(url, type = 'image') {
   const [state, setState] = useState({ src: '', loading: false })
 

@@ -11,7 +11,14 @@ import { createAsset, createGeneration, mergeAsset } from '../src/utils/assetFac
 import { sanitizeAssetUrl } from '../src/utils/mediaSecurity.js'
 import { normalizePreviewUrl } from '../src/hooks/useSafeMediaUrl.js'
 import { formatErrorAlert, getConversationTitle, normalizeConversationRecord, normalizeImportedConversations } from '../src/utils/conversationImport.js'
-import { buildGenerationMeta, parseDurationSeconds } from '../src/utils/generationTasks.js'
+import {
+  buildGenerationMeta,
+  getTaskPromptReferenceIds,
+  getTaskSourceIds,
+  idList,
+  parseDurationSeconds,
+  uniqueIds
+} from '../src/utils/generationTasks.js'
 import {
   canonicalProviderKey,
   isModelEndpointUnsupportedError,
@@ -27,8 +34,10 @@ import {
   updateConversationAsset,
   updateConversationTask
 } from '../src/utils/conversationStore.js'
-import { normalizeProviderList } from '../src/hooks/useConfig.js'
-import { buildConfigProviderProfiles, createProviderClearPatch, createProviderProfilePatch, createProviderSelectionPatch, defaultProviderTemplatePreset, normalizeProviderTemplate, providerNeedsTemplatePaths, providerTemplatePathStatus, providerTemplatePresets } from '../src/utils/providerConfig.js'
+import { resolveProviderId, sameProviderId } from '../src/providers/aliases.js'
+import { normalizeModelRecord, sortModelRecords } from '../src/utils/modelCapabilities.js'
+import { loadProviders, normalizeProviderList } from '../src/hooks/useConfig.js'
+import { applyChatProviderPatch, buildConfigProviderProfiles, createProviderClearPatch, createProviderProfilePatch, createProviderSelectionPatch, defaultProviderTemplatePreset, firstProviderModel, getProvidersFromConfig, normalizeProviderTemplate, providerNeedsTemplatePaths, providerTemplatePathStatus, providerTemplatePresets, resolveChatProvider } from '../src/utils/providerConfig.js'
 import { migrateProviderAccounts, providerPatchFromAccount, findProviderAccount, normalizeProviderAccount, providerGatewayPresetPatch, OPENAI_COMPATIBLE_GATEWAY_PRESETS } from '../src/utils/providerAccounts.js'
 import modelCapabilities from '../shared/modelCapabilities.cjs'
 
@@ -200,7 +209,22 @@ assert.equal(mergedExtended.providerAccounts[0].secretKey, 'acct-sk')
 assert.equal(mergedExtended.providers.chat.token, '', 'empty secret stays empty after merge')
 
 assert.equal(parseDurationSeconds('8s', 5), 8)
+assert.equal(parseDurationSeconds('8.6 s', 5), 9)
+assert.equal(parseDurationSeconds('0.49s', 5), 0)
+assert.equal(parseDurationSeconds('0.5s', 5), 1)
 assert.equal(parseDurationSeconds('bad', 5), 5)
+assert.equal(parseDurationSeconds(0, 5), 5)
+assert.equal(parseDurationSeconds(null, 7), 7)
+assert.deepEqual(idList(null), [])
+assert.deepEqual(idList('source-a'), ['source-a'])
+assert.deepEqual(idList([undefined, 'source-a', 42, {}, '']), ['source-a', '42'])
+assert.deepEqual(uniqueIds(['source-a', 42, 'source-a', '42']), ['source-a', '42'])
+assert.deepEqual(getTaskSourceIds(null), [])
+assert.deepEqual(getTaskSourceIds({ sourceAssetIds: ['source-a', 42, 'source-a'], source_image_id: 42 }), ['source-a', '42'])
+assert.deepEqual(getTaskPromptReferenceIds('bad task'), [])
+assert.deepEqual(getTaskPromptReferenceIds({ promptReferenceAssetIds: ['ref-a', 'ref-a', 7] }), ['ref-a', '7'])
+assert.deepEqual(buildGenerationMeta(null).sourceAssetIds, [])
+assert.equal(buildGenerationMeta({ task: 'bad task', provider: 42 }).providerId, '')
 assert.deepEqual(
   buildGenerationMeta({
     task: { prompt: 'p', negative_prompt: 'n', sourceAssetIds: ['a', 'a'], promptReferenceAssetIds: ['r'], duration: 5 },
@@ -211,7 +235,13 @@ assert.deepEqual(
   ['a']
 )
 assert.equal(canonicalProviderKey('image', 'dalle'), 'openai')
+assert.equal(resolveProviderId('chat', 'claude'), 'anthropic')
+assert.equal(resolveProviderId('unknown', 'custom-provider'), 'custom-provider')
+assert.equal(resolveProviderId('image', null), '')
+assert.equal(sameProviderId('image', 'dalle', 'openai'), true)
+assert.equal(sameProviderId('image', {}, 'openai'), false)
 assert.deepEqual(providerAuthConfig({ authType: { type: 'api_key', key: 'x-api-key' } }, {}), { type: 'api-key', key: 'x-api-key' })
+assert.deepEqual(providerAuthConfig({ authType: 'bad auth' }, { customAuth: [] }), { type: 'bearer' })
 assert.equal(providerCredentialReady({ id: 'local', authType: { type: 'none' } }, {}), true)
 assert.equal(providerCredentialReady({ id: 'deepseek', authType: { type: 'bearer' } }, { id: 'deepseek', accountId: 'acct_ready', accountKind: 'api-key' }), true)
 assert.equal(providerCredentialReady({ id: 'openai', authType: { type: 'bearer' } }, { id: 'openai', accountId: 'acct_oauth', accountKind: 'oauth-placeholder' }), false)
@@ -222,6 +252,52 @@ assert.equal(isProviderNetworkError(new Error('getaddrinfo ENOTFOUND api.openai.
 assert.equal(isProviderNetworkError(new Error('HTTP 503 Service Unavailable')), true)
 assert.equal(isProviderNetworkError(new Error('HTTP 401: bad key')), false)
 assert.equal(profileKey('image', { providerId: 'dalle', baseUrl: 'https://api.example.com', model: 'm' }), 'image|openai|https://api.example.com|m')
+assert.equal(profileKey({}, { providerId: 42, baseUrl: {}, model: [] }), '|||')
+assert.equal(normalizeModelRecord(null), null)
+assert.deepEqual(normalizeModelRecord({ id: 'models/gpt-image-2' }, { source: 'catalog' }), {
+  id: 'gpt-image-2', capability: 'image', routeHint: 'openai-image', source: 'catalog', reason: 'name:\\bgpt[-_]?image\\b'
+})
+assert.equal(normalizeModelRecord({ id: 'custom', capabilities: { image: true } })?.capability, 'image')
+assert.equal(normalizeModelRecord({ id: 42 }), null)
+const sortedModelRecords = [
+  normalizeModelRecord({ id: 'unknown-model' }),
+  normalizeModelRecord({ id: 'gpt-4.1' })
+].filter(Boolean).sort(sortModelRecords('chat'))
+assert.deepEqual(sortedModelRecords.map(model => model.id), ['gpt-4.1', 'unknown-model'])
+const malformedProviderAccount = normalizeProviderAccount({
+  accountId: 42,
+  providerId: [],
+  name: {},
+  apiKey: ['secret'],
+  sessionToken: false,
+  baseUrl: {},
+  customAuth: [],
+  template: 'bad',
+  tracks: ['chat', 'audio', 42],
+  status: {}
+})
+assert.equal(typeof malformedProviderAccount.accountId, 'string')
+assert.equal(malformedProviderAccount.providerId, '')
+assert.equal(malformedProviderAccount.name, '')
+assert.equal(malformedProviderAccount.apiKey, '')
+assert.equal(malformedProviderAccount.sessionToken, '')
+assert.equal(malformedProviderAccount.baseUrl, '')
+assert.deepEqual(malformedProviderAccount.customAuth, {})
+assert.deepEqual(malformedProviderAccount.template, {})
+assert.deepEqual(malformedProviderAccount.tracks, ['chat'])
+assert.equal(malformedProviderAccount.status, '')
+assert.equal(findProviderAccount(null, 'missing'), null)
+assert.equal(providerPatchFromAccount(null).accountId, '')
+const emptyMigratedAccounts = migrateProviderAccounts(null, null)
+assert.deepEqual(emptyMigratedAccounts.providers, {})
+assert.deepEqual(emptyMigratedAccounts.providerProfiles, { chat: [], image: [], video: [] })
+assert.deepEqual(emptyMigratedAccounts.providerAccounts, [])
+const malformedMigratedAccounts = migrateProviderAccounts({
+  providerAccounts: [null, 'bad'],
+  providerProfiles: { chat: [null], image: ['bad'], video: [] }
+})
+assert.deepEqual(malformedMigratedAccounts.providerAccounts, [])
+assert.deepEqual(malformedMigratedAccounts.providerProfiles, { chat: [], image: [], video: [] })
 const migratedAccountsConfig = migrateProviderAccounts({
   providers: {
     chat: { id: 'deepseek', apiKey: 'chat-secret', baseUrl: 'https://api.deepseek.com', model: 'deepseek-chat' },
@@ -625,6 +701,10 @@ assert.equal(sanitizeAssetUrl('data:image/png;base64,AAAA', 'image'), 'data:imag
 assert.equal(sanitizeAssetUrl('data:video/mp4;base64,AAAA', 'image'), '')
 assert.equal(sanitizeAssetUrl('data:image/png;base64,AAAA', 'video'), '')
 assert.equal(sanitizeAssetUrl('data:video/mp4;base64,AAAA', 'video'), 'data:video/mp4;base64,AAAA')
+assert.equal(sanitizeAssetUrl(null, 'image'), '')
+assert.equal(sanitizeAssetUrl(42, 'image'), '')
+assert.equal(sanitizeAssetUrl('data:video/mp4;base64,AAAA', { suspicious: true }), '')
+assert.equal(sanitizeAssetUrl('data:image/png;base64,AAAA', { suspicious: true }), 'data:image/png;base64,AAAA')
 assert.equal(mainSanitize.sanitizeAssetUrl('https://127.0.0.1/a.png', 'image'), '')
 assert.equal(mainSanitize.sanitizeAssetUrl('https://[::ffff:192.168.0.1]/a.png', 'image'), '')
 assert.deepEqual(normalizePreviewUrl('data:image/png;base64,AAAA', 'image'), { kind: 'direct', url: 'data:image/png;base64,AAAA' })
@@ -825,6 +905,20 @@ assert.equal(strippedStore.unknown, undefined)
 assert.equal(strippedStore.conversations[0].unknown, undefined)
 
 const stabilityProvider = providerRegistry.getProvider('stability')
+assert.deepEqual(normalizeProviderList(null, [null, 'bad']), [])
+assert.deepEqual(await loadProviders('unknown'), [])
+assert.equal(firstProviderModel(null), '')
+assert.equal(firstProviderModel({ defaultModel: 42, modelCatalog: [{ id: 'bad' }, 'valid-model'] }), 'valid-model')
+assert.deepEqual(normalizeProviderTemplate(null), {})
+assert.deepEqual(normalizeProviderTemplate({ customTemplate: [], template: 'bad', path: {} }), { path: {} })
+assert.deepEqual(resolveChatProvider(null), {})
+assert.deepEqual(buildConfigProviderProfiles({ chatProviders: [null, { enabled: true, name: {}, models: [42, 'valid'] }] }), [{
+  id: 'custom-chat', providerId: 'custom-chat', name: '', baseUrl: '', apiKey: '', model: 'valid', format: 'openai', authType: { type: 'bearer' }, _configProviderIndex: 1
+}])
+assert.deepEqual(getProvidersFromConfig({ chatProviders: [null] }), [])
+assert.deepEqual(applyChatProviderPatch(null, null), {})
+assert.deepEqual(createProviderSelectionPatch(null, null).id, '')
+assert.deepEqual(createProviderProfilePatch({ providerId: 42, customAuth: [], timeout: {}, pollInterval: [] }).id, '')
 const stabilityUiProvider = { id: 'stability', integrationStatus: 'custom-template' }
 assert.equal(providerNeedsTemplatePaths('image', stabilityUiProvider), true)
 assert.equal(providerTemplatePathStatus('image', { template: { requestBody: { prompt: '{prompt}' } } }).ready, false)
@@ -1107,6 +1201,27 @@ assert.deepEqual(generation.sourceAssetIds, ['source-1'])
 assert.deepEqual(generation.promptReferenceAssetIds, ['ref-1', '42'])
 assert.equal(generation.duration, 0)
 assert.equal(generation.unknownLargeField, undefined)
+assert.deepEqual(createGeneration(null).sourceAssetIds, [])
+assert.equal(createGeneration('bad generation').taskId, null)
+assert.deepEqual(createGeneration({ sourceAssetIds: [1, 1, '1'] }).sourceAssetIds, ['1', '1', '1'])
+const generationWithBadStandardFields = createGeneration({
+  providerId: {},
+  model: [],
+  prompt: 42,
+  negativePrompt: {},
+  ratio: [],
+  resolution: {},
+  createdFrom: 7,
+  duration: {}
+})
+assert.equal(generationWithBadStandardFields.providerId, '')
+assert.equal(generationWithBadStandardFields.model, '')
+assert.equal(generationWithBadStandardFields.prompt, '')
+assert.equal(generationWithBadStandardFields.negativePrompt, '')
+assert.equal(generationWithBadStandardFields.ratio, '')
+assert.equal(generationWithBadStandardFields.resolution, '')
+assert.equal(generationWithBadStandardFields.createdFrom, '')
+assert.equal(generationWithBadStandardFields.duration, null)
 
 const legacyAsset = createAsset({
   id: '',
@@ -1165,11 +1280,42 @@ assert.equal(videoAssetWithSpecificMode.generation.mode, 'image_to_video')
 
 const assetFromBadInput = createAsset(null)
 assert.ok(assetFromBadInput.id)
+assert.ok(createAsset('bad asset').id)
 const assetWithBadGeneration = createAsset({ generation: 'bad generation' })
 assert.equal(Object.hasOwn(assetWithBadGeneration.generation, '0'), false)
 const assetWithUnknownGeneration = createAsset({ generation: { prompt: 'keep', unknown: 'drop' } })
 assert.equal(assetWithUnknownGeneration.generation.prompt, 'keep')
 assert.equal(assetWithUnknownGeneration.generation.unknown, undefined)
+
+const assetWithExtension = createAsset({ id: 'extended', customField: 'keep me' })
+assert.equal(assetWithExtension.customField, 'keep me')
+const assetWithStandardFieldOverrides = createAsset({
+  id: [],
+  type: 'audio',
+  url: 'file:///C:/secret.png',
+  label: '',
+  prompt: 42,
+  model: [],
+  ratio: {},
+  style: 1,
+  createdAt: {},
+  isMaterial: 'true',
+  _generating: 'true',
+  generation: { taskId: {}, unknown: 'drop' }
+})
+assert.equal(typeof assetWithStandardFieldOverrides.id, 'string')
+assert.equal(assetWithStandardFieldOverrides.type, 'image')
+assert.equal(assetWithStandardFieldOverrides.url, '')
+assert.equal(assetWithStandardFieldOverrides.label, '未命名')
+assert.equal(assetWithStandardFieldOverrides.prompt, '')
+assert.equal(assetWithStandardFieldOverrides.model, '')
+assert.equal(assetWithStandardFieldOverrides.ratio, '1:1')
+assert.equal(assetWithStandardFieldOverrides.style, '')
+assert.equal(typeof assetWithStandardFieldOverrides.createdAt, 'string')
+assert.equal(assetWithStandardFieldOverrides.isMaterial, false)
+assert.equal(assetWithStandardFieldOverrides._generating, false)
+assert.equal(assetWithStandardFieldOverrides.generation.taskId, null)
+assert.equal(assetWithStandardFieldOverrides.generation.unknown, undefined)
 
 const mergedAsset = mergeAsset(
   createAsset({
@@ -1189,6 +1335,7 @@ assert.equal(mergedAsset.generation.parentAssetId, 'parent-base')
 assert.deepEqual(mergedAsset.generation.sourceAssetIds, ['source-base'])
 assert.equal(mergedAsset.generation.resolution, '1024')
 assert.equal(mergeAsset(mergedAsset, { generation: 'bad generation' }).generation.prompt, 'base prompt')
+assert.equal(mergeAsset(null, null).type, 'image')
 
 const title = getConversationTitle([
   { role: 'assistant', content: 'ignored' },
@@ -1379,6 +1526,7 @@ assert.equal(Object.hasOwn(dirtyAssetImport[0].assets[2].generation, '0'), false
 
 assert.equal(formatErrorAlert('Import failed', new Error('Bad JSON')), 'Import failed\nBad JSON')
 assert.equal(formatErrorAlert('Import failed'), 'Import failed')
+assert.equal(formatErrorAlert('Import failed', { message: 42 }), 'Import failed')
 
 const withMessage = appendMessageToConversation(
   { title: '', messages: 'bad messages', assets: [] },

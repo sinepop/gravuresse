@@ -1,3 +1,5 @@
+// @ts-check
+
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import TitleBar from './components/TitleBar'
 import ChatPanel from './components/ChatPanel'
@@ -22,7 +24,56 @@ import { loadConversationsOnce, normalizeStoredConversations } from './utils/con
 import { t } from './i18n'
 import './styles/global.css'
 
+/** @typedef {import('./types/domain').Asset} Asset */
+/** @typedef {import('./types/domain').Conversation} Conversation */
+/** @typedef {import('./types/domain').ConversationBridge} ConversationBridge */
+/** @typedef {import('./types/domain').Message} Message */
+/** @typedef {import('./types/domain').StoredConversation} StoredConversation */
+/** @typedef {Record<string, unknown>} UnknownRecord */
+/** @typedef {'image' | 'video'} WorkspaceModule */
+/** @typedef {{ id: WorkspaceModule, icon: 'image' | 'film', labels: Record<string, string> }} WorkspaceModuleDefinition */
+/** @typedef {{ id: string, messages: Message[], assets: Asset[] }} LoadingSnapshot */
+/** @typedef {{ id: string, conversation: StoredConversation }} EnsureConversationResult */
+/** @typedef {{ flushCurrent?: boolean, applyToView?: boolean }} CreateConversationOptions */
+/** @typedef {{ forSend?: boolean }} EnsureConversationOptions */
+/** @typedef {{ x: number, y: number, asset: Asset }} ContextMenuState */
+/** @typedef {{ nonce: number, asset: Pick<Asset, 'id' | 'url' | 'type' | 'label'> }} ReferenceIntent */
+/** @typedef {{ nonce: number, text: string, parentAssetId: string, createdFrom: string }} ComposerIntent */
+
+/** @param {unknown} value @returns {value is UnknownRecord} */
+function isRecord(value) {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value))
+}
+
+/** @param {unknown} value @returns {UnknownRecord} */
+function recordOf(value) {
+  return isRecord(value) ? value : {}
+}
+
+/** @param {unknown} value @param {string} fallback @returns {string} */
+function textOr(value, fallback) {
+  return typeof value === 'string' && value ? value : fallback
+}
+
+/** @param {StoredConversation[]} conversations @returns {StoredConversation[]} */
+function sortConversations(conversations) {
+  return conversations.sort((a, b) => new Date(b.updatedAt || '').getTime() - new Date(a.updatedAt || '').getTime())
+}
+
+/** @returns {StoredConversation} */
+function createEmptyConversation() {
+  return {
+    id: `conv_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+    title: '',
+    messages: [],
+    assets: [],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  }
+}
+
 const FONT_SIZES = { small: '12px', medium: '13px', large: '14px' }
+/** @type {WorkspaceModuleDefinition[]} */
 const MODULES = [
   { id: 'image', icon: 'image', labels: { zh: '生图', en: 'Image' } },
   { id: 'video', icon: 'film', labels: { zh: '视频', en: 'Video' } }
@@ -36,25 +87,26 @@ export default function App() {
   const taskQueue = useTaskQueue(canvas)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsPage, setSettingsPage] = useState('appearance')
-  const [ctxMenu, setCtxMenu] = useState(null)
-  const [activeModule, setActiveModule] = useState('image')
-  const [referenceIntent, setReferenceIntent] = useState(null)
-  const [composerIntent, setComposerIntent] = useState(null)
-  const lang = config?.general?.language || 'zh'
+  const [ctxMenu, setCtxMenu] = useState(/** @type {ContextMenuState | null} */ (null))
+  const [activeModule, setActiveModule] = useState(/** @type {WorkspaceModule} */ ('image'))
+  const [referenceIntent, setReferenceIntent] = useState(/** @type {ReferenceIntent | null} */ (null))
+  const [composerIntent, setComposerIntent] = useState(/** @type {ComposerIntent | null} */ (null))
+  const generalConfig = recordOf(config?.general)
+  const lang = textOr(generalConfig.language, 'zh')
 
   // Conversation management
-  const [conversations, setConversations] = useState([])
-  const [activeConvId, setActiveConvId] = useState(null)
+  const [conversations, setConversations] = useState(/** @type {StoredConversation[]} */ ([]))
+  const [activeConvId, setActiveConvId] = useState(/** @type {string | null} */ (null))
   const [conversationBusy, setConversationBusy] = useState(false)
   const skipSave = useRef(false)
   const switchLoading = useRef(false)
-  const prevConvIdRef = useRef(null)
-  const loadingSnapshot = useRef(null)
-  const activeConvIdRef = useRef(null)
-  const conversationsRef = useRef([])
-  const deletedConvIds = useRef(new Set())
+  const prevConvIdRef = useRef(/** @type {string | null} */ (null))
+  const loadingSnapshot = useRef(/** @type {LoadingSnapshot | null} */ (null))
+  const activeConvIdRef = useRef(/** @type {string | null} */ (null))
+  const conversationsRef = useRef(/** @type {StoredConversation[]} */ ([]))
+  const deletedConvIds = useRef(new Set(/** @type {string[]} */ ([])))
   const saveEpoch = useRef(0)
-  const ensuringConversationRef = useRef(null)
+  const ensuringConversationRef = useRef(/** @type {Promise<EnsureConversationResult> | null} */ (null))
   const didLoadConversationsRef = useRef(false)
 
   useEffect(() => {
@@ -64,9 +116,13 @@ export default function App() {
     conversationsRef.current = conversations
   }, [conversations])
 
-  const isActiveConversation = useCallback((id) => id && activeConvIdRef.current === id && !deletedConvIds.current.has(id), [])
+  const isActiveConversation = useCallback(/** @param {string} id */ (id) => Boolean(id && activeConvIdRef.current === id && !deletedConvIds.current.has(id)), [])
 
-  const patchStoredConversation = useCallback((id, patcher) => {
+  const patchStoredConversation = useCallback(/**
+   * @param {string | null} id
+   * @param {(conversation: StoredConversation) => (Partial<Conversation> & UnknownRecord) | null} patcher
+   * @returns {StoredConversation | null}
+   */ (id, patcher) => {
     if (!id || deletedConvIds.current.has(id)) return null
     const currentList = conversationsRef.current
     const idx = currentList.findIndex(c => c.id === id)
@@ -74,10 +130,10 @@ export default function App() {
     const current = currentList[idx]
     const patched = patcher(current)
     if (!patched) return null
-    const updated = { ...patched, updatedAt: new Date().toISOString() }
+    const updated = { ...current, ...patched, id: current.id, updatedAt: new Date().toISOString() }
     const next = [...currentList]
     next[idx] = updated
-    next.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
+    sortConversations(next)
     conversationsRef.current = next
     setConversations(next)
     const messages = updated.messages || []
@@ -87,11 +143,12 @@ export default function App() {
     return updated
   }, [])
 
-  const conversationBridge = useMemo(() => ({
+  const conversationBridge = useMemo(/** @returns {ConversationBridge} */ () => ({
     canWrite: (id) => Boolean(id && !deletedConvIds.current.has(id) && conversationsRef.current.some(c => c.id === id)),
     appendMessage: (id, message) => patchStoredConversation(id, conv => appendMessageToConversation(conv, message)),
     updateTask: (id, msgId, taskIndex, patch) => patchStoredConversation(id, conv => updateConversationTask(conv, msgId, taskIndex, patch)),
     addAsset: (id, asset) => {
+      /** @type {Asset | null} */
       let item = null
       const updated = patchStoredConversation(id, conv => {
         const result = addAssetToConversationRecord(conv, asset)
@@ -113,7 +170,7 @@ export default function App() {
   const setChatMessages = chat.setMessages
   const replaceCanvasAssets = canvas.replaceAssets
 
-  const applyConversation = useCallback((conv, id) => {
+  const applyConversation = useCallback(/** @param {unknown} conv @param {string} id */ (conv, id) => {
     const normalized = normalizeConversationRecord(conv) || { messages: [], assets: [] }
     const messages = normalized.messages || []
     const assets = normalized.assets || []
@@ -156,7 +213,7 @@ export default function App() {
       if (cur.messages === chat.messages && cur.assets === canvas.allAssets) return prev
       const next = [...prev]
       next[idx] = { ...cur, messages: chat.messages, assets: canvas.allAssets, updatedAt: new Date().toISOString() }
-      return next.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
+      return sortConversations(next)
     })
   }, [chat.messages, canvas.allAssets, activeConvId])
 
@@ -188,16 +245,16 @@ export default function App() {
       if (idx < 0) return prev
       const next = [...prev]
       next[idx] = { ...next[idx], messages, assets, updatedAt: new Date().toISOString() }
-      const sorted = next.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
+      const sorted = sortConversations(next)
       conversationsRef.current = sorted
       return sorted
     })
     await window.electronAPI?.saveConversation(activeConvId, { messages, assets, title })
   }, [activeConvId, chat.messages, canvas.allAssets])
 
-  const createConversation = useCallback(async ({ flushCurrent = true, applyToView = true } = {}) => {
-    const id = `conv_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
-    const conv = { id, title: '', messages: [], assets: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
+  const createConversation = useCallback(/** @param {CreateConversationOptions} [options] @returns {Promise<EnsureConversationResult>} */ async ({ flushCurrent = true, applyToView = true } = {}) => {
+    const conv = createEmptyConversation()
+    const id = conv.id
     saveEpoch.current++
     if (flushCurrent) await flushActiveConversation()
     await window.electronAPI?.saveConversation(id, { messages: [], assets: [], title: '' })
@@ -218,7 +275,7 @@ export default function App() {
     return { id, conversation: conv }
   }, [applyConversation, flushActiveConversation, replaceCanvasAssets])
 
-  const ensureActiveConversation = useCallback(async ({ forSend = false } = {}) => {
+  const ensureActiveConversation = useCallback(/** @param {EnsureConversationOptions} [options] @returns {Promise<EnsureConversationResult>} */ async ({ forSend = false } = {}) => {
     const currentId = activeConvIdRef.current
     if (currentId && conversationsRef.current.some(c => c.id === currentId) && !deletedConvIds.current.has(currentId)) {
       return {
@@ -252,15 +309,15 @@ export default function App() {
         deletedConvIds.current = deletedIds
         conversationsRef.current = loaded
         setConversations(loaded)
-        const activeId = data.activeId && loaded.some(c => c.id === String(data.activeId)) ? String(data.activeId) : loaded[0].id
+        const activeId = data?.activeId && loaded.some(c => c.id === String(data.activeId)) ? String(data.activeId) : loaded[0].id
         await window.electronAPI?.setActiveConversation(activeId)
         setActiveConvId(activeId)
-        const conv = loaded.find(c => c.id === activeId)
-        if (conv && !forSend) {
+        const conv = loaded.find(c => c.id === activeId) || loaded[0]
+        if (!forSend) {
           applyConversation(conv, activeId)
         } else if (forSend) {
           prevConvIdRef.current = activeId
-          replaceCanvasAssets(conv?.assets || [])
+          replaceCanvasAssets(conv.assets || [])
         }
         return { id: activeId, conversation: conv }
       }
@@ -285,7 +342,7 @@ export default function App() {
       if (loaded.length > 0) {
         setConversations(loaded)
         conversationsRef.current = loaded
-        const activeId = data.activeId && loaded.some(c => c.id === String(data.activeId)) ? String(data.activeId) : loaded[0].id
+        const activeId = data?.activeId && loaded.some(c => c.id === String(data.activeId)) ? String(data.activeId) : loaded[0].id
         setActiveConvId(activeId)
         const conv = loaded.find(c => c.id === activeId)
         if (conv) applyConversation(conv, activeId)
@@ -303,7 +360,7 @@ export default function App() {
     }
   }, [applyConversation, ensureActiveConversation])
 
-  const doSwitchConv = useCallback(async (id) => {
+  const doSwitchConv = useCallback(/** @param {string} id */ async (id) => {
     if (id === activeConvId) return
     try {
       saveEpoch.current++
@@ -324,9 +381,9 @@ export default function App() {
   }, [createConversation])
 
   const handleNewConv = useCallback(() => doNewConv(), [doNewConv])
-  const handleSwitchConv = useCallback((id) => doSwitchConv(id), [doSwitchConv])
+  const handleSwitchConv = useCallback(/** @param {string} id */ (id) => doSwitchConv(id), [doSwitchConv])
 
-  const handleDeleteConv = useCallback(async (id) => {
+  const handleDeleteConv = useCallback(/** @param {string} id */ async (id) => {
     const deletingActive = id === activeConvId
     const remaining = conversations.filter(c => c.id !== id)
     setConversationBusy(true)
@@ -347,6 +404,7 @@ export default function App() {
         return
       }
       const newId = `conv_${Date.now()}`
+      /** @type {StoredConversation} */
       const conv = { id: newId, title: '', messages: [], assets: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
       await window.electronAPI?.saveConversation(newId, { messages: [], assets: [], title: '' })
       await window.electronAPI?.setActiveConversation(newId)
@@ -360,7 +418,7 @@ export default function App() {
     }
   }, [activeConvId, conversations, flushActiveConversation])
 
-  const handleRenameConv = useCallback((id, newTitle) => {
+  const handleRenameConv = useCallback(/** @param {string} id @param {string} newTitle */ (id, newTitle) => {
     setConversations(prev => {
       const idx = prev.findIndex(c => c.id === id)
       if (idx < 0) return prev
@@ -462,12 +520,15 @@ export default function App() {
   // Apply theme, language, font-size from config
   useEffect(() => {
     if (!config?.general) return
-    const { theme, fontSize } = config.general
-    document.documentElement.dataset.theme = theme || 'light'
-    document.documentElement.style.setProperty('--font-size-base', FONT_SIZES[fontSize] || FONT_SIZES.medium)
-  }, [config?.general?.theme, config?.general?.fontSize])
+    const theme = textOr(generalConfig.theme, 'light')
+    const fontSize = generalConfig.fontSize
+    const resolvedFontSize = fontSize === 'small' || fontSize === 'large' ? FONT_SIZES[fontSize] : FONT_SIZES.medium
+    document.documentElement.dataset.theme = theme
+    document.documentElement.style.setProperty('--font-size-base', resolvedFontSize)
+  }, [config?.general, generalConfig.theme, generalConfig.fontSize])
 
   useEffect(() => {
+    /** @param {KeyboardEvent} e */
     const handler = (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key === ',') {
         e.preventDefault()
@@ -478,7 +539,7 @@ export default function App() {
     return () => window.removeEventListener('keydown', handler)
   }, [])
 
-  const handleAssetAction = useCallback(async (action, asset) => {
+  const handleAssetAction = useCallback(/** @param {string} action @param {Asset} asset */ async (action, asset) => {
     if (action === 'moveAsset') {
       if (!asset?.id) return
       const patch = { x: asset.x, y: asset.y }
@@ -521,7 +582,7 @@ export default function App() {
       patchStoredConversation(activeConvIdRef.current, conv => updateConversationAsset(conv, asset.id, { isMaterial }))
     }
     if (action === 'useAsReference') {
-      if (config?.general?.enableReference !== true) return
+      if (generalConfig.enableReference !== true) return
       if (!asset?.url) return
       setReferenceIntent({
         nonce: Date.now(),
@@ -538,7 +599,7 @@ export default function App() {
       if (asset.type && asset.type !== 'image') return
       const ensured = await ensureActiveConversation({ forSend: true })
       if (ensured?.id) {
-        const lang = config?.general?.language || 'zh'
+        const lang = textOr(generalConfig.language, 'zh')
         chat.regenerateDirectly(asset, lang, { conversationId: ensured.id })
       }
     }
@@ -546,13 +607,13 @@ export default function App() {
       if (asset.type && asset.type !== 'image') return
       const ensured = await ensureActiveConversation({ forSend: true })
       if (ensured?.id) {
-        const lang = config?.general?.language || 'zh'
+        const lang = textOr(generalConfig.language, 'zh')
         chat.createDerivedImageDirectly(asset, lang, { conversationId: ensured.id, createdFrom: 'variation' })
       }
     }
     if (action === 'restyle') {
       if (asset.type && asset.type !== 'image') return
-      const lang = config?.general?.language || 'zh'
+      const lang = textOr(generalConfig.language, 'zh')
       const styleDirection = window.prompt(t('styleDirectionPrompt', lang), '')
       if (!styleDirection?.trim()) return
       const ensured = await ensureActiveConversation({ forSend: true })
@@ -561,7 +622,7 @@ export default function App() {
       }
     }
     if (action === 'toVideo') {
-      if (config?.general?.enableVideo !== true) return
+      if (generalConfig.enableVideo !== true) return
       const ensured = await ensureActiveConversation({ forSend: true })
       if (!ensured?.id) return
       setActiveModule('video')
@@ -578,15 +639,15 @@ export default function App() {
         sourceImageId: asset.id
       })
     }
-  }, [canvas, chat, config, ensureActiveConversation, activeModule, patchStoredConversation])
+  }, [canvas, chat, generalConfig, ensureActiveConversation, patchStoredConversation, lang])
 
-  const openSettings = useCallback((page = 'appearance') => {
+  const openSettings = useCallback(/** @param {string} [page] */ (page = 'appearance') => {
     setSettingsPage(page)
     setSettingsOpen(true)
   }, [])
 
-  const videoEnabled = config?.general?.enableVideo === true
-  const referenceEnabled = config?.general?.enableReference === true
+  const videoEnabled = generalConfig.enableVideo === true
+  const referenceEnabled = generalConfig.enableReference === true
   const visibleModules = useMemo(
     () => MODULES.filter(module => module.id !== 'video' || videoEnabled),
     [videoEnabled]
@@ -635,7 +696,7 @@ export default function App() {
             </div>
             <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
               <CanvasPanel canvas={canvas} lang={lang} generationMode={activeModule}
-                onContextMenu={(e, asset) => setCtxMenu({ x: e.clientX, y: e.clientY, asset })}
+                onContextMenu={/** @param {React.MouseEvent} e @param {Asset} asset */ (e, asset) => setCtxMenu({ x: e.clientX, y: e.clientY, asset })}
                 onAssetAction={handleAssetAction}
                 videoEnabled={videoEnabled}
                 referenceEnabled={referenceEnabled} />
@@ -644,7 +705,7 @@ export default function App() {
         </main>
       </div>
       {settingsOpen && <Settings config={config} providerLists={providerLists} onSave={save} onClose={() => setSettingsOpen(false)} initialPage={settingsPage} />}
-      {ctxMenu && <ContextMenu x={ctxMenu.x} y={ctxMenu.y} asset={ctxMenu.asset} onClose={() => setCtxMenu(null)} onAction={handleAssetAction} lang={config?.general?.language} videoEnabled={videoEnabled} referenceEnabled={referenceEnabled} />}
+      {ctxMenu && <ContextMenu x={ctxMenu.x} y={ctxMenu.y} asset={ctxMenu.asset} onClose={() => setCtxMenu(null)} onAction={handleAssetAction} lang={lang} videoEnabled={videoEnabled} referenceEnabled={referenceEnabled} />}
     </div>
   )
 }

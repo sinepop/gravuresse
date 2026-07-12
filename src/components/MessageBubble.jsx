@@ -1,10 +1,16 @@
-import { useState, useEffect, useRef } from 'react'
+// @ts-check
+
+import { useState, useEffect } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import Ic from './icons'
 import { t } from '../i18n'
 import { sanitizeAssetUrl } from '../utils/mediaSecurity.js'
 
+/** @typedef {import('../types/domain').Message} Message */
+/** @typedef {import('../types/domain').MessageTask} MessageTask */
+
+/** @param {{ startTime?: number }} props */
 function ElapsedTimer({ startTime }) {
   const [elapsed, setElapsed] = useState(0)
   useEffect(() => {
@@ -23,6 +29,15 @@ function ElapsedTimer({ startTime }) {
   )
 }
 
+/**
+ * @param {{
+ *   task: MessageTask,
+ *   onConfirm?: () => void,
+ *   onBatchGenerate?: (count: number) => void,
+ *   onRetry?: () => void,
+ *   lang: string
+ * }} props
+ */
 function TaskCard({ task, onConfirm, onBatchGenerate, onRetry, lang }) {
   const [batchCount, setBatchCount] = useState(2)
   const [showBatch, setShowBatch] = useState(false)
@@ -50,7 +65,7 @@ function TaskCard({ task, onConfirm, onBatchGenerate, onRetry, lang }) {
             <Ic n="check" size={11} color="var(--success)" />
             {t('generated', lang)}
             {task.elapsed != null && <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-muted)', marginLeft: 4 }}>{task.elapsed}s</span>}
-            {task.batchTotal > 1 && <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 4 }}>({task.batchDone}/{task.batchTotal})</span>}
+            {(task.batchTotal || 0) > 1 && <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 4 }}>({task.batchDone}/{task.batchTotal})</span>}
           </span>
         )}
         {isError && <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--danger)' }}>{t('failed', lang)}</span>}
@@ -153,7 +168,7 @@ function TaskCard({ task, onConfirm, onBatchGenerate, onRetry, lang }) {
           <div style={{ width: 14, height: 14, border: '2px solid var(--border-accent)', borderTopColor: 'var(--accent)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
           {t('generating', lang)}
           <ElapsedTimer startTime={task.startTime} />
-          {task.batchTotal > 1 && <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 4 }}>({task.batchDone || 0}/{task.batchTotal})</span>}
+          {(task.batchTotal || 0) > 1 && <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 4 }}>({task.batchDone || 0}/{task.batchTotal})</span>}
         </div>
       )}
       {isQueued && (
@@ -167,10 +182,20 @@ function TaskCard({ task, onConfirm, onBatchGenerate, onRetry, lang }) {
   )
 }
 
+/**
+ * @param {{
+ *   msg: Message,
+ *   onConfirmTask?: (messageId: string | number, task: MessageTask, taskIndex: number) => void,
+ *   onBatchGenerate?: (messageId: string | number, task: MessageTask, count: number, taskIndex: number) => void,
+ *   onRetryTask?: (messageId: string | number, task: MessageTask, taskIndex: number) => void,
+ *   lang: string
+ * }} props
+ */
 export default function MessageBubble({ msg, onConfirmTask, onBatchGenerate, onRetryTask, lang }) {
   const isUser = msg.role === 'user'
   const [showThinking, setShowThinking] = useState(false)
 
+  /** @param {React.MouseEvent<HTMLAnchorElement>} e @param {string} href */
   const openMarkdownLink = (e, href) => {
     e.preventDefault()
     e.stopPropagation()

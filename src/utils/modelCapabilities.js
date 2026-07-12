@@ -31,6 +31,10 @@ const CHAT_PATTERNS = [
   /\bdoubao\b/i
 ]
 
+/**
+ * @param {unknown} value
+ * @returns {string[]}
+ */
 function arrayText(value) {
   if (!value) return []
   if (Array.isArray(value)) return value.flatMap(arrayText)
@@ -40,39 +44,63 @@ function arrayText(value) {
   return [String(value)]
 }
 
+/**
+ * @param {unknown} model
+ * @returns {string}
+ */
 function modelId(model) {
   if (typeof model === 'string') return model
-  return String(model?.id || model?.name || model?.model || '').replace(/^models\//, '')
+  if (!model || typeof model !== 'object' || Array.isArray(model)) return ''
+  const record = /** @type {UnknownRecord} */ (model)
+  const value = [record.id, record.name, record.model].find(item => typeof item === 'string')
+  return String(value || '').replace(/^models\//, '')
 }
 
+/**
+ * @param {unknown} model
+ * @returns {string}
+ */
 function modelText(model) {
   if (typeof model === 'string') return model
+  const record = model && typeof model === 'object' && !Array.isArray(model) ? /** @type {UnknownRecord} */ (model) : {}
   return [
     modelId(model),
-    model?.type,
-    model?.object,
-    model?.owned_by,
-    model?.category,
-    model?.description,
-    ...arrayText(model?.modalities),
-    ...arrayText(model?.capabilities)
+    record.type,
+    record.object,
+    record.owned_by,
+    record.category,
+    record.description,
+    ...arrayText(record.modalities),
+    ...arrayText(record.capabilities)
   ].filter(Boolean).join(' ')
 }
 
+/**
+ * @param {unknown} model
+ * @param {string} text
+ * @returns {boolean}
+ */
 function hasExplicitImageSignal(model, text) {
   const lower = text.toLowerCase()
   if (/\b(image|images|text-to-image|image-generation|vision-generation)\b/.test(lower)) return true
-  const caps = model && typeof model === 'object' ? model.capabilities : null
+  const record = model && typeof model === 'object' && !Array.isArray(model) ? /** @type {UnknownRecord} */ (model) : {}
+  const caps = record.capabilities
   if (caps && typeof caps === 'object') {
-    return Boolean(caps.image || caps.images || caps.textToImage || caps.image_generation || caps['text-to-image'])
+    const capabilityRecord = /** @type {UnknownRecord} */ (caps)
+    return Boolean(capabilityRecord.image || capabilityRecord.images || capabilityRecord.textToImage || capabilityRecord.image_generation || capabilityRecord['text-to-image'])
   }
   return false
 }
 
+/** @param {string} text */
 function hasExplicitNonGenerationSignal(text) {
   return /\b(embedding|embeddings|rerank|reranker|moderation|audio|speech|tts|stt)\b/i.test(text)
 }
 
+/**
+ * @param {unknown} model
+ * @returns {{ capability: ModelCapability, routeHint: string, reason: string }}
+ */
 function classifyModel(model = {}) {
   const text = modelText(model)
   const imageMatch = IMAGE_PATTERNS.find(pattern => pattern.test(text))
@@ -88,20 +116,31 @@ function classifyModel(model = {}) {
   return { capability: 'unknown', routeHint: '', reason: '' }
 }
 
+/**
+ * @param {unknown} model
+ * @param {unknown} options
+ * @returns {ModelRecord | null}
+ */
 export function normalizeModelRecord(model = {}, options = {}) {
   const id = modelId(model)
   if (!id) return null
   const classified = classifyModel(model)
+  const optionRecord = options && typeof options === 'object' && !Array.isArray(options) ? /** @type {UnknownRecord} */ (options) : {}
   return {
     id,
     capability: classified.capability,
     routeHint: classified.routeHint,
-    source: options.source || 'remote',
+    source: typeof optionRecord.source === 'string' && optionRecord.source ? optionRecord.source : 'remote',
     reason: classified.reason
   }
 }
 
-function modelRank(model = {}, track = '') {
+/**
+ * @param {ModelRecord} model
+ * @param {string} track
+ * @returns {number}
+ */
+function modelRank(model, track = '') {
   if (track === 'image') {
     if (model.capability === 'image') return 0
     if (model.source === 'catalog') return 1
@@ -118,9 +157,18 @@ function modelRank(model = {}, track = '') {
 }
 
 export function sortModelRecords(track = '') {
+  /**
+   * @param {ModelRecord} a
+   * @param {ModelRecord} b
+   */
   return (a, b) => {
     const rank = modelRank(a, track) - modelRank(b, track)
     if (rank) return rank
     return String(a.id || '').localeCompare(String(b.id || ''))
   }
 }
+// @ts-check
+
+/** @typedef {import('../types/domain').ModelCapability} ModelCapability */
+/** @typedef {import('../types/domain').ModelRecord} ModelRecord */
+/** @typedef {Record<string, unknown>} UnknownRecord */

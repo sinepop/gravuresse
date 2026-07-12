@@ -1,6 +1,6 @@
 import { normalizeConversationRecord } from './conversationImport'
 import type { ElectronAPI } from '../types/electron-api'
-import type { Conversation, ConversationStorePayload } from '../types/domain'
+import type { ConversationStorePayload, StoredConversation } from '../types/domain'
 
 let conversationsLoadPromise: Promise<ConversationStorePayload | null> | null = null
 
@@ -11,13 +11,13 @@ export function loadConversationsOnce(electronAPI: ElectronAPI | undefined = win
   return conversationsLoadPromise
 }
 
-export function normalizeStoredConversations(conversations: unknown[] = []): Conversation[] {
+export function normalizeStoredConversations(conversations: unknown[] = []): StoredConversation[] {
   const seenIds = new Set<string>()
   return (Array.isArray(conversations) ? conversations : [])
-    .map(source => normalizeConversationRecord(source as {}) as Conversation | null)
-    .filter((conv): conv is Conversation => Boolean(conv))
+    .map(source => normalizeConversationRecord(source))
+    .filter((conv): conv is NonNullable<typeof conv> => Boolean(conv))
     .map(conv => ({ ...conv, id: typeof conv.id === 'string' || typeof conv.id === 'number' ? String(conv.id) : '' }))
-    .filter(conv => {
+    .filter((conv): conv is StoredConversation => {
       if (!conv.id || seenIds.has(conv.id)) return false
       seenIds.add(conv.id)
       return true

@@ -1,9 +1,21 @@
+// @ts-check
+
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import AssetCard from './AssetCard'
 import AssetDetail from './AssetDetail'
 import Ic from './icons'
 import { t } from '../i18n'
 
+/** @typedef {import('../types/domain').Asset} Asset */
+/** @typedef {import('../types/domain').CanvasController} CanvasController */
+/** @typedef {Parameters<typeof Ic>[0]['n']} IconName */
+/** @typedef {'select' | 'move' | 'pencil' | 'rect' | 'circle' | 'line' | 'text'} ToolId */
+/** @typedef {{ x: number, y: number }} Point */
+/** @typedef {{ id: string, action: string, label: string, icon: IconName, assetId: string }} AgentAction */
+/** @typedef {{ asset: Asset, index: number, x: number, y: number }} PositionedAsset */
+/** @typedef {{ id: string, source: PositionedAsset, target: PositionedAsset }} LineageLine */
+
+/** @type {{ tools: { id: ToolId, labelKey: string, key: string }[] }[]} */
 const TOOL_GROUPS = [
   { tools: [
     { id: 'select', labelKey: 'canvasToolSelect', key: 'V' },
@@ -21,6 +33,7 @@ const TOOL_GROUPS = [
 const COLORS = ['#E8A849', '#E8706A', '#5ABF8A', '#6B9FF0', '#B07AFF', '#E8E8EC', '#1A1A1E']
 const OPENNANA_PROMPT_GALLERY_URL = 'https://opennana.com/awesome-prompt-gallery'
 
+/** @param {boolean} active @returns {React.CSSProperties} */
 const filterBtnStyle = (active) => ({
   background: active ? 'var(--accent-soft)' : 'transparent',
   border: `1px solid ${active ? 'var(--border-accent)' : 'var(--border-subtle)'}`,
@@ -30,6 +43,7 @@ const filterBtnStyle = (active) => ({
   transition: 'all 0.15s'
 })
 
+/** @param {string} url */
 function openExternal(url) {
   if (!url) return
   window.electronAPI?.openExternal?.(url).catch?.(() => {})
@@ -38,15 +52,17 @@ function openExternal(url) {
 const MIN_SCALE = 0.1
 const MAX_SCALE = 5
 
+/** @param {{ children: React.ReactNode, assets: Asset[], activeTool: ToolId, scale: number, setScale: (scale: number) => void, offset: Point, setOffset: (offset: Point) => void, lang: string }} props */
 function InfiniteCanvas({ children, assets, activeTool, scale, setScale, offset, setOffset, lang }) {
   const [isPanning, setIsPanning] = useState(false)
-  const containerRef = useRef(null)
+  const containerRef = useRef(/** @type {HTMLDivElement | null} */ (null))
   const scaleRef = useRef(1)
   const offsetRef = useRef({ x: 0, y: 0 })
   const panStart = useRef({ x: 0, y: 0 })
   const offsetStart = useRef({ x: 0, y: 0 })
   const spacePressed = useRef(false)
 
+  /** @param {number} s */
   const clampScale = (s) => Math.min(Math.max(s, MIN_SCALE), MAX_SCALE)
 
   useEffect(() => { scaleRef.current = scale }, [scale])
@@ -55,6 +71,7 @@ function InfiniteCanvas({ children, assets, activeTool, scale, setScale, offset,
   useEffect(() => {
     const el = containerRef.current
     if (!el) return
+    /** @param {WheelEvent} e */
     const onWheel = (e) => {
       e.preventDefault()
       const rect = el.getBoundingClientRect()
@@ -79,8 +96,10 @@ function InfiniteCanvas({ children, assets, activeTool, scale, setScale, offset,
   useEffect(() => {
     const el = containerRef.current
     if (!el) return
+    /** @param {MouseEvent} e */
     const onMouseDown = (e) => {
       if (e.button !== 0) return
+      if (!(e.target instanceof Element)) return
       const tag = e.target.tagName
       if (tag === 'BUTTON' || tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return
       if (e.target.closest('button') || e.target.closest('[data-asset-card]')) return
@@ -95,9 +114,11 @@ function InfiniteCanvas({ children, assets, activeTool, scale, setScale, offset,
   }, [activeTool])
 
   useEffect(() => {
+    /** @param {KeyboardEvent} e */
     const onKeyDown = (e) => {
       if (e.code === 'Space') spacePressed.current = true
     }
+    /** @param {KeyboardEvent} e */
     const onKeyUp = (e) => {
       if (e.code === 'Space') spacePressed.current = false
     }
@@ -111,6 +132,7 @@ function InfiniteCanvas({ children, assets, activeTool, scale, setScale, offset,
 
   useEffect(() => {
     if (!isPanning) return
+    /** @param {MouseEvent} e */
     const onMouseMove = (e) => {
       const dx = e.clientX - panStart.current.x
       const dy = e.clientY - panStart.current.y
@@ -224,6 +246,7 @@ function InfiniteCanvas({ children, assets, activeTool, scale, setScale, offset,
   )
 }
 
+/** @type {React.CSSProperties} */
 const zoomCtrlBtn = {
   border: 'none', color: 'var(--text-secondary)',
   width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -231,16 +254,18 @@ const zoomCtrlBtn = {
   transition: 'background 0.2s ease, color 0.2s ease'
 }
 
+/** @param {{ tool: ToolId, color: string, width: number, scale: number, canvasRef: React.RefObject<HTMLCanvasElement | null>, lang: string }} props */
 function DrawingOverlay({ tool, color, width: strokeWidth, scale, canvasRef, lang }) {
   const drawing = useRef(false)
   const start = useRef({ x: 0, y: 0 })
-  const snapshot = useRef(null)
+  const snapshot = useRef(/** @type {ImageData | null} */ (null))
   const [spacePan, setSpacePan] = useState(false)
 
   useEffect(() => {
     const c = canvasRef.current
     if (!c) return
     const parent = c.parentElement
+    if (!parent) return
     const resize = () => {
       c.width = parent.clientWidth
       c.height = parent.clientHeight
@@ -252,7 +277,9 @@ function DrawingOverlay({ tool, color, width: strokeWidth, scale, canvasRef, lan
   }, [canvasRef])
 
   useEffect(() => {
+    /** @param {KeyboardEvent} e */
     const onKeyDown = (e) => { if (e.code === 'Space') setSpacePan(true) }
+    /** @param {KeyboardEvent} e */
     const onKeyUp = (e) => { if (e.code === 'Space') setSpacePan(false) }
     window.addEventListener('keydown', onKeyDown)
     window.addEventListener('keyup', onKeyUp)
@@ -262,8 +289,10 @@ function DrawingOverlay({ tool, color, width: strokeWidth, scale, canvasRef, lan
     }
   }, [])
 
+  /** @param {React.MouseEvent<HTMLCanvasElement>} e @returns {Point} */
   const getPos = (e) => {
     const c = canvasRef.current
+    if (!c) return { x: 0, y: 0 }
     const rect = c.getBoundingClientRect()
     return {
       x: (e.clientX - rect.left) / scale,
@@ -271,6 +300,7 @@ function DrawingOverlay({ tool, color, width: strokeWidth, scale, canvasRef, lan
     }
   }
 
+  /** @param {React.MouseEvent<HTMLCanvasElement>} e */
   const onMouseDown = (e) => {
     if (tool === 'select' || tool === 'move') return
     if (spacePan) return
@@ -278,8 +308,10 @@ function DrawingOverlay({ tool, color, width: strokeWidth, scale, canvasRef, lan
     drawing.current = true
     const pos = getPos(e)
     start.current = pos
-    const ctx = canvasRef.current.getContext('2d')
-    snapshot.current = ctx.getImageData(0, 0, canvasRef.current.width, canvasRef.current.height)
+    const canvas = canvasRef.current
+    const ctx = canvas?.getContext('2d')
+    if (!canvas || !ctx) return
+    snapshot.current = ctx.getImageData(0, 0, canvas.width, canvas.height)
 
     if (tool === 'pencil') {
       ctx.beginPath()
@@ -300,15 +332,18 @@ function DrawingOverlay({ tool, color, width: strokeWidth, scale, canvasRef, lan
     }
   }
 
+  /** @param {React.MouseEvent<HTMLCanvasElement>} e */
   const onMouseMove = (e) => {
     if (!drawing.current) return
-    const ctx = canvasRef.current.getContext('2d')
+    const ctx = canvasRef.current?.getContext('2d')
+    if (!ctx) return
     const pos = getPos(e)
 
     if (tool === 'pencil') {
       ctx.lineTo(pos.x, pos.y)
       ctx.stroke()
     } else if (tool === 'rect' || tool === 'circle' || tool === 'line') {
+      if (!snapshot.current) return
       ctx.putImageData(snapshot.current, 0, 0)
       ctx.strokeStyle = color
       ctx.lineWidth = strokeWidth
@@ -347,19 +382,23 @@ function DrawingOverlay({ tool, color, width: strokeWidth, scale, canvasRef, lan
   )
 }
 
+/** @param {{ id: ToolId, size?: number }} props */
 function ToolIcon({ id, size = 16 }) {
   return <Ic n={id === 'line' ? 'minus' : id} size={size} sw={1.6} />
 }
 
+/** @param {{ activeTool: ToolId, setActiveTool: (tool: ToolId) => void, drawColor: string, setDrawColor: (color: string) => void, drawWidth: number, setDrawWidth: (width: number) => void, onClearDrawings: () => void, lang: string }} props */
 function EditBar({ activeTool, setActiveTool, drawColor, setDrawColor, drawWidth, setDrawWidth, onClearDrawings, lang }) {
-  const [hoveredTool, setHoveredTool] = useState(null)
+  const [hoveredTool, setHoveredTool] = useState(/** @type {ToolId | null} */ (null))
   const isDrawingTool = !['select', 'move'].includes(activeTool)
   const toolByKey = useRef(new Map(TOOL_GROUPS.flatMap(group => group.tools.map(tool => [tool.key.toLowerCase(), tool.id]))))
 
   useEffect(() => {
+    /** @param {KeyboardEvent} e */
     const onKeyDown = (e) => {
-      const tag = e.target?.tagName
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.target?.isContentEditable) return
+      const target = e.target instanceof HTMLElement ? e.target : null
+      const tag = target?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable) return
       const toolId = toolByKey.current.get(e.key.toLowerCase())
       if (!toolId) return
       e.preventDefault()
@@ -465,6 +504,7 @@ function EditBar({ activeTool, setActiveTool, drawColor, setDrawColor, drawWidth
   )
 }
 
+/** @param {{ asset: Asset }} props */
 function GeneratingOverlay({ asset }) {
   if (!asset._generating) return null
   return (
@@ -486,6 +526,7 @@ function GeneratingOverlay({ asset }) {
   )
 }
 
+/** @param {{ assets: Asset[], selectedId: string | null, setSelectedId: (id: string | null) => void, scale: number, offset: Point, setOffset: (offset: Point) => void, viewportRef: React.RefObject<HTMLDivElement | null>, lang: string }} props */
 function MiniMap({ assets, selectedId, setSelectedId, scale, offset, setOffset, viewportRef, lang }) {
   if (!assets?.length) return null
   const cardW = 240
@@ -512,7 +553,9 @@ function MiniMap({ assets, selectedId, setSelectedId, scale, offset, setOffset, 
   const contentH = spanY * mapScale
   const padX = (mapW - contentW) / 2
   const padY = (mapH - contentH) / 2
+  /** @param {number} x */
   const toMapX = (x) => padX + (x - minX) * mapScale
+  /** @param {number} y */
   const toMapY = (y) => padY + (y - minY) * mapScale
   const viewport = viewportRef.current?.getBoundingClientRect()
   const viewX = viewport ? toMapX(-offset.x / scale) : 0
@@ -520,6 +563,7 @@ function MiniMap({ assets, selectedId, setSelectedId, scale, offset, setOffset, 
   const viewW = viewport ? Math.min(mapW, (viewport.width / scale) * mapScale) : 0
   const viewH = viewport ? Math.min(mapH, (viewport.height / scale) * mapScale) : 0
 
+  /** @param {React.MouseEvent<HTMLDivElement>} e */
   const navigate = (e) => {
     const rect = e.currentTarget.getBoundingClientRect()
     const mx = e.clientX - rect.left
@@ -573,6 +617,7 @@ function MiniMap({ assets, selectedId, setSelectedId, scale, offset, setOffset, 
   )
 }
 
+/** @param {Asset} asset @param {number} index @returns {Point} */
 function assetCanvasPosition(asset, index) {
   const col = index % 4
   const row = Math.floor(index / 4)
@@ -582,9 +627,11 @@ function assetCanvasPosition(asset, index) {
   }
 }
 
+/** @param {{ assets: Asset[] }} props */
 function LineageLines({ assets }) {
   if (!assets?.length) return null
   const assetById = new Map(assets.map((asset, index) => [asset.id, { asset, index, ...assetCanvasPosition(asset, index) }]))
+  /** @type {LineageLine[]} */
   const lines = []
   assets.forEach((asset, index) => {
     const target = assetById.get(asset.id)
@@ -593,7 +640,8 @@ function LineageLines({ assets }) {
       ...(asset.generation?.sourceAssetIds || []),
       ...(asset.generation?.promptReferenceAssetIds || [])
     ].filter(Boolean)
-    Array.from(new Set(refs)).forEach(refId => {
+    if (!target) return
+    Array.from(new Set(refs.filter((id) => typeof id === 'string'))).forEach(refId => {
       const source = assetById.get(refId)
       if (!source || source.asset.id === asset.id) return
       lines.push({ id: `${refId}-${asset.id}-${index}`, source, target })
@@ -630,10 +678,12 @@ function LineageLines({ assets }) {
   )
 }
 
+/** @param {Asset | null} asset @param {{ referenceEnabled: boolean, videoEnabled: boolean, lang: string }} options @returns {AgentAction[]} */
 function makeAgentActions(asset, { referenceEnabled, videoEnabled, lang }) {
   if (!asset) return []
   const prompt = asset.generation?.prompt || asset.prompt || ''
   const isImage = asset.type === 'image'
+  /** @type {{ action: string, label: string, icon: IconName }[]} */
   const items = [
     { action: 'toggleMaterial', label: asset.isMaterial ? t('unmarkMaterial', lang) : t('markMaterial', lang), icon: 'star' }
   ]
@@ -648,6 +698,7 @@ function makeAgentActions(asset, { referenceEnabled, videoEnabled, lang }) {
   return items.map((item, index) => ({ ...item, id: `${asset.id}-${item.action}-${index}`, assetId: asset.id }))
 }
 
+/** @param {Asset | null} asset @param {AgentAction[]} queue @param {string} lang */
 function formatAgentPlan(asset, queue, lang) {
   if (!asset || queue.length === 0) return ''
   const title = t('agentPlanTitle', lang)
@@ -663,9 +714,10 @@ function formatAgentPlan(asset, queue, lang) {
   return lines.join('\n')
 }
 
+/** @param {{ selectedAsset: Asset | null, onAction?: (action: string, asset: Asset) => void | Promise<void>, referenceEnabled: boolean, videoEnabled: boolean, lang: string }} props */
 function AgentQueue({ selectedAsset, onAction, referenceEnabled, videoEnabled, lang }) {
   const [open, setOpen] = useState(false)
-  const [queue, setQueue] = useState([])
+  const [queue, setQueue] = useState(/** @type {AgentAction[]} */ ([]))
   const [running, setRunning] = useState(false)
   const [copiedPlan, setCopiedPlan] = useState(false)
   const suggested = useMemo(
@@ -687,6 +739,7 @@ function AgentQueue({ selectedAsset, onAction, referenceEnabled, videoEnabled, l
     setOpen(true)
   }
 
+  /** @param {string} id */
   const removeItem = (id) => setQueue(prev => prev.filter(item => item.id !== id))
   const clear = () => setQueue([])
   const copyPlan = async () => {
@@ -700,6 +753,7 @@ function AgentQueue({ selectedAsset, onAction, referenceEnabled, videoEnabled, l
       setCopiedPlan(false)
     }
   }
+  /** @param {AgentAction} item */
   const runItem = async (item) => {
     if (!selectedAsset || item.assetId !== selectedAsset.id) return
     await onAction?.(item.action, selectedAsset)
@@ -780,6 +834,7 @@ function AgentQueue({ selectedAsset, onAction, referenceEnabled, videoEnabled, l
   )
 }
 
+/** @type {React.CSSProperties} */
 const agentBtnStyle = {
   background: 'transparent',
   border: '1px solid var(--border-subtle)',
@@ -794,6 +849,7 @@ const agentBtnStyle = {
   gap: 5
 }
 
+/** @type {React.CSSProperties} */
 const agentIconBtnStyle = {
   background: 'transparent',
   border: 'none',
@@ -808,6 +864,7 @@ const agentIconBtnStyle = {
   borderRadius: 'var(--radius-sm)'
 }
 
+/** @param {{ canvas: CanvasController, lang: string, onContextMenu?: (event: React.MouseEvent, asset: Asset) => void, onAssetAction?: (action: string, asset: Asset) => void | Promise<void>, generationMode?: 'image' | 'video', videoEnabled?: boolean, referenceEnabled?: boolean }} props */
 export default function CanvasPanel({ canvas, lang, onContextMenu, onAssetAction, generationMode = 'image', videoEnabled = false, referenceEnabled = false }) {
   const { selectedAsset, selectedId, setSelectedId, viewMode, setViewMode } = canvas
   const modeAssets = (canvas.assets || []).filter(asset => asset.type === generationMode)
@@ -815,12 +872,12 @@ export default function CanvasPanel({ canvas, lang, onContextMenu, onAssetAction
   const [showMaterialsOnly, setShowMaterialsOnly] = useState(false)
   const assets = showMaterialsOnly ? modeAssets.filter(asset => asset.isMaterial === true) : modeAssets
   const visibleSelectedAsset = assets.some(asset => asset.id === selectedId) ? selectedAsset : null
-  const [activeTool, setActiveTool] = useState('select')
+  const [activeTool, setActiveTool] = useState(/** @type {ToolId} */ ('select'))
   const [drawColor, setDrawColor] = useState('#E8A849')
   const [drawWidth, setDrawWidth] = useState(2)
   const [scale, setScale] = useState(1)
   const [offset, setOffset] = useState({ x: 0, y: 0 })
-  const [draggedAsset, setDraggedAsset] = useState(null)
+  const [draggedAsset, setDraggedAsset] = useState(/** @type {{ id: string, x: number, y: number } | null} */ (null))
   const [showLineage, setShowLineage] = useState(false)
 
   const scaleRef = useRef(1)
@@ -828,9 +885,9 @@ export default function CanvasPanel({ canvas, lang, onContextMenu, onAssetAction
     scaleRef.current = scale
   }, [scale])
 
-  const drawingCanvasRef = useRef(null)
-  const dragCleanupRef = useRef(null)
-  const viewportRef = useRef(null)
+  const drawingCanvasRef = useRef(/** @type {HTMLCanvasElement | null} */ (null))
+  const dragCleanupRef = useRef(/** @type {(() => void) | null} */ (null))
+  const viewportRef = useRef(/** @type {HTMLDivElement | null} */ (null))
 
   useEffect(() => {
     if (selectedId && !assets.some(asset => asset.id === selectedId)) {
@@ -839,9 +896,11 @@ export default function CanvasPanel({ canvas, lang, onContextMenu, onAssetAction
   }, [assets, selectedId, setSelectedId])
 
   useEffect(() => {
+    /** @param {KeyboardEvent} e */
     const onKeyDown = (e) => {
-      const tag = e.target?.tagName
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.target?.isContentEditable) return
+      const target = e.target instanceof HTMLElement ? e.target : null
+      const tag = target?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable) return
       if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'z') return
       e.preventDefault()
       if (e.shiftKey) canvas.redo()
@@ -864,7 +923,7 @@ export default function CanvasPanel({ canvas, lang, onContextMenu, onAssetAction
     const c = drawingCanvasRef.current
     if (c) {
       const ctx = c.getContext('2d')
-      ctx.clearRect(0, 0, c.width, c.height)
+      ctx?.clearRect(0, 0, c.width, c.height)
     }
   }
 
@@ -874,6 +933,7 @@ export default function CanvasPanel({ canvas, lang, onContextMenu, onAssetAction
     const missingCoords = assets.filter(a => a.x === undefined || a.y === undefined)
     if (missingCoords.length === 0) return
 
+    /** @type {Record<string, { x: number, y: number }>} */
     const patches = {}
     missingCoords.forEach(a => {
       const idx = assets.findIndex(item => item.id === a.id)
@@ -888,8 +948,10 @@ export default function CanvasPanel({ canvas, lang, onContextMenu, onAssetAction
     canvas.updateAssets(patches)
   }, [viewMode, assets, canvas.updateAssets])
 
+  /** @param {React.MouseEvent<HTMLDivElement>} e @param {Asset} asset @param {number} defaultX @param {number} defaultY */
   const handleCardMouseDown = (e, asset, defaultX, defaultY) => {
     if (activeTool !== 'select') return
+    if (!(e.target instanceof Element)) return
     const tag = e.target.tagName
     if (tag === 'BUTTON' || tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return
     if (e.target.closest('button')) return
@@ -911,6 +973,7 @@ export default function CanvasPanel({ canvas, lang, onContextMenu, onAssetAction
     }
     dragCleanupRef.current = cleanup
 
+    /** @param {MouseEvent} moveEvent */
     const onMouseMove = (moveEvent) => {
       const currentScale = scaleRef.current
       const dx = (moveEvent.clientX - startMouseX) / currentScale
@@ -918,6 +981,7 @@ export default function CanvasPanel({ canvas, lang, onContextMenu, onAssetAction
       setDraggedAsset({ id: asset.id, x: startX + dx, y: startY + dy })
     }
 
+    /** @param {MouseEvent} upEvent */
     const onMouseUp = (upEvent) => {
       cleanup()
 
@@ -939,7 +1003,7 @@ export default function CanvasPanel({ canvas, lang, onContextMenu, onAssetAction
     window.addEventListener('mouseup', onMouseUp)
   }
 
-  const handleSelectLinkedAsset = useCallback((id) => {
+  const handleSelectLinkedAsset = useCallback(/** @param {string} id */ (id) => {
     const target = canvas.allAssets.find(asset => asset.id === id)
     if (!target) return
     if (target.type === generationMode) {

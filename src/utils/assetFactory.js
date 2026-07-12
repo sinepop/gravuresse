@@ -1,14 +1,27 @@
+// @ts-check
+
 // Shared asset-shape factory. Ensures useCanvas.addAsset and App's conversation
 // bridge (createStoredAsset) construct assets with the same fields, so assets
 // round-trip faithfully between the canvas and stored conversations.
 
 import { sanitizeAssetUrl } from './mediaSecurity.js'
 
+/** @typedef {import('../types/domain').Asset} Asset */
+/** @typedef {import('../types/domain').AssetType} AssetType */
+/** @typedef {import('../types/domain').Generation} Generation */
+/** @typedef {Record<string, unknown>} UnknownRecord */
+
 let _counter = 0
+
+/** @returns {string} */
 function makeAssetId() {
   return `asset_${Date.now()}_${Math.random().toString(36).slice(2, 6)}_${(++_counter) % 1000}`
 }
 
+/**
+ * @param {unknown} value
+ * @returns {string[]}
+ */
 function toIdList(value) {
   const list = Array.isArray(value) ? value : value ? [value] : []
   return list
@@ -17,96 +30,135 @@ function toIdList(value) {
     .filter(Boolean)
 }
 
+/**
+ * @param {unknown} value
+ * @returns {value is UnknownRecord}
+ */
 function isRecord(value) {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value))
 }
 
+/**
+ * @param {unknown} value
+ * @returns {string | null}
+ */
 function toOptionalId(value) {
   if (typeof value !== 'string' && typeof value !== 'number') return null
   const id = String(value)
   return id ? id : null
 }
 
+/**
+ * @param {unknown} type
+ * @returns {AssetType}
+ */
 function normalizeAssetType(type) {
   return type === 'video' ? 'video' : 'image'
 }
 
+/**
+ * @param {unknown} value
+ * @returns {string}
+ */
 function toGenerationMode(value) {
   if (typeof value !== 'string' && typeof value !== 'number') return ''
   return String(value)
 }
 
-export function createGeneration(generation = {}) {
-  generation = isRecord(generation) ? generation : {}
-  return {
-    providerId: generation.providerId || '',
-    model: generation.model || '',
-    mode: toGenerationMode(generation.mode),
-    createdFrom: generation.createdFrom || '',
-    prompt: generation.prompt || '',
-    negativePrompt: generation.negativePrompt || '',
-    ratio: generation.ratio || '',
-    resolution: generation.resolution || '',
-    parentAssetId: toOptionalId(generation.parentAssetId),
-    sourceAssetIds: toIdList(generation.sourceAssetIds),
-    promptReferenceAssetIds: toIdList(generation.promptReferenceAssetIds),
-    duration: generation.duration ?? null,
-    taskId: toOptionalId(generation.taskId)
-  }
+/**
+ * @param {unknown} value
+ * @returns {string}
+ */
+function toText(value) {
+  return typeof value === 'string' ? value : ''
 }
 
+/**
+ * @param {unknown} value
+ * @returns {number | string | null}
+ */
+function toDuration(value) {
+  return typeof value === 'number' || typeof value === 'string' ? value : null
+}
+
+/**
+ * @param {unknown} [generation={}]
+ * @returns {Generation}
+ */
+export function createGeneration(generation = {}) {
+  const input = isRecord(generation) ? generation : {}
+  /** @type {Generation} */
+  const normalized = {
+    providerId: toText(input.providerId),
+    model: toText(input.model),
+    mode: toGenerationMode(input.mode),
+    createdFrom: toText(input.createdFrom),
+    prompt: toText(input.prompt),
+    negativePrompt: toText(input.negativePrompt),
+    ratio: toText(input.ratio),
+    resolution: toText(input.resolution),
+    parentAssetId: toOptionalId(input.parentAssetId),
+    sourceAssetIds: toIdList(input.sourceAssetIds),
+    promptReferenceAssetIds: toIdList(input.promptReferenceAssetIds),
+    duration: toDuration(input.duration),
+    taskId: toOptionalId(input.taskId)
+  }
+  return normalized
+}
+
+/**
+ * @param {unknown} [asset={}]
+ * @returns {Asset}
+ */
 export function createAsset(asset = {}) {
-  asset = isRecord(asset) ? asset : {}
-  const nestedGeneration = isRecord(asset.generation) ? asset.generation : {}
-  const id = toOptionalId(asset.id) || makeAssetId()
-  const type = normalizeAssetType(asset.type)
+  const input = isRecord(asset) ? asset : {}
+  const nestedGeneration = isRecord(input.generation) ? input.generation : {}
+  const id = toOptionalId(input.id) || makeAssetId()
+  const type = normalizeAssetType(input.type)
   const generationMode = toGenerationMode(nestedGeneration.mode) || type
-  const createdAt = asset.createdAt || new Date().toISOString()
+  const createdAt = toText(input.createdAt) || new Date().toISOString()
   const generation = createGeneration({
-    providerId: asset.providerId || asset.provider || '',
-    mode: type,
-    createdFrom: asset.createdFrom || '',
-    prompt: asset.prompt || '',
-    negativePrompt: asset.negativePrompt || '',
-    model: asset.model || '',
-    ratio: asset.ratio || '',
-    resolution: asset.resolution || '',
-    duration: asset.duration ?? null,
-    parentAssetId: asset.parentAssetId || null,
-    sourceAssetIds: asset.sourceAssetIds || [],
-    promptReferenceAssetIds: asset.promptReferenceAssetIds || [],
-    taskId: asset.taskId || null,
+    providerId: input.providerId || input.provider || '',
+    createdFrom: input.createdFrom || '',
+    prompt: input.prompt || '',
+    negativePrompt: input.negativePrompt || '',
+    model: input.model || '',
+    ratio: input.ratio || '',
+    resolution: input.resolution || '',
+    duration: input.duration ?? null,
+    parentAssetId: input.parentAssetId || null,
+    sourceAssetIds: input.sourceAssetIds || [],
+    promptReferenceAssetIds: input.promptReferenceAssetIds || [],
+    taskId: input.taskId || null,
     ...nestedGeneration,
     mode: generationMode
   })
 
-  return {
-    type: 'image',
-    label: asset.label || '未命名',
-    prompt: asset.prompt || '',
-    negativePrompt: asset.negativePrompt || '',
-    url: sanitizeAssetUrl(asset.url, type),
-    model: asset.model || '',
-    ratio: asset.ratio || '1:1',
-    style: asset.style || '',
-    createdAt,
-    _generating: false,
-    ...asset,
+  /** @type {Asset} */
+  const normalized = {
+    ...input,
     id,
     type,
-    label: asset.label || '未命名',
-    prompt: asset.prompt || '',
-    negativePrompt: asset.negativePrompt || '',
-    url: sanitizeAssetUrl(asset.url, type),
-    model: asset.model || '',
-    ratio: asset.ratio || '1:1',
-    style: asset.style || '',
+    label: toText(input.label) || '未命名',
+    prompt: toText(input.prompt),
+    negativePrompt: toText(input.negativePrompt),
+    url: sanitizeAssetUrl(input.url, type),
+    model: toText(input.model),
+    ratio: toText(input.ratio) || '1:1',
+    style: toText(input.style),
     createdAt,
-    isMaterial: asset.isMaterial === true,
+    isMaterial: input.isMaterial === true,
+    _generating: input._generating === true,
     generation
   }
+  return normalized
 }
 
+/**
+ * @param {unknown} [asset={}]
+ * @param {unknown} [patch={}]
+ * @returns {Asset}
+ */
 export function mergeAsset(asset = {}, patch = {}) {
   const base = isRecord(asset) ? asset : {}
   const update = isRecord(patch) ? patch : {}

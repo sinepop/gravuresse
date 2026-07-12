@@ -1,5 +1,27 @@
+// @ts-check
+
+/** @typedef {Record<string, unknown>} UnknownRecord */
+/** @typedef {{ id: string, labelKey: string, template: UnknownRecord }} ProviderTemplatePreset */
+
+/** @param {unknown} value @returns {value is UnknownRecord} */
+function isPlainObject(value) {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value))
+}
+
+/** @param {unknown} value @returns {UnknownRecord} */
+function recordOf(value) {
+  return isPlainObject(value) ? value : {}
+}
+
+/** @param {unknown} value @returns {string} */
+function text(value) {
+  return typeof value === 'string' ? value : ''
+}
+
+/** @param {unknown} provider */
 export function firstProviderModel(provider = {}) {
-  return provider.defaultModel || (Array.isArray(provider.modelCatalog) ? provider.modelCatalog.find(Boolean) : '') || ''
+  const record = recordOf(provider)
+  return text(record.defaultModel) || (Array.isArray(record.modelCatalog) ? text(record.modelCatalog.find(item => typeof item === 'string' && item)) : '')
 }
 
 const TEMPLATE_KEYS = [
@@ -23,42 +45,44 @@ const TEMPLATE_KEYS = [
   'pollMethod'
 ]
 
-function isPlainObject(value) {
-  return Boolean(value && typeof value === 'object' && !Array.isArray(value))
-}
-
+/** @param {unknown} source @returns {UnknownRecord} */
 export function normalizeProviderTemplate(source = {}) {
+  const record = recordOf(source)
+  /** @type {UnknownRecord} */
   const template = {
-    ...(isPlainObject(source.customTemplate) ? source.customTemplate : {}),
-    ...(isPlainObject(source.template) ? source.template : {})
+    ...recordOf(record.customTemplate),
+    ...recordOf(record.template)
   }
   for (const key of TEMPLATE_KEYS) {
-    if (Object.hasOwn(source || {}, key) && source[key] !== undefined && source[key] !== null && source[key] !== '') {
-      template[key] = source[key]
+    if (Object.hasOwn(record, key) && record[key] !== undefined && record[key] !== null && record[key] !== '') {
+      template[key] = record[key]
     }
   }
   return template
 }
 
+/** @param {unknown} track @param {unknown} provider */
 export function providerNeedsTemplatePaths(track, provider = {}) {
-  if (track === 'image') return provider.integrationStatus === 'custom-template'
+  const record = recordOf(provider)
+  if (track === 'image') return record.integrationStatus === 'custom-template'
   if (track === 'video') {
-    return provider.id === 'custom-video' ||
-      provider.protocol === 'custom_video_task' ||
-      provider.integrationStatus === 'custom-template'
+    return record.id === 'custom-video' ||
+      record.protocol === 'custom_video_task' ||
+      record.integrationStatus === 'custom-template'
   }
   return false
 }
 
+/** @param {unknown} track @param {unknown} providerConfig */
 export function providerTemplatePathStatus(track, providerConfig = {}) {
   const template = normalizeProviderTemplate(providerConfig)
   if (track === 'image') {
-    const path = template.path || template.submitPath || ''
+    const path = text(template.path) || text(template.submitPath)
     return { ready: Boolean(path), detail: path || '' }
   }
   if (track === 'video') {
-    const submitPath = template.submitPath || ''
-    const pollPath = template.pollPath || ''
+    const submitPath = text(template.submitPath)
+    const pollPath = text(template.pollPath)
     return {
       ready: Boolean(submitPath && pollPath),
       detail: [submitPath || 'submitPath', pollPath || 'pollPath'].join(' / ')
@@ -67,7 +91,13 @@ export function providerTemplatePathStatus(track, providerConfig = {}) {
   return { ready: true, detail: '' }
 }
 
+/**
+ * @param {unknown} track
+ * @param {unknown} provider
+ * @returns {ProviderTemplatePreset[]}
+ */
 export function providerTemplatePresets(track, provider = {}) {
+  const providerRecord = recordOf(provider)
   if (track === 'image') {
     const openAiImageTemplate = () => ({
       path: '/v1/images/generations',
@@ -83,6 +113,7 @@ export function providerTemplatePresets(track, provider = {}) {
       taskIdPath: 'data.task_id',
       statusPath: 'data.status'
     })
+    /** @type {ProviderTemplatePreset[]} */
     const presets = [
       {
         id: 'openai-image-json',
@@ -120,7 +151,7 @@ export function providerTemplatePresets(track, provider = {}) {
         }
       }
     ]
-    if (provider.id === 'fal') {
+    if (providerRecord.id === 'fal') {
       presets.unshift({
         id: 'fal-image',
         labelKey: 'presetFalImage',
@@ -134,7 +165,7 @@ export function providerTemplatePresets(track, provider = {}) {
         }
       })
     }
-    if (provider.id === 'replicate') {
+    if (providerRecord.id === 'replicate') {
       presets.unshift({
         id: 'replicate-image-prediction',
         labelKey: 'presetReplicatePrediction',
@@ -154,6 +185,7 @@ export function providerTemplatePresets(track, provider = {}) {
   }
 
   if (track === 'video') {
+    /** @type {ProviderTemplatePreset[]} */
     const presets = [
       {
         id: 'generic-video-task',
@@ -175,7 +207,7 @@ export function providerTemplatePresets(track, provider = {}) {
         }
       }
     ]
-    if (provider.id === 'replicate') {
+    if (providerRecord.id === 'replicate') {
       presets.unshift({
         id: 'replicate-video-prediction',
         labelKey: 'presetReplicatePrediction',
@@ -207,11 +239,10 @@ export function providerTemplatePresets(track, provider = {}) {
  * Returns something compatible with the old config.providers.chat shape so callers
  * (useChat.js, ModelSelector, Settings) don't need to branch on format.
  */
+/** @param {unknown} config @returns {UnknownRecord} */
 export function resolveChatProvider(config) {
-  if (config?.providers && typeof config.providers === 'object' && !Array.isArray(config.providers)) {
-    return config.providers.chat || {}
-  }
-  return {}
+  const providers = recordOf(recordOf(config).providers)
+  return recordOf(providers.chat)
 }
 
 /**
@@ -219,21 +250,25 @@ export function resolveChatProvider(config) {
  * Each model in each enabled provider becomes its own profile entry so the
  * dropdown can display all models grouped by provider name.
  */
+/** @param {unknown} config @returns {UnknownRecord[]} */
 export function buildConfigProviderProfiles(config) {
-  const providers = Array.isArray(config?.chatProviders) ? config.chatProviders : []
+  const sourceProviders = recordOf(config).chatProviders
+  const providers = Array.isArray(sourceProviders) ? sourceProviders.map(recordOf) : []
+  /** @type {UnknownRecord[]} */
   const profiles = []
   for (let i = 0; i < providers.length; i++) {
     const p = providers[i]
     if (p.enabled === false) continue
-    const models = Array.isArray(p.models) ? p.models.filter(Boolean) : []
-    if (!models.length && p.defaultModel) models.push(p.defaultModel)
+    const models = Array.isArray(p.models) ? p.models.filter((model) => typeof model === 'string' && model) : []
+    const defaultModel = text(p.defaultModel)
+    if (!models.length && defaultModel) models.push(defaultModel)
     for (const model of models) {
       profiles.push({
         id: 'custom-chat',
         providerId: 'custom-chat',
-        name: p.name,
-        baseUrl: p.baseUrl || '',
-        apiKey: p.apiKey || '',
+        name: text(p.name),
+        baseUrl: text(p.baseUrl),
+        apiKey: text(p.apiKey),
         model,
         format: 'openai',
         authType: { type: 'bearer' },
@@ -253,9 +288,12 @@ export function buildConfigProviderProfiles(config) {
  * Strips adapter-only fields (_configProvider, _configProviderIndex) from the
  * patch before writing to the array.
  */
+/** @param {unknown} config @param {unknown} patch @returns {UnknownRecord} */
 export function applyChatProviderPatch(config, patch) {
-  if (!patch || typeof patch !== 'object') return config
-  const next = { ...config }
+  const sourceConfig = recordOf(config)
+  if (!isPlainObject(patch)) return sourceConfig
+  /** @type {UnknownRecord} */
+  const next = { ...sourceConfig }
 
   if ('model' in patch) {
     next.savedChatModel = patch.model || ''
@@ -263,16 +301,18 @@ export function applyChatProviderPatch(config, patch) {
 
   // Fields that are adapter-only and must not be written to the providers array
   const ADAPTER_KEYS = new Set(['id', 'platform', 'name', 'defaultModel', 'models', 'format', 'authType', 'capabilities', '_configProvider', '_configProviderIndex'])
+  /** @type {UnknownRecord} */
   const arrayPatch = {}
-  let targetIndex = undefined
+  /** @type {number | undefined} */
+  let targetIndex
   for (const [k, v] of Object.entries(patch)) {
-    if (k === '_configProviderIndex') { targetIndex = v; continue }
+    if (k === '_configProviderIndex') { targetIndex = typeof v === 'number' ? v : undefined; continue }
     if (!ADAPTER_KEYS.has(k)) arrayPatch[k] = v
   }
 
   if (Array.isArray(next.providers)) {
     if (Object.keys(arrayPatch).length > 0) {
-      const arr = [...next.providers]
+      const arr = next.providers.map(recordOf)
       const idx = (typeof targetIndex === 'number' && targetIndex >= 0 && targetIndex < arr.length && arr[targetIndex].enabled !== false)
         ? targetIndex
         : arr.findIndex(p => p.enabled !== false)
@@ -281,10 +321,10 @@ export function applyChatProviderPatch(config, patch) {
         next.providers = arr
       }
     }
-  } else if (next.providers && typeof next.providers === 'object' && next.providers.chat) {
+  } else if (isPlainObject(next.providers) && next.providers.chat) {
     // Legacy object format
     const { _configProvider, _configProviderIndex, ...cleanPatch } = patch
-    next.providers = { ...next.providers, chat: { ...next.providers.chat, ...cleanPatch } }
+    next.providers = { ...next.providers, chat: { ...recordOf(next.providers.chat), ...cleanPatch } }
   }
 
   return next
@@ -295,33 +335,41 @@ export function applyChatProviderPatch(config, patch) {
  * Each entry is shaped like a registry provider for compatibility with the
  * existing provider selection UI, with the raw entry attached as _configProvider.
  */
+/** @param {unknown} config @returns {UnknownRecord[]} */
 export function getProvidersFromConfig(config) {
+  /** @type {UnknownRecord[]} */
   const list = []
-  const arr = Array.isArray(config?.chatProviders) ? config.chatProviders : []
-  for (const p of arr) {
+  const sourceProviders = recordOf(config).chatProviders
+  const arr = Array.isArray(sourceProviders) ? sourceProviders : []
+  for (const item of arr) {
+    if (!isPlainObject(item)) continue
+    const p = item
     if (p.enabled === false) continue
     list.push({
       id: 'custom-chat',
-      name: p.name,
+      name: text(p.name),
       platform: 'Custom',
-      defaultUrl: p.baseUrl,
-      defaultModel: p.defaultModel,
+      defaultUrl: text(p.baseUrl),
+      defaultModel: text(p.defaultModel),
       format: 'openai',
       authType: { type: 'bearer' },
       capabilities: { chat: { text: true, openaiCompatible: true, relay: true } },
-      modelCatalog: Array.isArray(p.models) ? p.models : [],
+      modelCatalog: Array.isArray(p.models) ? p.models.filter(model => typeof model === 'string') : [],
       _configProvider: p
     })
   }
   return list
 }
 
+/** @param {unknown} track @param {unknown} provider @returns {ProviderTemplatePreset | undefined} */
 export function defaultProviderTemplatePreset(track, provider = {}) {
-  if (provider.id === 'custom-video') {
-    return providerTemplatePresets(track, provider).find(preset => preset.id === 'generic-video-task')
+  const record = recordOf(provider)
+  if (record.id === 'custom-video') {
+    return providerTemplatePresets(track, record).find(preset => preset.id === 'generic-video-task')
   }
-  return providerTemplatePresets(track, provider).find(preset =>
-    preset.id === `${provider.id}-${track}` || preset.id.startsWith(`${provider.id}-`)
+  const id = text(record.id)
+  return providerTemplatePresets(track, record).find(preset =>
+    preset.id === `${id}-${track}` || preset.id.startsWith(`${id}-`)
   )
 }
 
@@ -357,47 +405,51 @@ function advancedProviderReset() {
   }
 }
 
+/** @param {unknown} provider @param {unknown} track */
 export function createProviderSelectionPatch(provider = {}, track = '') {
-  const defaultTemplate = defaultProviderTemplatePreset(track, provider)?.template || {}
+  const record = recordOf(provider)
+  const defaultTemplate = defaultProviderTemplatePreset(track, record)?.template || {}
   return {
     ...advancedProviderReset(),
-    id: provider.id,
+    id: text(record.id),
     accountId: '',
     accountKind: '',
     apiKey: '',
     sessionToken: '',
-    baseUrl: provider.defaultUrl || '',
-    model: firstProviderModel(provider),
-    protocol: provider.protocol,
-    format: provider.format,
-    authType: provider.authType,
+    baseUrl: text(record.defaultUrl),
+    model: firstProviderModel(record),
+    protocol: record.protocol,
+    format: record.format,
+    authType: record.authType,
     template: defaultTemplate
   }
 }
 
+/** @param {unknown} profile */
 export function createProviderProfilePatch(profile = {}) {
-  const template = normalizeProviderTemplate(profile)
+  const record = recordOf(profile)
+  const template = normalizeProviderTemplate(record)
   return {
     ...advancedProviderReset(),
-    id: profile.providerId || profile.id,
-    accountId: profile.accountId || '',
-    accountKind: profile.accountKind || '',
-    apiKey: profile.apiKey || '',
-    sessionToken: profile.sessionToken || '',
-    baseUrl: profile.baseUrl || '',
-    model: profile.model || '',
-    protocol: profile.protocol,
-    format: profile.format,
-    authType: profile.authType,
-    customAuth: profile.customAuth || {},
+    id: text(record.providerId) || text(record.id),
+    accountId: text(record.accountId),
+    accountKind: text(record.accountKind),
+    apiKey: text(record.apiKey),
+    sessionToken: text(record.sessionToken),
+    baseUrl: text(record.baseUrl),
+    model: text(record.model),
+    protocol: record.protocol,
+    format: record.format,
+    authType: record.authType,
+    customAuth: recordOf(record.customAuth),
     template,
-    pathPrefix: profile.pathPrefix || '',
-    modelListPath: profile.modelListPath || profile.modelsPath || '',
-    timeout: profile.timeout || '',
-    pollInterval: profile.pollInterval || '',
-    defaultNegPrompt: profile.defaultNegPrompt || '',
-    customSystemPrompt: profile.customSystemPrompt || '',
-    ...(typeof profile._configProviderIndex === 'number' ? { _configProviderIndex: profile._configProviderIndex } : {})
+    pathPrefix: text(record.pathPrefix),
+    modelListPath: text(record.modelListPath) || text(record.modelsPath),
+    timeout: typeof record.timeout === 'number' || typeof record.timeout === 'string' ? record.timeout : '',
+    pollInterval: typeof record.pollInterval === 'number' || typeof record.pollInterval === 'string' ? record.pollInterval : '',
+    defaultNegPrompt: text(record.defaultNegPrompt),
+    customSystemPrompt: text(record.customSystemPrompt),
+    ...(typeof record._configProviderIndex === 'number' ? { _configProviderIndex: record._configProviderIndex } : {})
   }
 }
 

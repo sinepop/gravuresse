@@ -1,7 +1,19 @@
+// @ts-check
+
 import { useEffect, useState } from 'react'
 import Ic from './icons'
 import useSafeMediaUrl from '../hooks/useSafeMediaUrl'
 
+/** @typedef {import('../types/domain').Asset} Asset */
+
+/**
+ * @param {{
+ *   asset: Asset,
+ *   selected: boolean,
+ *   onClick: (id: string) => void,
+ *   onContextMenu?: (event: React.MouseEvent, asset: Asset) => void
+ * }} props
+ */
 export default function AssetCard({ asset, selected, onClick, onContextMenu }) {
   const [mediaError, setMediaError] = useState(false)
   const isVideo = asset.type === 'video'

@@ -1,14 +1,18 @@
+// @ts-check
+
 import { useEffect, useState } from 'react'
 import Ic from './icons'
 import { t } from '../i18n'
 import packageInfo from '../../package.json'
 
+/** @param {{ onOpenSettings: () => void, lang: string }} props */
 export default function TitleBar({ onOpenSettings, lang }) {
   const [isMax, setIsMax] = useState(false)
-  const [hoveredBtn, setHoveredBtn] = useState(null)
+  const [hoveredBtn, setHoveredBtn] = useState(/** @type {string | null} */ (null))
 
   useEffect(() => {
-    const handler = (val) => setIsMax(val)
+    /** @param {unknown} val */
+    const handler = (val) => setIsMax(val === true)
     const unsubscribe = window.electronAPI?.on?.('window-maximized', handler)
     return () => {
       if (typeof unsubscribe === 'function') unsubscribe()
@@ -16,6 +20,13 @@ export default function TitleBar({ onOpenSettings, lang }) {
     }
   }, [])
 
+  /**
+   * @param {() => void} fn
+   * @param {React.ReactNode} icon
+   * @param {string} id
+   * @param {boolean} isClose
+   * @param {string} ariaLabel
+   */
   const winBtn = (fn, icon, id, isClose, ariaLabel) => {
     const hovered = hoveredBtn === id
     return (

@@ -1,22 +1,33 @@
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import react from '@vitejs/plugin-react'
-import { resolve, dirname, relative } from 'path'
+import { resolve, dirname } from 'path'
 import { fileURLToPath } from 'url'
-import { cpSync, existsSync, mkdirSync } from 'fs'
+import { cpSync, existsSync, mkdirSync, readdirSync } from 'fs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
-function copyElectronRuntimeFiles() {
-  const srcDir = resolve(__dirname, 'electron')
-  const destDir = resolve(__dirname, 'dist/main')
-  if (!existsSync(destDir)) mkdirSync(destDir, { recursive: true })
-  cpSync(srcDir, destDir, {
-    recursive: true,
-    filter: (src) => {
-      const rel = relative(srcDir, src).replace(/\\/g, '/')
-      return rel !== 'main.js' && rel !== 'preload.js'
+function collectMainProcessInputs() {
+  const electronDir = resolve(__dirname, 'electron')
+  const inputs = { main: resolve(electronDir, 'main-entry.ts') }
+
+  function visit(directory, prefix = '') {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const relativePath = prefix ? `${prefix}/${entry.name}` : entry.name
+      const absolutePath = resolve(directory, entry.name)
+      if (entry.isDirectory()) {
+        visit(absolutePath, relativePath)
+        continue
+      }
+      if (!/\.(?:js|ts)$/.test(entry.name)) continue
+      if (['main.js', 'preload.js', 'main-entry.ts', 'preload-entry.ts'].includes(relativePath)) continue
+      const outputName = relativePath.replace(/\.(?:js|ts)$/, '')
+      if (inputs[outputName]) throw new Error(`Duplicate Electron build input: ${outputName}`)
+      inputs[outputName] = absolutePath
     }
-  })
+  }
+
+  visit(electronDir)
+  return inputs
 }
 
 function copyBuildAssets() {
@@ -40,7 +51,6 @@ export default defineConfig({
       {
         name: 'copy-electron-files',
         closeBundle() {
-          copyElectronRuntimeFiles()
           copyBuildAssets()
           copySharedRuntimeFiles()
         }
@@ -48,7 +58,8 @@ export default defineConfig({
     ],
     build: {
       rollupOptions: {
-        input: resolve(__dirname, 'electron/main.js')
+        input: collectMainProcessInputs(),
+        output: { entryFileNames: '[name].js' }
       },
       outDir: 'dist/main'
     }
@@ -57,7 +68,8 @@ export default defineConfig({
     plugins: [externalizeDepsPlugin()],
     build: {
       rollupOptions: {
-        input: resolve(__dirname, 'electron/preload.js')
+        input: resolve(__dirname, 'electron/preload-entry.ts'),
+        output: { entryFileNames: 'preload.js' }
       },
       outDir: 'dist/preload'
     }

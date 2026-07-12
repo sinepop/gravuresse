@@ -34,6 +34,15 @@ export interface SaveAssetParams {
   type: AssetType
 }
 
+export interface ProviderOperationResult {
+  ok: boolean
+  message?: string
+  models?: string[]
+  latencyMs?: number
+  imageUrl?: string
+  warning?: boolean
+}
+
 export interface ChatMessageInput {
   role: string
   content: string
@@ -69,6 +78,8 @@ export interface ElectronAPI {
     call<T = unknown>(params: ProviderCallParams): Promise<ProviderCallResult<T>>
     list(action: string): Promise<unknown>
     test(params: ProviderProfile & Record<string, unknown>): Promise<unknown>
+    fetchModels(params: ProviderProfile & Record<string, unknown>): Promise<ProviderOperationResult>
+    testConnection(params: ProviderProfile & Record<string, unknown>): Promise<ProviderOperationResult>
   }
 
   saveAssetToDisk(params: SaveAssetParams): Promise<string>

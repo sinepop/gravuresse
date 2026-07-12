@@ -1,3 +1,6 @@
+// @ts-check
+
+/** @type {Record<'zh' | 'en', Record<string, string>>} */
 const LANG = {
   zh: {
     settings: '设置',
@@ -35,7 +38,6 @@ const LANG = {
     directProviderConfig: '直接配置此轨道',
     providerAccountHint: '可先在 API 密钥或网关页添加统一凭据，再在这里选择。',
     providerAccountLinked: '此轨道正在使用统一账号池中的凭据。',
-    chatProviders: '对话供应商',
     chatProvidersDesc: '管理对话 API 供应商列表，每个供应商可配置地址、密钥和模型。',
     addProvider: '添加供应商',
     enable: '启用',
@@ -832,8 +834,10 @@ const LANG = {
   }
 }
 
+/** @param {string} key @param {unknown} lang */
 export function t(key, lang = 'zh') {
-  return LANG[lang]?.[key] || LANG.en?.[key] || LANG.zh[key] || key
+  const locale = lang === 'en' ? 'en' : 'zh'
+  return LANG[locale][key] || LANG.en[key] || LANG.zh[key] || key
 }
 
 export default LANG
