@@ -72,7 +72,7 @@ function createEmptyConversation() {
   }
 }
 
-const FONT_SIZES = { small: '12px', medium: '13px', large: '14px' }
+const FONT_SIZES = { small: '13px', medium: '14px', large: '16px' }
 /** @type {WorkspaceModuleDefinition[]} */
 const MODULES = [
   { id: 'image', icon: 'image', labels: { zh: '生图', en: 'Image' } },
@@ -82,17 +82,19 @@ const MODULES = [
 // conversation bridge and the live canvas stay structurally identical.
 
 export default function App() {
-  const { config, providerLists, save, updateProvider } = useConfig()
+  const { config, providerLists, save } = useConfig()
+  const [liveConnections, setLiveConnections] = useState(/** @type {Record<string, unknown> | null} */ (null))
+  const [activeSelections, setActiveSelections] = useState(/** @type {Record<string, unknown>} */ ({}))
+  const runtimeConfig = useMemo(() => liveConnections && config ? { ...config, connections: liveConnections } : config, [config, liveConnections])
   const canvas = useCanvas()
   const taskQueue = useTaskQueue(canvas)
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [settingsPage, setSettingsPage] = useState('appearance')
+  const [settingsPage, setSettingsPage] = useState('accounts')
   const [ctxMenu, setCtxMenu] = useState(/** @type {ContextMenuState | null} */ (null))
   const [activeModule, setActiveModule] = useState(/** @type {WorkspaceModule} */ ('image'))
   const [referenceIntent, setReferenceIntent] = useState(/** @type {ReferenceIntent | null} */ (null))
   const [composerIntent, setComposerIntent] = useState(/** @type {ComposerIntent | null} */ (null))
-  const generalConfig = recordOf(config?.general)
-  const lang = textOr(generalConfig.language, 'zh')
+  const lang = textOr(recordOf(runtimeConfig?.general).language, 'zh')
 
   // Conversation management
   const [conversations, setConversations] = useState(/** @type {StoredConversation[]} */ ([]))
@@ -165,7 +167,7 @@ export default function App() {
     removeAsset: (id, assetId) => patchStoredConversation(id, conv => removeConversationAsset(conv, assetId))
   }), [patchStoredConversation])
 
-  const chat = useChat(config, canvas, taskQueue.add, activeConvId, isActiveConversation, conversationBridge, providerLists)
+  const chat = useChat(runtimeConfig, canvas, taskQueue.add, activeConvId, isActiveConversation, conversationBridge, providerLists, activeSelections)
 
   const setChatMessages = chat.setMessages
   const replaceCanvasAssets = canvas.replaceAssets
@@ -517,15 +519,51 @@ export default function App() {
     }
   }, [applyConversation, flushActiveConversation, lang])
 
+  const handleImportImages = useCallback(async ({ files = [], position = null } = {}) => {
+    const ensured = await ensureActiveConversation()
+    if (!ensured?.id) throw new Error(t('importImagesFail', lang))
+    const results = []
+    if (Array.isArray(files) && files.length > 0) {
+      for (const file of files) {
+        try {
+          const bytes = await file.arrayBuffer()
+          results.push(await window.electronAPI?.importImageBytes?.({
+            name: file.name || `pasted-${Date.now()}.png`,
+            mime: file.type || '',
+            bytes
+          }))
+        } catch (error) {
+          results.push({ canceled: false, imported: [], rejected: [{ name: file.name || 'image', reason: error?.message || t('importImagesFail', lang) }] })
+        }
+      }
+    } else {
+      results.push(await window.electronAPI?.importLocalImages?.())
+    }
+    const imported = results.flatMap(result => result?.imported || [])
+    const rejected = results.flatMap(result => result?.rejected || [])
+    if (imported.length > 0) {
+      const origin = position && Number.isFinite(position.x) && Number.isFinite(position.y) ? position : null
+      canvas.addAssets(imported.map((record, index) => ({
+        ...record,
+        isMaterial: true,
+        createdFrom: 'local-import',
+        ...(origin ? { x: origin.x + index * 24, y: origin.y + index * 24 } : {}),
+        generation: { mode: 'image', createdFrom: 'local-import' }
+      })), { history: true })
+      setActiveModule('image')
+    }
+    return { canceled: results.every(result => result?.canceled), imported, rejected }
+  }, [canvas, ensureActiveConversation, lang])
+
   // Apply theme, language, font-size from config
   useEffect(() => {
-    if (!config?.general) return
-    const theme = textOr(generalConfig.theme, 'light')
-    const fontSize = generalConfig.fontSize
+    if (!runtimeConfig?.general) return
+    const theme = textOr(recordOf(runtimeConfig.general).theme, 'light')
+    const fontSize = recordOf(runtimeConfig.general).fontSize
     const resolvedFontSize = fontSize === 'small' || fontSize === 'large' ? FONT_SIZES[fontSize] : FONT_SIZES.medium
     document.documentElement.dataset.theme = theme
     document.documentElement.style.setProperty('--font-size-base', resolvedFontSize)
-  }, [config?.general, generalConfig.theme, generalConfig.fontSize])
+  }, [runtimeConfig?.general])
 
   useEffect(() => {
     /** @param {KeyboardEvent} e */
@@ -582,7 +620,7 @@ export default function App() {
       patchStoredConversation(activeConvIdRef.current, conv => updateConversationAsset(conv, asset.id, { isMaterial }))
     }
     if (action === 'useAsReference') {
-      if (generalConfig.enableReference !== true) return
+      if (runtimeConfig?.general?.enableReference !== true) return
       if (!asset?.url) return
       setReferenceIntent({
         nonce: Date.now(),
@@ -599,7 +637,7 @@ export default function App() {
       if (asset.type && asset.type !== 'image') return
       const ensured = await ensureActiveConversation({ forSend: true })
       if (ensured?.id) {
-        const lang = textOr(generalConfig.language, 'zh')
+        const lang = runtimeConfig?.general?.language || 'zh'
         chat.regenerateDirectly(asset, lang, { conversationId: ensured.id })
       }
     }
@@ -607,13 +645,13 @@ export default function App() {
       if (asset.type && asset.type !== 'image') return
       const ensured = await ensureActiveConversation({ forSend: true })
       if (ensured?.id) {
-        const lang = textOr(generalConfig.language, 'zh')
+        const lang = runtimeConfig?.general?.language || 'zh'
         chat.createDerivedImageDirectly(asset, lang, { conversationId: ensured.id, createdFrom: 'variation' })
       }
     }
     if (action === 'restyle') {
       if (asset.type && asset.type !== 'image') return
-      const lang = textOr(generalConfig.language, 'zh')
+      const lang = runtimeConfig?.general?.language || 'zh'
       const styleDirection = window.prompt(t('styleDirectionPrompt', lang), '')
       if (!styleDirection?.trim()) return
       const ensured = await ensureActiveConversation({ forSend: true })
@@ -622,7 +660,7 @@ export default function App() {
       }
     }
     if (action === 'toVideo') {
-      if (generalConfig.enableVideo !== true) return
+      if (runtimeConfig?.general?.enableVideo !== true) return
       const ensured = await ensureActiveConversation({ forSend: true })
       if (!ensured?.id) return
       setActiveModule('video')
@@ -639,15 +677,15 @@ export default function App() {
         sourceImageId: asset.id
       })
     }
-  }, [canvas, chat, generalConfig, ensureActiveConversation, patchStoredConversation, lang])
+  }, [canvas, chat, runtimeConfig, ensureActiveConversation, activeModule, patchStoredConversation, lang])
 
-  const openSettings = useCallback(/** @param {string} [page] */ (page = 'appearance') => {
+  const openSettings = useCallback(/** @param {string} [page] */ (page = 'accounts') => {
     setSettingsPage(page)
     setSettingsOpen(true)
   }, [])
 
-  const videoEnabled = generalConfig.enableVideo === true
-  const referenceEnabled = generalConfig.enableReference === true
+  const videoEnabled = runtimeConfig?.general?.enableVideo === true
+  const referenceEnabled = runtimeConfig?.general?.enableReference === true
   const visibleModules = useMemo(
     () => MODULES.filter(module => module.id !== 'video' || videoEnabled),
     [videoEnabled]
@@ -658,9 +696,9 @@ export default function App() {
   }, [videoEnabled, activeModule])
 
   return (
-    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
-      <TitleBar onOpenSettings={() => openSettings('appearance')} lang={lang} />
-      <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}>
+    <div className="app-shell">
+      <TitleBar onOpenSettings={() => openSettings('accounts')} lang={lang} />
+      <div className="workspace-shell">
         <nav className="module-sidebar" aria-label={lang === 'en' ? 'Workspace modules' : '工作区模块'}>
           {visibleModules.map(module => {
             const active = activeModule === module.id
@@ -681,9 +719,9 @@ export default function App() {
           })}
         </nav>
         <main className="module-content">
-          <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}>
-            <div style={{ width: 360, minWidth: 320, overflow: 'visible', display: 'flex', flexDirection: 'column', borderRight: '1px solid var(--border-subtle)' }}>
-                <ChatPanel chat={chat} config={config} providerLists={providerLists} onProviderChange={updateProvider} lang={lang} generationMode={activeModule}
+          <div className="workspace-main">
+            <div className="chat-pane">
+                <ChatPanel chat={chat} config={runtimeConfig} providerLists={providerLists} activeSelections={activeSelections} onConnectionModelChange={(track, selection) => setActiveSelections(current => ({ ...current, [track]: selection }))} lang={lang} generationMode={activeModule}
                   conversations={conversations} activeConvId={activeConvId}
                   onSwitchConv={handleSwitchConv} onNewConv={handleNewConv} onDeleteConv={handleDeleteConv}
                   onRenameConv={handleRenameConv} onExportConv={handleExportConv} onExportProject={handleExportProject} onImportConv={handleImportConv}
@@ -694,17 +732,18 @@ export default function App() {
                 <TaskQueue tasks={taskQueue.tasks} onRetry={taskQueue.retry} onRemove={taskQueue.remove} lang={lang} />
               )}
             </div>
-            <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
+            <div className="canvas-pane">
               <CanvasPanel canvas={canvas} lang={lang} generationMode={activeModule}
                 onContextMenu={/** @param {React.MouseEvent} e @param {Asset} asset */ (e, asset) => setCtxMenu({ x: e.clientX, y: e.clientY, asset })}
                 onAssetAction={handleAssetAction}
+                onImportImages={handleImportImages}
                 videoEnabled={videoEnabled}
                 referenceEnabled={referenceEnabled} />
             </div>
           </div>
         </main>
       </div>
-      {settingsOpen && <Settings config={config} providerLists={providerLists} onSave={save} onClose={() => setSettingsOpen(false)} initialPage={settingsPage} />}
+      {settingsOpen && <Settings config={runtimeConfig} providerLists={providerLists} onSave={save} onCanonicalChange={setLiveConnections} onClose={() => setSettingsOpen(false)} initialPage={settingsPage} />}
       {ctxMenu && <ContextMenu x={ctxMenu.x} y={ctxMenu.y} asset={ctxMenu.asset} onClose={() => setCtxMenu(null)} onAction={handleAssetAction} lang={lang} videoEnabled={videoEnabled} referenceEnabled={referenceEnabled} />}
     </div>
   )

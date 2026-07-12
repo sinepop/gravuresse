@@ -13,7 +13,7 @@ const IMAGE_TEST_TEMPLATE_KEYS = [
 ]
 
 function realSecret(value) {
-  return value && value !== REDACTED_API_KEY ? value : ''
+  return value && value !== REDACTED_API_KEY && !String(value).startsWith('__ENCRYPTED__') ? value : ''
 }
 
 function normalizeAuthType(type) {

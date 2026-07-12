@@ -7,6 +7,7 @@ import { createRequire } from 'node:module'
 import { assetUrlCases } from './core-tests/asset-url-fixtures.mjs'
 import { runHttpCoreTests } from './core-tests/http.mjs'
 import { runIpcCoreTests } from './core-tests/ipc.mjs'
+import { runProviderConnectionCoreTests } from './core-tests/provider-connections.mjs'
 import { createAsset, createGeneration, mergeAsset } from '../src/utils/assetFactory.js'
 import { sanitizeAssetUrl } from '../src/utils/mediaSecurity.js'
 import { normalizePreviewUrl } from '../src/hooks/useSafeMediaUrl.js'
@@ -81,6 +82,7 @@ const mainSanitize = require('../electron/security/sanitize.js')
 
 await runHttpCoreTests()
 await runIpcCoreTests()
+await runProviderConnectionCoreTests(configModule)
 
 const pollutedConfig = JSON.parse('{"providers":{"image":{"id":"custom-image"},"__proto__":{"template":{"path":"/evil"}}},"general":{"constructor":{"prototype":{"bad":"yes"}}}}')
 const sanitizedConfig = configModule._test.sanitizeObjectShape(pollutedConfig)
@@ -124,9 +126,8 @@ const migratedRuntime = configResolver.resolveRuntimeProviderConfig(
   providerRegistry.getProvider,
   () => async () => ({ text: 'ok' })
 )
-assert.equal(migratedRuntime.ok, true)
-assert.equal(migratedRuntime.config.baseUrl, 'https://second.example.com/v1')
-assert.equal(migratedRuntime.config.credentials.apiKey, 'second-secret')
+assert.equal(migratedRuntime.ok, false, 'legacy static provider configuration must not authorize runtime generation')
+assert.equal(migratedRuntime.error.code, 'LEGACY_PROVIDER_UNAVAILABLE')
 
 const customChatSecretConfig = {
   providers: {
@@ -151,6 +152,13 @@ const redirectedCustomChat = configModule.mergeRedactedApiKeys({
 }, customChatSecretConfig)
 assert.equal(redirectedCustomChat.providers.chat.apiKey, '', 'saved active secret must not follow a changed endpoint')
 assert.equal(redirectedCustomChat.chatProviders[0].apiKey, '', 'saved candidate secret must not follow a changed endpoint')
+const reauthedCustomChat = configModule.mergeRedactedApiKeys({
+  ...redactedCustomChat,
+  providers: { chat: { ...redactedCustomChat.providers.chat, authType: { type: 'query', key: 'key' } } },
+  chatProviders: [{ ...redactedCustomChat.chatProviders[0], authType: { type: 'query', key: 'key' } }]
+}, customChatSecretConfig)
+assert.equal(reauthedCustomChat.providers.chat.apiKey, '', 'saved active secret must not follow a changed auth scheme')
+assert.equal(reauthedCustomChat.chatProviders[0].apiKey, '', 'saved candidate secret must not follow a changed auth scheme')
 const accountSecretConfig = {
   providers: { chat: { id: 'deepseek', apiKey: 'track-secret', baseUrl: 'https://api.deepseek.com', model: 'deepseek-chat' } },
   providerProfiles: { chat: [], image: [], video: [] },
@@ -588,21 +596,32 @@ assert.equal(
   modelsApi.buildModelAuth({ authType: { type: 'none' } }).requiresCredential,
   false
 )
-assert.equal(classifyModel({ id: 'gpt-image-2' }).capability, 'image')
-assert.equal(classifyModel({ id: 'image2' }).capability, 'image')
-assert.equal(classifyModel({ id: 'nano-banana2' }).capability, 'image')
-assert.equal(classifyModel({ id: 'gemini-3.1-flash-image-preview' }).capability, 'image')
-assert.equal(classifyModel({ id: 'google/gemini-3.1-flash-lite-image' }).capability, 'image')
+assert.equal(classifyModel({ id: 'gpt-image-2' }).capability, 'unknown')
+assert.equal(classifyModel({ id: 'image2' }).capability, 'unknown')
+assert.equal(classifyModel({ id: 'nano-banana2' }).capability, 'unknown')
+assert.equal(classifyModel({ id: 'gemini-3.1-flash-image-preview' }).capability, 'unknown')
+assert.equal(classifyModel({ id: 'google/gemini-3.1-flash-lite-image' }).capability, 'unknown')
 assert.equal(classifyModel({ id: 'text-embedding-3-large', type: 'embedding' }).capability, 'other')
 assert.equal(classifyModel({ id: 'gpt-5.1' }).capability, 'chat')
+assert.equal(classifyModel({ id: 'veo-3.1' }).capability, 'unknown')
+assert.equal(classifyModel({ id: 'provider-model', capabilities: { textToVideo: true } }).capability, 'video')
+assert.equal(classifyModel({ id: 'provider-model', capabilities: { image: false, video: false } }).capability, 'unknown')
+assert.equal(classifyModel({ id: 'gpt-4o', modalities: { input: ['text', 'image'], output: ['text'] } }).capability, 'chat')
+assert.equal(classifyModel({ id: 'provider-model', output_modalities: ['image'] }).capability, 'image')
+assert.equal(classifyModel({ id: 'grok-4' }).capability, 'chat')
+assert.equal(classifyModel({ id: 'o3' }).capability, 'chat')
+assert.equal(modelsApi.normalizeModelList([{ id: 'vendor-text-model' }], { track: 'chat' })[0].capability, 'chat')
 const mixedRelayModels = modelsApi.normalizeModelList([
   { id: 'gpt-5.1' },
   { id: 'text-embedding-3-large', type: 'embedding' },
-  { id: 'nano-banana2' },
-  { id: 'image2' },
-  { id: 'google/gemini-3.1-flash-lite-image' }
+  { id: 'nano-banana2', output_modalities: ['image'] },
+  { id: 'image2', output_modalities: ['image'] },
+  { id: 'google/gemini-3.1-flash-lite-image', output_modalities: ['image'] }
 ], { track: 'image' })
-assert.deepEqual(mixedRelayModels.slice(0, 3).map(item => item.id), ['google/gemini-3.1-flash-lite-image', 'image2', 'nano-banana2'])
+assert.deepEqual(
+  new Set(mixedRelayModels.filter(item => item.capability === 'image').map(item => item.id)),
+  new Set(['google/gemini-3.1-flash-lite-image', 'image2', 'nano-banana2'])
+)
 assert.equal(mixedRelayModels.find(item => item.id === 'gpt-5.1').capability, 'chat')
 assert.equal(
   modelsApi.buildModelListUrl('https://api.openai.com', {}).href,
@@ -1416,6 +1435,21 @@ const cachedPreviewUrl = await mediaCache.cacheAssetPreview(
   }
 )
 assert.match(cachedPreviewUrl, /^gravuresse-media:\/\/cache\/[a-f0-9]{64}\.png$/)
+const localPngBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0])
+const cachedLocalImage = mediaCache.cacheAssetBytes(localPngBytes, 'image', 'image/png', {
+  cacheDir: mediaCacheDir,
+  validateAssetBytes: bytes => {
+    assert.deepEqual(bytes, localPngBytes)
+    return 'image/png'
+  }
+})
+const cachedLocalImageAgain = mediaCache.cacheAssetBytes(localPngBytes, 'image', 'image/png', {
+  cacheDir: mediaCacheDir,
+  validateAssetBytes: () => 'image/png'
+})
+assert.equal(cachedLocalImage.url, cachedLocalImageAgain.url, 'identical local images reuse the content-addressed cache entry')
+assert.equal(cachedLocalImage.size, localPngBytes.length)
+assert.equal(path.dirname(mediaCache.parseMediaCacheUrl(cachedLocalImage.url, mediaCacheDir)), path.resolve(mediaCacheDir))
 assert.equal(path.dirname(mediaCache.parseMediaCacheUrl(cachedPreviewUrl, mediaCacheDir)), path.resolve(mediaCacheDir))
 assert.throws(
   () => mediaCache.parseMediaCacheUrl('gravuresse-media://cache/../secret.png', mediaCacheDir),

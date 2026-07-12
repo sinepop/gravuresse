@@ -3,84 +3,35 @@
 import { useEffect, useRef, useState } from 'react'
 import { t } from '../i18n'
 import { sameProviderId } from '../providers/aliases'
-import { createProviderProfilePatch, buildConfigProviderProfiles } from '../utils/providerConfig.js'
-import { normalizeAuthType } from '../utils/authType'
 import Ic from './icons'
 
 /** @typedef {import('../types/domain').ConfigPayload} ConfigPayload */
-/** @typedef {import('../types/domain').ProviderDefinition} ProviderDefinition */
 /** @typedef {import('../types/domain').ProviderLists} ProviderLists */
-/** @typedef {import('../types/domain').ProviderProfile} ProviderProfile */
 /** @typedef {import('../types/domain').Track} Track */
-/** @typedef {Record<string, unknown>} UnknownRecord */
-/** @typedef {{ track: Track, current?: ProviderProfile, profiles: ProviderProfile[] }} PickerItem */
-
-/** @param {unknown} value @returns {value is UnknownRecord} */
-function isRecord(value) {
-  return Boolean(value && typeof value === 'object' && !Array.isArray(value))
-}
-
-/** @param {unknown} value @returns {UnknownRecord} */
-function recordOf(value) {
-  return isRecord(value) ? value : {}
-}
-
-/** @param {Track} track @param {ProviderLists} providerLists @param {ProviderProfile} profile */
+/** @typedef {{ connectionId?: string, providerId?: string, modelId?: string, model?: string }} ActiveSelection */
 function findProviderDef(track, providerLists = {}, profile = {}) {
   const providers = providerLists?.[track] || []
   return providers.find(item => sameProviderId(track, item.id, profile.providerId || profile.id))
 }
 
-/** @param {ProviderDefinition | undefined} provider */
-function isExecutableProvider(provider) {
-  return Boolean(provider && provider.executable !== false && provider.integrationStatus !== 'metadata')
-}
-
-/** @param {ProviderProfile} profile @param {ProviderDefinition | undefined} providerDef */
-function hasCredential(profile = {}, providerDef) {
-  if (profile.accountId && profile.accountKind !== 'oauth-placeholder') return true
-  const customType = normalizeAuthType(profile.customAuth?.type)
-  const profileAuth = recordOf(profile.authType)
-  const providerAuth = recordOf(providerDef?.authType)
-  const type = customType || normalizeAuthType(profileAuth.type || providerAuth.type)
-  if (type === 'none') return Boolean(profile.providerId || profile.id || providerDef?.id)
-  if (type === 'session') return Boolean(profile.sessionToken)
-  return Boolean(profile.apiKey)
-}
-
-/** @param {Track} track @param {ProviderLists} providerLists @param {ProviderProfile} profile */
+/** @param {Track} track @param {ProviderLists} providerLists @param {{ connectionId?: string, providerId?: string, modelId?: string, model?: string }} profile */
 function providerName(track, providerLists = {}, profile = {}) {
   const provider = findProviderDef(track, providerLists, profile)
   return profile.name || provider?.name || profile.providerId || profile.id || t('provider', 'zh')
 }
 
-/** @param {Track} track @param {ProviderProfile} current @param {ProviderProfile} profile */
-function sameProfile(track, current = {}, profile = {}) {
-  // Config-array profiles share the same id; use _configProviderIndex to disambiguate
-  if (typeof profile._configProviderIndex === 'number' && typeof current._configProviderIndex === 'number') {
-    return profile._configProviderIndex === current._configProviderIndex &&
-      (current?.model || '') === (profile.model || '')
-  }
-  return sameProviderId(track, current?.id, profile.providerId || profile.id) &&
-    (current?.baseUrl || '') === (profile.baseUrl || '') &&
-    (current?.model || '') === (profile.model || '')
+/** @param {{ connectionId?: string, providerId?: string, modelId?: string, model?: string }} current @param {{ connectionId?: string, providerId?: string, modelId?: string, model?: string }} profile */
+function sameProfile(current = {}, profile = {}) {
+  return current.connectionId === profile.connectionId &&
+    (current.modelId || '') === (profile.modelId || profile.model || '')
 }
 
-/**
- * @param {{
- *   track: Track,
- *   current?: ProviderProfile,
- *   profiles: ProviderProfile[],
- *   providerLists: ProviderLists,
- *   onSelect: (track: Track, patch: UnknownRecord) => void,
- *   lang: string
- * }} props
- */
-function ModelPicker({ track, current = {}, profiles, providerLists, onSelect, lang }) {
+/** @param {{ track: Track, current?: ActiveSelection, profiles: Array<Record<string, unknown>>, providerLists: ProviderLists, onConnectionSelect?: (track: Track, selection: ActiveSelection) => void, lang: string }} props */
+function ModelPicker({ track, current, profiles, providerLists, onConnectionSelect, lang }) {
   const [open, setOpen] = useState(false)
   const ref = useRef(/** @type {HTMLDivElement | null} */ (null))
-  const currentProfile = profiles.find(profile => sameProfile(track, current, profile))
-  const displayModel = currentProfile?.model || current?.model || profiles[0]?.model || t('modelSelector', lang)
+  const currentProfile = profiles.find(profile => sameProfile(current, profile))
+  const displayModel = currentProfile?.model || t('modelSelector', lang)
 
   useEffect(() => {
     /** @param {MouseEvent} event */
@@ -93,26 +44,19 @@ function ModelPicker({ track, current = {}, profiles, providerLists, onSelect, l
 
   /** @param {ProviderProfile} profile */
   const selectProfile = (profile) => {
-    onSelect(track, createProviderProfilePatch(profile))
+    onConnectionSelect?.(track, { connectionId: profile.connectionId, providerId: profile.providerId, modelId: profile.model })
     setOpen(false)
   }
 
   return (
     <div ref={ref} style={{ position: 'relative', minWidth: 0, maxWidth: '100%' }}>
-      <button onClick={() => setOpen(!open)} style={{
-        background: open ? 'var(--accent-soft)' : 'var(--bg-surface)',
+      <button className="glass-control model-selector-trigger" data-open={open ? 'true' : 'false'} aria-expanded={open} onClick={() => setOpen(!open)} style={{
         border: `1px solid ${open ? 'var(--border-accent)' : 'var(--border-subtle)'}`,
         borderRadius: 'var(--radius-sm)',
-        padding: '5px 8px',
-        color: 'var(--text-secondary)',
-        fontSize: 10,
         cursor: 'pointer',
         display: 'flex',
         alignItems: 'center',
         gap: 5,
-        maxWidth: 142,
-        minWidth: 0,
-        minHeight: 28,
         fontFamily: 'var(--font-body)',
         boxShadow: open ? '0 0 0 2px var(--accent-glow)' : 'none'
       }}>
@@ -122,26 +66,22 @@ function ModelPicker({ track, current = {}, profiles, providerLists, onSelect, l
       </button>
 
       {open && (
-        <div style={{
+        <div className="glass-overlay glass-specular model-selector-menu" style={{
           position: 'absolute',
           bottom: '100%',
           left: 0,
           marginBottom: 6,
-          background: 'var(--bg-elevated)',
-          border: '1px solid var(--border-default)',
-          borderRadius: 'var(--radius-md)',
           padding: 6,
           width: 280,
           maxWidth: 'calc(100vw - 96px)',
           zIndex: 100,
-          boxShadow: 'var(--shadow-lg)',
           animation: 'scaleIn 0.12s ease'
         }}>
           {profiles.map(profile => {
-            const selected = sameProfile(track, current, profile)
+            const selected = sameProfile(current, profile)
             const key = profile.profileId || `${profile.providerId || profile.id}:${profile.baseUrl || ''}:${profile.model}`
             return (
-              <button key={key} onClick={() => selectProfile(profile)} style={{
+              <button key={key} className="model-selector-option" onClick={() => selectProfile(profile)} style={{
                 display: 'grid',
                 gridTemplateColumns: '1fr',
                 gap: 2,
@@ -149,10 +89,6 @@ function ModelPicker({ track, current = {}, profiles, providerLists, onSelect, l
                 textAlign: 'left',
                 padding: '8px 10px',
                 background: selected ? 'var(--accent-soft)' : 'transparent',
-                border: 'none',
-                borderRadius: 'var(--radius-sm)',
-                color: 'var(--text-primary)',
-                fontSize: 11,
                 cursor: 'pointer',
                 fontFamily: 'var(--font-body)'
               }}>
@@ -171,39 +107,39 @@ function ModelPicker({ track, current = {}, profiles, providerLists, onSelect, l
   )
 }
 
-/**
- * @param {{
- *   config: ConfigPayload | null,
- *   providerLists: ProviderLists,
- *   activeModule?: 'image' | 'video',
- *   onProviderChange: (track: Track, patch: UnknownRecord) => void,
- *   lang: string
- * }} props
- */
-export default function ModelSelector({ config, providerLists, activeModule = 'image', onProviderChange, lang }) {
-  const mediaTrack = activeModule === 'video' ? 'video' : 'image'
-  /** @type {Track[]} */
-  const tracks = ['chat', mediaTrack]
-  const items = tracks.map(track => {
-    const current = config?.providers?.[track]
-    const savedProfiles = (config?.providerProfiles?.[track] || []).filter(profile => {
-      const providerDef = findProviderDef(track, providerLists, profile)
-      return isExecutableProvider(providerDef) && hasCredential(profile, providerDef) && profile.model
-    })
-    let profiles = savedProfiles
-    if (track === 'chat') {
-      const customProfiles = buildConfigProviderProfiles(config).filter(profile => {
-        const providerDef = findProviderDef(track, providerLists, profile)
-        return isExecutableProvider(providerDef) && hasCredential(profile, providerDef) && profile.model
-      })
-      const seen = new Set(/** @type {string[]} */ ([]))
-      profiles = [...customProfiles, ...savedProfiles].filter(profile => {
-        const key = `${profile.providerId || profile.id}|${profile.baseUrl || ''}|${profile.model || ''}`
-        if (seen.has(key)) return false
-        seen.add(key)
-        return true
+/** @param {ConfigPayload} config @param {Track} track */
+function canonicalProfiles(config, track) {
+  const connections = config?.connections || {}
+  const all = [...(connections.accounts || []), ...(connections.apiKeys || []), ...(connections.relays || [])]
+  /** @type {Array<Record<string, unknown>>} */
+  const profiles = []
+  for (const connection of all) {
+    const validation = connection.validations?.[track]
+    const currentInventory = validation?.ok === true && ['verified', 'directory_verified'].includes(validation?.status) &&
+      validation.track === track && validation.inventoryRevision && validation.inventoryRevision === connection.inventoryRevision &&
+      validation.inventoryRevision === connection.revision
+    if (!currentInventory || !connection.capabilities?.includes(track)) continue
+    for (const model of connection.models || []) {
+      if (model.source !== 'remote' || model.capability !== track) continue
+      profiles.push({
+        connectionId: connection.id,
+        providerId: connection.providerId,
+        id: connection.providerId,
+        name: connection.name,
+        model: model.id,
+        modelId: model.id,
+        baseUrl: connection.baseUrl || ''
       })
     }
+  }
+  return profiles
+}
+
+export default function ModelSelector({ config, providerLists, activeModule = 'image', activeSelections = {}, onConnectionModelChange, lang }) {
+  const mediaTrack = activeModule === 'video' ? 'video' : 'image'
+  const items = ['chat', mediaTrack].map(track => {
+    const profiles = canonicalProfiles(config, track)
+    const current = activeSelections?.[track] || config?.connections?.defaults?.[track] || {}
     return profiles.length ? { track, current, profiles } : null
   }).filter((item) => item !== null)
 
@@ -237,7 +173,7 @@ export default function ModelSelector({ config, providerLists, activeModule = 'i
           current={item.current}
           profiles={item.profiles}
           providerLists={providerLists}
-          onSelect={onProviderChange}
+          onConnectionSelect={onConnectionModelChange}
           lang={lang}
         />
       ))}

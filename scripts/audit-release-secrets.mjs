@@ -38,7 +38,6 @@ const SOURCE_EXTENSIONS = new Set([
 ])
 
 const KNOWN_FALSE_POSITIVE_PATHS = [
-  /(^|[/\\])node_modules[/\\]/,
   /(^|[/\\])dist[/\\]build[/\\]icon\.png$/,
   /(^|[/\\])build[/\\]icon\.png$/
 ]
@@ -140,9 +139,10 @@ function walk(dir) {
 }
 
 function gitTrackedFiles() {
-  return run('git', ['ls-files'])
+  return run('git', ['ls-files', '--cached', '--others', '--exclude-standard'])
     .split(/\r?\n/)
     .filter(Boolean)
+    .filter(file => !/^(?:\.codex|\.claude|\.hermes|node_modules|dist|release)[/\\]/.test(file))
     .map((file) => join(ROOT, file))
 }
 
@@ -209,6 +209,6 @@ if (findings.length) {
 }
 
 console.log('Release secret audit passed')
-console.log('- git tracked files scanned')
+console.log('- tracked and unignored source files scanned')
 console.log(existsSync(RELEASE_DIR) ? '- release tree scanned' : '- release tree missing; skipped')
 console.log(existsSync(APP_ASAR) ? '- app.asar extracted and scanned' : '- app.asar missing; skipped')

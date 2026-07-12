@@ -294,13 +294,13 @@ async function request(url, options = {}, body = null, { retries = 0, retryDelay
   for (let i = 0; i <= retries; i++) {
     try {
       const res = await httpRequest(url, options, body)
-      if (res.status >= 400) {
-        let msg = `HTTP ${res.status}`
+      if (res.status < 200 || res.status >= 300) {
+        let detail = ''
         try {
           const json = JSON.parse(res.data)
-          msg = json.error?.message || json.message || msg
+          detail = json.error?.message || json.message || ''
         } catch {}
-        throw new Error(msg)
+        throw new HttpError(res.status, detail, res.headers)
       }
       return res
     } catch (e) {
@@ -311,4 +311,17 @@ async function request(url, options = {}, body = null, { retries = 0, retryDelay
   throw lastErr
 }
 
-module.exports = { httpRequest, request, assertHttpsUrl, assertApiBaseUrl, joinApiUrl, joinCompatibleApiUrl, downloadToFile, _test: { cleanRelativeApiPath, createPinnedLookup, dedupeApiPath } }
+class HttpError extends Error {
+  constructor(status, detail = '', headers = {}) {
+    const normalizedStatus = Number(status) || 0
+    const normalizedDetail = String(detail || '').trim()
+    super(`HTTP ${normalizedStatus}${normalizedDetail ? `: ${normalizedDetail}` : ''}`)
+    this.name = 'HttpError'
+    this.status = normalizedStatus
+    this.statusCode = normalizedStatus
+    this.code = normalizedStatus ? `HTTP_${normalizedStatus}` : 'HTTP_ERROR'
+    this.response = { status: normalizedStatus, headers }
+  }
+}
+
+module.exports = { HttpError, httpRequest, request, assertHttpsUrl, assertApiBaseUrl, joinApiUrl, joinCompatibleApiUrl, cleanRelativeApiPath, downloadToFile, _test: { cleanRelativeApiPath, createPinnedLookup, dedupeApiPath } }

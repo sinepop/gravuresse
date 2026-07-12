@@ -70,6 +70,25 @@ const OPENAI_COMPATIBLE = {
   relayCompatible: true
 }
 
+const VALIDATION_STRATEGIES = Object.freeze({
+  OPENAI_CHAT: 'openai_chat',
+  ANTHROPIC_MESSAGES: 'anthropic_messages',
+  GEMINI_GENERATE_CONTENT: 'gemini_generate_content',
+  DIRECTORY_ONLY: 'directory_only',
+  UNSUPPORTED: 'unsupported'
+})
+
+function validationStrategyFor(provider = {}, track = 'chat') {
+  const protocol = provider[track]?.protocol
+  if (track === 'chat' && protocol === 'openai') return VALIDATION_STRATEGIES.OPENAI_CHAT
+  if (track === 'chat' && protocol === 'anthropic') return VALIDATION_STRATEGIES.ANTHROPIC_MESSAGES
+  if (track === 'chat' && protocol === 'gemini') return VALIDATION_STRATEGIES.GEMINI_GENERATE_CONTENT
+  if (provider[track]?.modelListPath || provider.modelListPath) {
+    return VALIDATION_STRATEGIES.DIRECTORY_ONLY
+  }
+  return VALIDATION_STRATEGIES.UNSUPPORTED
+}
+
 function imageConstraints(overrides = {}) {
   return {
     prompt: { maxLength: 4000 },
@@ -120,6 +139,7 @@ function videoConstraints(overrides = {}) {
  * @property {Object} [capabilities]
  * @property {Object} [constraints]
  * @property {Object} [customizable]
+ * @property {'openai_chat'|'anthropic_messages'|'gemini_generate_content'|'directory_only'|'unsupported'} validationStrategy
  */
 
 /** @type {ProviderDef[]} */
@@ -1506,7 +1526,12 @@ const REGISTRY = [
   }
 ]
 
-for (const provider of REGISTRY) attachProviderMeta(provider)
+for (const provider of REGISTRY) {
+  // Validation policy is main-process-owned. It is intentionally not included
+  // in provider:list responses, so renderer input cannot select a looser test.
+  provider.validationStrategy = validationStrategyFor(provider)
+  attachProviderMeta(provider)
+}
 
 function getProvider(id) {
   return REGISTRY.find(p => p.id === id) || null
@@ -1571,6 +1596,11 @@ function getConstraints(providerId, action) {
   return p.constraints?.[action] || null
 }
 
+function getValidationStrategy(providerId, track = 'chat') {
+  const provider = getProvider(providerId)
+  return provider ? validationStrategyFor(provider, track) : VALIDATION_STRATEGIES.UNSUPPORTED
+}
+
 module.exports = {
   REGISTRY,
   getProvider,
@@ -1580,6 +1610,8 @@ module.exports = {
   getModelCatalog,
   getProviderCallMode,
   getProviderSetupMode,
+  getValidationStrategy,
   getProtocol,
-  getConstraints
+  getConstraints,
+  VALIDATION_STRATEGIES
 }

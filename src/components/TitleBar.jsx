@@ -46,10 +46,9 @@ export default function TitleBar({ onOpenSettings, lang }) {
   }
 
   return (
-    <div style={{
+    <div className="glass-shell glass-specular title-bar" style={{
       height: 44, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
       padding: '0 10px 0 16px', WebkitAppRegion: 'drag',
-      background: 'transparent',
       position: 'relative', zIndex: 10
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -58,15 +57,11 @@ export default function TitleBar({ onOpenSettings, lang }) {
           background: 'var(--accent)', boxShadow: '0 0 10px var(--accent-glow), 0 0 3px var(--accent)',
           animation: 'breathe 3s ease-in-out infinite'
         }} />
-        <span style={{
-          fontFamily: 'var(--font-display)', fontSize: 15, fontStyle: 'italic',
-          color: 'var(--text-primary)', letterSpacing: '0.5px', fontWeight: 600
-        }}>
+        <span className="title-brand">
           {t('studioAi', lang)}
         </span>
-        <span style={{
-          fontSize: 10, color: 'var(--text-ghost)', fontFamily: 'var(--font-mono)',
-          letterSpacing: '0.5px', padding: '2px 6px', borderRadius: 'var(--radius-sm)',
+        <span className="title-version" style={{
+          padding: '2px 6px', borderRadius: 'var(--radius-sm)',
           background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)'
         }}>v{packageInfo.version}</span>
       </div>

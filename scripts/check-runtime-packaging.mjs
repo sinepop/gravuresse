@@ -50,9 +50,11 @@ async function checkDistRuntime() {
 
 async function checkPackagedAsar() {
   const appAsar = path.join(rootDir, 'release', 'win-unpacked', 'resources', 'app.asar')
-  const entries = [
+  const requiredEntries = [
+    'package.json',
     'dist/main/main.js',
     'dist/preload/preload.js',
+    'dist/renderer/index.html',
     'dist/shared/modelCapabilities.cjs'
   ]
 
@@ -61,14 +63,13 @@ async function checkPackagedAsar() {
   const { listPackage } = requireFromRoot('@electron/asar')
   const files = listPackage(appAsar) || []
   const normalizedFiles = new Set(files.map(file => String(file).replace(/\\/g, '/').replace(/^\/+/, '')))
-  for (const entry of entries) {
-    if (!normalizedFiles.has(entry)) {
-      console.error(`ASAR check failed: ${entry} is missing from release/win-unpacked/resources/app.asar`)
-      process.exit(1)
-    }
+  const missing = requiredEntries.filter(entry => !normalizedFiles.has(entry))
+  if (missing.length) {
+    console.error(`ASAR check failed: missing ${missing.join(', ')}`)
+    process.exit(1)
   }
 
-  console.log(`ASAR check passed: ${entries.join(', ')} are packaged.`)
+  console.log(`ASAR check passed: ${requiredEntries.length} required runtime entries are packaged.`)
 }
 
 async function assertCompiledRequireGraph(directory) {

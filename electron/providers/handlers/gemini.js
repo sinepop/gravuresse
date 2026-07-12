@@ -1,5 +1,5 @@
 const { registerHandler } = require('../handler')
-const { request, joinApiUrl } = require('../../api/http')
+const { request, joinCompatibleApiUrl } = require('../../api/http')
 
 async function handleChat(params) {
   const contents = (params.messages || []).map(message => ({
@@ -11,10 +11,8 @@ async function handleChat(params) {
     systemInstruction: { parts: [{ text: params.system }] }
   }
   const apiKey = params.auth.queryParams.key
-  const url = joinApiUrl(
-    params.baseUrl,
-    `/v1beta/models/${encodeURIComponent(params.model)}:generateContent?key=${encodeURIComponent(apiKey)}`
-  )
+  const url = joinCompatibleApiUrl(params.baseUrl, `/v1beta/models/${encodeURIComponent(params.model)}:generateContent`)
+  url.searchParams.set('key', apiKey)
   const res = await request(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -37,10 +35,8 @@ async function handleGenerate(params) {
     generationConfig: { responseModalities: ['TEXT', 'IMAGE'] }
   }
   const apiKey = auth.queryParams.key
-  const url = joinApiUrl(
-    baseUrl,
-    `/v1beta/models/${encodeURIComponent(m)}:generateContent?key=${encodeURIComponent(apiKey)}`
-  )
+  const url = joinCompatibleApiUrl(baseUrl, `/v1beta/models/${encodeURIComponent(m)}:generateContent`)
+  url.searchParams.set('key', apiKey)
   const res = await request(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

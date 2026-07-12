@@ -31,7 +31,7 @@ export async function callProvider<T>(params: ProviderCallParams, fallback: Fall
   if (!window.electronAPI?.providerAPI?.call) return fallback()
   const result: ProviderCallResult<T> = await window.electronAPI.providerAPI.call<T>(params)
   if (!result.ok) {
-    if (FALLBACK_CODES.has(result.error?.code || '')) return fallback()
+    if (!params.connectionId && FALLBACK_CODES.has(result.error?.code || '')) return fallback()
     throw new Error(result.error?.message || 'Provider call failed')
   }
   return result.data
@@ -53,6 +53,7 @@ export function pollVideoTaskProvider<T>(task: { taskId: string; provider?: Prov
   return callProvider<T>({
     action: 'poll',
     providerId: resolveProviderId('video', task.provider?.id),
+    connectionId: task.provider?.connectionId as string | undefined,
     taskId: task.taskId,
     model: task.provider?.model,
     baseUrl: task.provider?.baseUrl,

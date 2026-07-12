@@ -29,16 +29,16 @@
 - **图片缩放预览** — 生成图片支持滚轮缩放、拖拽平移、双击重置
 - **多对话管理** — 多对话并行，独立记忆互不干扰，支持切换/新建/删除
 - **素材画廊** — 网格/自由布局切换，右键菜单操作，图片点击放大预览
-- **设置面板** — 左侧导航布局，通用设置 + API 配置分组，模型自动获取下拉选择
+- **提供商设置** — 4 子页面：账号（OAuth/设备码连接）、API 密钥（自动拉取模型）、自定义中转、默认模型搭配
 - **主题与国际化** — 深色/浅色/跟随系统 + 中英文切换 + 字体大小调节
 - **Lucide 图标** — 全组件采用 Lucide React 图标库，精致统一
 - **消息可复制** — 对话内容支持选中复制，Shift+Enter 换行
 
 ### 快速开始
 
-1. 下载 `gravuresse-Setup-2.2.0.exe` 并安装
+1. 下载 `gravuresse-Setup-2.4.0.exe` 并安装
 2. 打开程序，点击标题栏齿轮图标（或按 `Ctrl+,`）进入设置
-3. 在 API 配置中选择 Provider，输入 API Key，模型自动获取
+3. 在提供商设置 → API 密钥中输入 API Key，模型自动拉取
 4. 在聊天框输入需求，AI 先出提示词，确认后自动生成
 
 ### 开发
@@ -59,6 +59,8 @@ npm run package
 ```
 
 发布包会在 `release/SHA256SUMS.txt` 生成 SHA256 校验和。正式发布时请同时上传安装包和校验和，便于用户核对下载文件。
+
+`npm run package` 会依次执行受保护清理、核心测试、类型检查、生产构建、运行时检查、Windows 打包、ASAR 检查、SHA-256、秘密审计、解包应用冒烟和 NSIS 安装程序冒烟。完成后 `release` 仅保留 2.4.0 安装包、blockmap、`latest.yml`、`SHA256SUMS.txt` 与 `win-unpacked`。
 
 ### 更新日志
 
@@ -99,17 +101,17 @@ Driven by a research mindset and sheer persistence, I dug through tons of resour
 - **Image Zoom Preview** — Scroll-zoom, drag-pan, double-click reset for generated images
 - **Multi-Conversation** — Parallel conversations with isolated memory, switch/create/delete
 - **Workspace Canvas** — Grid/free layout, right-click menu, click-to-zoom preview, auto-filters by image/video workspace
-- **Settings + Inline Model Switching** — Configure providers in Settings, then switch saved chat/image/video models directly from the chat toolbar
+- **Provider Settings** — 4 sub-pages: Accounts (OAuth/device-code), API Keys (auto-fetch models), Custom Relays, Default Model Pairing
 - **Theme & i18n** — Dark/light/system themes, Chinese/English, adjustable font size
 - **Lucide Icons** — Unified icon system across all components using Lucide React
 - **Copy & Paste** — Message text selectable and copyable, Shift+Enter for newlines
 
 ### Quick Start
 
-1. Download `gravuresse-Setup-2.2.0.exe` and install
+1. Download `gravuresse-Setup-2.4.0.exe` and install
 2. Open the app, click the gear icon in the title bar (or press `Ctrl+,`) to open Settings
-3. Configure your provider credentials and save the models you want to use in Settings
-4. Type your request in chat and switch saved models from the toolbar when needed
+3. In Provider Settings → API Keys, enter your API key — models are fetched automatically
+4. Type your request in chat, review the prompt, and confirm to generate
 
 ### Development
 
@@ -129,6 +131,8 @@ npm run package
 ```
 
 Release builds should be signed when certificate environment variables are available. `npm run package` writes `release/SHA256SUMS.txt`; publish it with the installer so users can verify the download.
+
+`npm run package` runs protected cleanup, core tests, type checking, the production build, runtime checks, Windows packaging, ASAR verification, SHA-256 generation, secret auditing, unpacked-app smoke, and an NSIS installer smoke. On completion, `release` contains only the 2.4.0 installer, blockmap, `latest.yml`, `SHA256SUMS.txt`, and `win-unpacked`.
 
 ### Changelog
 

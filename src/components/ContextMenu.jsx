@@ -73,12 +73,10 @@ export default function ContextMenu({ x, y, asset, onClose, onAction, lang, vide
     return !item.type || item.type === asset?.type
   })
   return (
-    <div ref={ref} style={{ position: 'fixed', left: position.left, top: position.top, zIndex: 2000, background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)', padding: 4, minWidth: 160, boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }}>
+    <div ref={ref} className="glass-overlay glass-specular context-menu" role="menu" style={{ position: 'fixed', left: position.left, top: position.top, zIndex: 2000, padding: 4, minWidth: 160 }}>
       {items.map(item => (
-        <button key={item.id} onClick={() => { onAction(item.id, asset); onClose() }}
-          style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '6px 10px', background: 'transparent', border: 'none', borderRadius: 4, fontSize: 11, cursor: 'pointer', color: item.danger ? 'var(--danger)' : 'var(--text-primary)' }}
-          onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
-          onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+        <button key={item.id} className="context-menu-item" role="menuitem" onClick={() => { onAction(item.id, asset); onClose() }}
+          style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', cursor: 'pointer', color: item.danger ? 'var(--danger)' : undefined }}
         >
           <Ic n={item.icon} size={12} color={item.danger ? 'var(--danger)' : 'var(--text-secondary)'} />
           {t(item.key || (asset?.isMaterial ? 'unmarkMaterial' : 'markMaterial'), lang)}

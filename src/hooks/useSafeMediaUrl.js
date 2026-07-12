@@ -2,28 +2,10 @@
 
 import { useEffect, useState } from 'react'
 import { sanitizeAssetUrl } from '../utils/mediaSecurity.js'
+import { sanitizeMediaCacheUrl } from '../utils/assetUrlRules.js'
 
 /** @typedef {import('../types/domain').AssetType} AssetType */
 /** @typedef {'empty' | 'blocked' | 'direct' | 'remote'} PreviewUrlKind */
-
-const CACHE_FILE_RE = /^[a-f0-9]{64}\.(png|jpg|webp|mp4)$/
-
-/** @param {unknown} url @param {unknown} type @returns {string} */
-function sanitizeMediaCacheUrl(url = '', type = 'image') {
-  if (typeof url !== 'string') return ''
-  let parsed
-  try {
-    parsed = new URL(url)
-  } catch {
-    return ''
-  }
-  if (parsed.protocol !== 'gravuresse-media:' || parsed.hostname !== 'cache') return ''
-  const fileName = decodeURIComponent(parsed.pathname.replace(/^\/+/, ''))
-  if (!CACHE_FILE_RE.test(fileName)) return ''
-  const isVideo = fileName.endsWith('.mp4')
-  if (type === 'video') return isVideo ? parsed.href : ''
-  return isVideo ? '' : parsed.href
-}
 
 /** @param {unknown} url @param {unknown} type @returns {{ kind: PreviewUrlKind, url: string }} */
 export function normalizePreviewUrl(url = '', type = 'image') {

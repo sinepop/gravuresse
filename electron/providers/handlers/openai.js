@@ -1,5 +1,6 @@
 const { registerHandler } = require('../handler')
 const { request, joinCompatibleApiUrl } = require('../../api/http')
+const { extractPrimaryInferenceOutput } = require('../inference-evidence')
 
 const BASE_SIZES = {
   '1:1': [1024, 1024], '4:3': [1536, 1152], '3:4': [1152, 1536],
@@ -16,8 +17,8 @@ function getSize(ratio, resolution) {
   return `${Math.min(w, 4096)}x${Math.min(h, 4096)}`
 }
 
-function chatCompletionsUrl(baseUrl) {
-  return joinCompatibleApiUrl(baseUrl, '/v1/chat/completions')
+function chatCompletionsUrl(baseUrl, path) {
+  return joinCompatibleApiUrl(baseUrl, path || '/v1/chat/completions')
 }
 
 function imageGenerationsUrl(baseUrl) {
@@ -33,7 +34,7 @@ async function handleChat(params) {
     ],
     max_tokens: 4096
   }
-  const url = chatCompletionsUrl(params.baseUrl)
+  const url = chatCompletionsUrl(params.baseUrl, params.path)
   const res = await request(url, {
     method: 'POST',
     headers: { ...params.auth.headers, 'Content-Type': 'application/json' },
@@ -41,8 +42,8 @@ async function handleChat(params) {
   }, body)
   const json = JSON.parse(res.data)
   if (json.error) throw new Error(json.error.message)
-  const text = json.choices?.[0]?.message?.content || ''
-  return { text, model: json.model }
+  const output = extractPrimaryInferenceOutput('openai', json)
+  return { text: output.text, thinking: output.thinking, model: json.model }
 }
 
 function imageFromResponse(json = {}) {

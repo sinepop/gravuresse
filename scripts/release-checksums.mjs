@@ -26,8 +26,9 @@ async function main() {
     .filter(entry => entry.isFile() && currentReleaseFiles.has(entry.name))
     .map(entry => entry.name)
     .sort((a, b) => a.localeCompare(b))
-  if (files.length === 0) {
-    console.error(`No release files found for version ${version}`)
+  const missing = [...currentReleaseFiles].filter(file => !files.includes(file))
+  if (missing.length) {
+    console.error(`Missing release files for version ${version}: ${missing.join(', ')}`)
     process.exitCode = 1
     return
   }
