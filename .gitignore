@@ -9,8 +9,18 @@ release/
 *.swp
 .env
 .env.*
+.envrc
+.npmrc
+.netrc
+_netrc
+.git-credentials
+.ssh/
+.aws/
+.azure/
+.kube/
 CLAUDE.md
 .claude/
+.codex/
 PRD.md
 SPEC-*.md
 # Generated images and docs
@@ -41,8 +51,15 @@ core.*
 *.cer
 *.p12
 *.pfx
+*.ppk
 *.jks
 *.keystore
+*.kdbx
+*.har
+id_rsa
+id_dsa
+id_ecdsa
+id_ed25519
 credentials.json
 auth.json
 cookies.json
@@ -51,6 +68,9 @@ secrets.json
 *.sqlite
 *.sqlite3
 *.db
+*.backup
+*.old
+*~
 
 # Agent and security audit files
 AGENTS.md

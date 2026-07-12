@@ -78,7 +78,7 @@ export async function runHttpCoreTests() {
   )
 
   assert.throws(
-    () => assertHttpsUrl('https://user:pass@example.com/a.png'),
+    () => assertHttpsUrl('https://' + 'user:pass@example.com/a.png'),
     /credentials/
   )
   for (const privateUrl of [

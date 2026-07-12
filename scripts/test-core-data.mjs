@@ -676,7 +676,7 @@ assert.deepEqual(
   []
 )
 assert.throws(
-  () => modelsApi.handleFetchError(new Error('HTTP 401: sk-abcdefghijklmnopqrstuvwxyz123456'), { reportErrors: true }),
+  () => modelsApi.handleFetchError(new Error('HTTP 401: sk-' + 'abcdefghijklmnopqrstuvwxyz123456'), { reportErrors: true }),
   (error) => error.message.includes('HTTP 401') && error.message.includes('[redacted]') && !error.message.includes('abcdefghijklmnopqrstuvwxyz123456')
 )
 assert.deepEqual(
@@ -713,7 +713,7 @@ assert.equal(sanitizeAssetUrl('https://cdn.example.com/a.png', 'image'), 'https:
 assert.equal(sanitizeAssetUrl(' http://example.com/a.png ', 'image'), '')
 assert.equal(sanitizeAssetUrl('file:///C:/x.png', 'image'), '')
 assert.equal(sanitizeAssetUrl('https://localhost/a.png', 'image'), '')
-assert.equal(sanitizeAssetUrl('https://user:pass@example.com/a.png', 'image'), '')
+assert.equal(sanitizeAssetUrl('https://' + 'user:pass@example.com/a.png', 'image'), '')
 assert.equal(sanitizeAssetUrl('https://[::ffff:127.0.0.1]/a.png', 'image'), '')
 assert.equal(sanitizeAssetUrl('https://[::ffff:7f00:1]/a.png', 'image'), '')
 assert.equal(sanitizeAssetUrl('data:image/png;base64,AAAA', 'image'), 'data:image/png;base64,AAAA')

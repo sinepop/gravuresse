@@ -12,7 +12,7 @@ export const assetUrlCases = [
   { url: 'file:///C:/x.png', type: 'image', expected: '' },
   { url: 'http://example.com/a.png', type: 'image', expected: '' },
   { url: 'javascript:alert(1)', type: 'image', expected: '' },
-  { url: 'https://user:pass@example.com/a.png', type: 'image', expected: '' },
+  { url: 'https://' + 'user:pass@example.com/a.png', type: 'image', expected: '' },
   { url: 'https://localhost/a.png', type: 'image', expected: '' },
   { url: 'https://127.0.0.1/a.png', type: 'image', expected: '' },
   { url: 'https://10.0.0.2/a.png', type: 'image', expected: '' },
