@@ -323,7 +323,7 @@
         <div class="agent-title" id="agentTitle"><strong>提示词收敛</strong><span>最多 5 次调用</span></div>
         <div class="agent-steps" id="agentSteps">
           <div class="agent-step done"><i class="agent-state"></i><span>意图解析</span><em>完成</em></div>
-          <div class="agent-step running"><i class="agent-state"></i><span>2 个 Prompt 方案</span><em>并行</em></div>
+          <div class="agent-step running"><i class="agent-state"></i><span>2 个 Prompt 方案</span><em>顺序生成</em></div>
           <div class="agent-step"><i class="agent-state"></i><span>连续性检查</span><em>等待</em></div>
           <div class="agent-step"><i class="agent-state"></i><span>模型能力适配</span><em>等待</em></div>
           <div class="agent-controls"><button class="primary-btn" id="runAgent">继续运行</button><button class="small-btn" id="stopAgent">停止</button></div>
@@ -372,14 +372,14 @@
             </div>
           </div>
           <div class="composer">
-            <div class="composer-box"><button class="icon-btn" title="添加参考">＋</button><textarea placeholder="描述想修改的内容，例如：保留人物和构图，把时间改成清晨……"></textarea><button class="primary-btn">发送</button><div class="context-inline">将使用 Brief v3、当前候选 A、2 张参考图；Agent 协作需要确认</div></div>
+            <div class="composer-box"><button class="icon-btn" title="添加参考">＋</button><textarea placeholder="描述想修改的内容，例如：保留人物和构图，把时间改成清晨……"></textarea><button class="primary-btn">发送</button><div class="context-inline">将使用 Brief v3、当前候选 A、2 张参考图；Agent 多步骤执行需要确认</div></div>
           </div>
         </div>
       </section>
 
       <section class="screen" id="screen-canvas">
         <div class="work-head">
-          <div class="work-title"><h1>无限画布</h1><p>同一项目图谱 · 已显示当前路径和一跳谱系</p></div>
+          <div class="work-title"><h1>无限画布</h1><p>同一工作流 · 已叠加当前路径的一跳谱系</p></div>
           <div class="work-actions"><button class="small-btn">隐藏谱系</button><button class="primary-btn">＋ 生成节点</button></div>
         </div>
         <div class="canvas">
@@ -411,7 +411,7 @@
             <div class="connection"><div class="conn-icon">V1</div><div class="conn-main"><strong>自定义视频任务</strong><span>video.example.com / submit + poll</span></div><div class="caps"><span class="cap">Video</span><span class="cap">I2V</span></div><div class="conn-state"><strong style="color:var(--amber)">仅目录已验证</strong><span>需要最小推理</span></div></div>
             <div class="connection"><div class="conn-icon">L</div><div class="conn-main"><strong>本地实验端点</strong><span>127.0.0.1:8188 / Local Connection</span></div><div class="caps"><span class="cap">Image</span></div><div class="conn-state"><strong style="color:var(--red)">离线</strong><span>3 分钟前</span></div></div>
           </div>
-          <div class="advanced-note"><strong style="color:var(--text-2)">能力驱动，而不是 Provider 驱动。</strong><br/>项目只保存 connectionId、modelId 和能力快照，不保存密钥。高级请求模板只在自定义连接中展开；未通过真实推理验证的能力不会被 Agent 自动选择。</div>
+          <div class="advanced-note"><strong style="color:var(--text-2)">能力驱动，而不是 Provider 驱动。</strong><br/>项目只保存 connectionId、modelId 和本次能力解析结果，不保存密钥。高级请求模板只在自定义连接中展开；未通过真实推理验证的能力不会被 Agent 自动选择。</div>
         </div>
       </section>
 
@@ -428,26 +428,26 @@
 
     <aside class="inspector" id="inspector">
       <div class="inspect-head"><strong id="inspectTitle">修改与配方</strong><button class="icon-btn" style="margin-left:auto" title="更多">···</button></div>
-      <div class="inspect-tabs" id="inspectTabs"><button class="inspect-tab active" data-mode="black">黑盒</button><button class="inspect-tab" data-mode="gray">灰盒</button><button class="inspect-tab" data-mode="white">白盒</button></div>
+      <div class="inspect-tabs" id="inspectTabs" role="tablist" aria-label="修改透明度"><button class="inspect-tab active" id="tab-black" role="tab" aria-selected="true" aria-controls="mode-black" tabindex="0" data-mode="black">黑盒</button><button class="inspect-tab" id="tab-gray" role="tab" aria-selected="false" aria-controls="mode-gray" tabindex="-1" data-mode="gray">灰盒</button><button class="inspect-tab" id="tab-white" role="tab" aria-selected="false" aria-controls="mode-white" tabindex="-1" data-mode="white">白盒</button></div>
       <div class="connection-detail" id="connectionDetail">
         <div class="conn-hero"><div class="conn-hero-top"><div class="conn-icon">OC</div><div><strong>OpenCode Go</strong><code>api.opencode.example</code></div></div><div class="constraint-row"><span class="tag">Chat</span><span class="tag">Image</span><span class="tag lock">真实推理已验证</span></div></div>
         <div class="detail-list"><div class="detail-row"><b>认证</b><span>Bearer · 凭据已保存并脱敏</span></div><div class="detail-row"><b>模型目录</b><span>12 models · revision 18</span></div><div class="detail-row"><b>能力证据</b><span>目录验证 + 最小真实推理</span></div><div class="detail-row"><b>最近验证</b><span>刚刚 · 84ms</span></div><div class="detail-row"><b>项目默认</b><span>Chat / Image</span></div></div>
         <div class="security-note"><strong style="color:#8ee0b3">凭据边界正常</strong><br/>密钥只在 Electron 主进程解析，并与当前 endpoint 绑定；项目导出、Renderer 状态和日志均不包含明文凭据。</div>
       </div>
       <div class="inspect-body" id="recipeInspectBody">
-        <div class="mode-panel active" id="mode-black">
+        <div class="mode-panel active" id="mode-black" role="tabpanel" aria-labelledby="tab-black">
           <div class="field-label">你想修改什么</div><textarea class="change-box">保留人物和构图，把雨夜改成清晨薄雾。</textarea>
           <div class="field-label">系统理解</div><div class="diff-summary"><div class="diff-line keep"><b>保持</b><span>红伞人物、中央构图、老街纵深</span></div><div class="diff-line change"><b>改变</b><span>夜晚 → 清晨；雨 → 薄雾；暖灯 → 自然晨光</span></div></div>
           <div class="repro"><div class="repro-head"><strong>复现可信度</strong><span>MEDIUM</span></div><p>配方与参考图完整；当前模型不返回 seed，无法保证像素级一致。</p></div>
         </div>
-        <div class="mode-panel" id="mode-gray">
+        <div class="mode-panel" id="mode-gray" role="tabpanel" aria-labelledby="tab-gray">
           <div class="field-label">稳定锁</div><div class="lock-grid"><button class="lock-btn on">主体 <small>Strict</small></button><button class="lock-btn on">构图 <small>Strict</small></button><button class="lock-btn">镜头 <small>Off</small></button><button class="lock-btn">环境 <small>Off</small></button><button class="lock-btn on">风格 <small>Prefer</small></button><button class="lock-btn">色彩 <small>Off</small></button></div>
           <div class="field-label">变化强度 · 32%</div><input class="slider" type="range" value="32" />
           <div class="field-label">参考图权重 · 70%</div><input class="slider" type="range" value="70" />
           <div class="field-label">语义控制</div><div class="diff-summary"><div class="diff-line"><b>镜头</b><span>35mm，平视，缓慢推进感</span></div><div class="diff-line"><b>光线</b><span>清晨散射光，薄雾，关闭霓虹</span></div><div class="diff-line"><b>避免</b><span>赛博朋克、过饱和、额外人物</span></div></div>
           <div class="repro"><div class="repro-head"><strong>主体 Strict</strong><span>有限支持</span></div><p>当前连接支持参考图，但不支持身份控制模型；系统会优先保持，不能绝对保证。</p></div>
         </div>
-        <div class="mode-panel" id="mode-white">
+        <div class="mode-panel" id="mode-white" role="tabpanel" aria-labelledby="tab-white">
           <div class="field-label">Prompt Diff</div><div class="recipe">model: image-model-v4
 ratio: 16:9
 resolution: 1536
@@ -512,10 +512,26 @@ locks:
   document.querySelectorAll('[data-open]').forEach(el => el.addEventListener('click', () => showScreen(el.dataset.open)));
 
   function setMode(name) {
-    document.querySelectorAll('.inspect-tab').forEach(el => el.classList.toggle('active', el.dataset.mode === name));
+    document.querySelectorAll('.inspect-tab').forEach(el => {
+      const active = el.dataset.mode === name;
+      el.classList.toggle('active', active);
+      el.setAttribute('aria-selected', String(active));
+      el.tabIndex = active ? 0 : -1;
+    });
     document.querySelectorAll('.mode-panel').forEach(el => el.classList.toggle('active', el.id === `mode-${name}`));
   }
-  document.querySelectorAll('.inspect-tab').forEach(btn => btn.addEventListener('click', () => setMode(btn.dataset.mode)));
+  const inspectTabs = [...document.querySelectorAll('.inspect-tab')];
+  inspectTabs.forEach((btn, index) => {
+    btn.addEventListener('click', () => setMode(btn.dataset.mode));
+    btn.addEventListener('keydown', event => {
+      if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+      event.preventDefault();
+      const delta = event.key === 'ArrowRight' ? 1 : -1;
+      const next = inspectTabs[(index + delta + inspectTabs.length) % inspectTabs.length];
+      setMode(next.dataset.mode);
+      next.focus();
+    });
+  });
   document.querySelectorAll('.lock-btn').forEach(btn => btn.addEventListener('click', () => {
     btn.classList.toggle('on');
     btn.querySelector('small').textContent = btn.classList.contains('on') ? 'Prefer' : 'Off';
