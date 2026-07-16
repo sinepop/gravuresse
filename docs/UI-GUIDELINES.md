@@ -1,6 +1,6 @@
 # Gravuresse vNext UI/UX 规范
 
-> 版本：v0.5（现有架构优化 / Light-first + Themeable）
+> 版本：v0.5.1（现有架构优化 / Refined Components + Light-first + Themeable）
 > 日期：2026-07-16
 > 对应 PRD/SPEC：`docs/PRD.md`、`docs/SPEC.md`
 > 原型：`docs/prototypes/gravuresse-vnext-prototype.html`
@@ -260,6 +260,34 @@ font-family: "Segoe UI Variable", "Microsoft YaHei UI", "PingFang SC", system-ui
 | 辅助 | 11–12px | 元信息、状态、时间 |
 | 代码/ID | 10–11px | taskId、文件名、字段名 |
 
+### 5.4 v0.5.1 组件精致化原则
+
+这版“更精致”不是增加装饰，而是让常用控件更稳、更清楚、更耐看：
+
+| 维度 | 规则 | 落点 |
+|---|---|---|
+| 轮廓 | 细边界 + 温和圆角，不使用厚重描边 | Button、Panel、AssetCard、Settings Modal |
+| 层级 | 用 2–3 层轻阴影表达浮起，不让界面变脏 | 卡片、弹窗、输入框、选中素材 |
+| 状态 | 状态必须有文字；颜色只做辅助 | Pill、TaskCard、Video Recovery |
+| 输入 | 输入框需要显示本轮会带上的参考、模型和参数摘要 | Composer |
+| 素材 | 缩略图是视觉主角，卡片信息只解释“是什么/怎么来的” | AssetCard、AssetDetail |
+| 设置 | label + control + hint 三段清楚，偏好即时保存 | PreferenceRow |
+| 暗色 | 暗色只换 token，不换信息架构 | Dark Theme Preview |
+
+### 5.5 精致组件 Token
+
+新增/强调以下 token，不允许在组件里硬编码同义值：
+
+| Token | 用途 |
+|---|---|
+| `--r-sm / --r / --r-lg / --r-xl` | 小控件、卡片、弹窗半径 |
+| `--shadow-xs` | 轻微可点击感 |
+| `--shadow-sm` | 输入框、状态行、普通卡片 |
+| `--shadow-card` | 素材卡、设置卡、规范卡 |
+| `--shadow-lg` | 设置弹窗 |
+| `--ring` | 键盘焦点和输入框 focus |
+| `--accent-soft` | 选中态外圈、弱强调背景 |
+
 字号设置：
 
 | 设置 | 用途 |
@@ -285,6 +313,9 @@ font-family: "Segoe UI Variable", "Microsoft YaHei UI", "PingFang SC", system-ui
 规则：
 
 - 同一类型在 light/dark 下只换 token；
+- Primary 使用深浅渐变和轻内高光，但不得使用夸张发光；
+- Secondary/Ghost 保持细边界，避免和 Primary 抢权重；
+- focus-visible 必须使用 `--ring`；
 - disabled 状态必须明显；
 - 按钮文案使用 i18n key。
 
@@ -312,6 +343,14 @@ font-family: "Segoe UI Variable", "Microsoft YaHei UI", "PingFang SC", system-ui
 - 参考图 / 视频 / 素材等轻标签。
 
 可提供 hover 动作，但主动作仍应在 AssetDetail 中稳定可见。
+
+v0.5.1 视觉规则：
+
+- 缩略图高度优先，卡片文字不要抢媒体内容；
+- 选中态使用边界 + 外圈弱高亮，不靠大面积填色；
+- 类型标签使用半透明胶囊，不遮挡核心画面；
+- 标题一行优先，副信息用模型/比例/来源解释；
+- light/dark 下同一 DOM，只换 token。
 
 ### 6.4 AssetDetail
 
@@ -350,7 +389,9 @@ font-family: "Segoe UI Variable", "Microsoft YaHei UI", "PingFang SC", system-ui
 
 - label + control + hint 三段清楚；
 - 保存中和保存失败可见；
-- 切换后即时生效。
+- 切换后即时生效；
+- select / toggle 使用同一高度、同一圆角、同一 focus ring；
+- 不把通用偏好藏到 Provider 子页深处。
 
 ---
 
@@ -393,4 +434,5 @@ font-family: "Segoe UI Variable", "Microsoft YaHei UI", "PingFang SC", system-ui
 - [ ] 连接页不回显秘密；
 - [ ] 默认界面不出现复杂内部概念；
 - [ ] 新组件不硬编码主题色；
+- [ ] Button / Pill / AssetCard / Composer / PreferenceRow 有清楚主次、焦点和状态；
 - [ ] UI 规范不引导新增大架构。
