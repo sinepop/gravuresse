@@ -10,11 +10,12 @@ app.on('window-all-closed', event => event.preventDefault());
 const root = path.resolve(__dirname, '..');
 const outDir = path.join(root, 'docs', 'prototypes', 'screens');
 const shots = [
-  ['workspace', '01-current-workspace.png', 1280, 900],
+  ['workspace', '01-current-workspace-light.png', 1280, 900],
   ['detail', '02-asset-detail-continue.png', 1280, 900],
   ['recovery', '03-video-task-recovery.png', 1280, 900],
-  ['connections', '04-connections-models.png', 1280, 900],
-  ['spec', '05-ui-specification.png', 1280, 1100],
+  ['settings', '04-preferences-theme-language.png', 1280, 900],
+  ['dark', '05-dark-theme-preview.png', 1280, 900],
+  ['spec', '06-ui-specification.png', 1280, 1100],
 ];
 const mime = {
   '.html': 'text/html; charset=utf-8',
@@ -56,7 +57,7 @@ async function capture(baseUrl, screen, filename, width, height) {
     useContentSize: true,
     frame: false,
     show: false,
-    backgroundColor: '#0B0D10',
+    backgroundColor: screen === 'dark' ? '#0B0D10' : '#E9EDF2',
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,

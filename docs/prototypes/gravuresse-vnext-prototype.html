@@ -4,376 +4,69 @@
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline';" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Gravuresse vNext v0.4 Architecture-First Prototype</title>
+  <title>Gravuresse vNext v0.5 Current Architecture Prototype</title>
   <style>
     :root {
-      --bg: #0B0D10;
-      --bg2: #101318;
-      --title: #0D1013;
-      --panel: #171B20;
-      --panel2: #1E232A;
-      --hover: #252B33;
-      --line: #2A3038;
-      --line2: #3A424D;
-      --text: #F4F5F7;
-      --sub: #B6BDC7;
-      --muted: #7F8894;
-      --amber: #F0A44B;
-      --amber2: #FFB65E;
-      --amberSoft: rgba(240,164,75,.13);
-      --green: #45B97C;
-      --greenSoft: rgba(69,185,124,.13);
-      --blue: #70A5EB;
-      --blueSoft: rgba(112,165,235,.13);
-      --red: #E96B68;
-      --redSoft: rgba(233,107,104,.13);
-      --font: "Segoe UI Variable", "Microsoft YaHei UI", "PingFang SC", system-ui, sans-serif;
-      --mono: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
-      --r-xs: 4px;
-      --r-sm: 6px;
-      --r: 8px;
-      --r-lg: 12px;
+      --bg-workspace:#E9EDF2; --bg-primary:#F7F9FB; --bg-elevated:#FFFFFF; --bg-surface:#F0F3F6; --bg-hover:rgba(0,0,0,.04);
+      --text-primary:#1A1A1C; --text-secondary:#5A5A63; --text-muted:#8E9299; --text-ghost:#C4C8CE;
+      --border-subtle:rgba(0,0,0,.06); --border-default:rgba(0,0,0,.1); --border-strong:rgba(0,0,0,.16);
+      --accent:#2E2E32; --accent-soft:rgba(0,0,0,.045); --success:#278C5C; --success-soft:rgba(39,140,92,.08); --danger:#D93B3B; --danger-soft:rgba(217,59,59,.08); --warning:#D78A22; --warning-soft:rgba(215,138,34,.11);
+      --shadow-sm:0 1px 2px rgba(0,0,0,.03); --shadow-md:0 8px 24px rgba(34,48,64,.1); --shadow-lg:0 18px 48px rgba(34,48,64,.16);
+      --font:"Segoe UI Variable Text","Segoe UI Variable","Microsoft YaHei UI","PingFang SC",system-ui,sans-serif; --mono:"Cascadia Mono","SFMono-Regular",Consolas,monospace;
+      --r-xs:4px; --r-sm:6px; --r:8px; --r-lg:12px; color-scheme:light;
     }
-    * { box-sizing: border-box; }
-    html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font: 13px/1.45 var(--font); }
-    button, textarea, input { font: inherit; }
-    .app { width: 100vw; height: 100vh; display: grid; grid-template-rows: 40px 1fr 30px; background: var(--bg); }
-    .titlebar { display: flex; align-items: center; gap: 12px; height: 40px; background: var(--title); border-bottom: 1px solid var(--line); padding-right: 12px; }
-    .brand { width: 56px; height: 40px; display: grid; place-items: center; color: var(--amber); font-weight: 760; font-size: 16px; letter-spacing: -.04em; }
-    .crumb { display: flex; gap: 8px; align-items: center; min-width: 520px; color: var(--muted); }
-    .crumb strong { color: var(--text); font-weight: 650; }
-    .top-right { margin-left: auto; display: flex; align-items: center; gap: 8px; color: var(--sub); font-size: 12px; }
-    .dot { width: 7px; height: 7px; border-radius: 999px; background: var(--green); box-shadow: 0 0 0 3px var(--greenSoft); }
-    .shell { min-height: 0; display: grid; grid-template-columns: 56px 288px minmax(570px, 1fr) 332px; }
-    .shell.no-inspector { grid-template-columns: 56px 288px minmax(860px, 1fr); }
-    .shell.connections { grid-template-columns: 56px minmax(860px, 1fr); }
-    .shell.spec { grid-template-columns: 56px minmax(960px, 1fr); }
-    .rail { background: var(--title); border-right: 1px solid var(--line); display: flex; flex-direction: column; align-items: center; padding: 10px 0; gap: 8px; }
-    .rail-btn { width: 36px; height: 36px; display: grid; place-items: center; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--muted); font-weight: 700; }
-    .rail-btn.active { background: var(--amber); color: #121212; }
-    .rail-btn.ghost { background: var(--panel2); border-color: var(--line); color: var(--sub); }
-    .rail-spacer { flex: 1; }
-    .side, .inspector { min-width: 0; background: var(--panel); display: flex; flex-direction: column; }
-    .side { border-right: 1px solid var(--line); }
-    .inspector { border-left: 1px solid var(--line); }
-    .panel-head { height: 50px; flex: 0 0 auto; display: flex; align-items: center; padding: 0 14px; border-bottom: 1px solid var(--line); }
-    .panel-head strong { font-size: 13px; font-weight: 650; }
-    .panel-head span { margin-left: auto; color: var(--muted); font-size: 11px; }
-    .main { min-width: 0; min-height: 0; position: relative; overflow: hidden; background: var(--bg); }
-    .screen { position: absolute; inset: 0; display: none; }
-    .screen.active { display: flex; flex-direction: column; }
-    .footer { height: 30px; display: flex; align-items: center; gap: 14px; padding: 0 12px; background: var(--title); border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; }
-    .footer b { color: var(--sub); }
-    .pill { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel2); color: var(--sub); font-size: 11px; white-space: nowrap; }
-    .pill.amber { color: var(--amber); border-color: rgba(240,164,75,.38); background: var(--amberSoft); }
-    .pill.green { color: var(--green); border-color: rgba(69,185,124,.34); background: var(--greenSoft); }
-    .pill.blue { color: var(--blue); border-color: rgba(112,165,235,.34); background: var(--blueSoft); }
-    .pill.red { color: var(--red); border-color: rgba(233,107,104,.34); background: var(--redSoft); }
-    .btn { height: 34px; padding: 0 12px; border-radius: var(--r-sm); border: 1px solid var(--line2); background: var(--panel2); color: var(--text); }
-    .btn.primary { border: 0; background: var(--amber); color: #111; font-weight: 760; }
-    .btn.red { color: var(--red); border-color: rgba(233,107,104,.35); background: var(--redSoft); }
-    .small { height: 28px; padding: 0 9px; border-radius: var(--r-sm); border: 1px solid var(--line); background: var(--panel2); color: var(--sub); font-size: 11px; }
-    .muted { color: var(--muted); }
-    .mono { font-family: var(--mono); }
-
-    /* Side */
-    .record-tools { padding: 12px; border-bottom: 1px solid var(--line); display: grid; gap: 10px; }
-    .search { height: 34px; border: 1px solid var(--line); border-radius: var(--r); background: var(--bg); color: var(--muted); display: flex; align-items: center; padding: 0 10px; }
-    .record-list { padding: 8px; display: grid; gap: 5px; }
-    .record { padding: 10px; border: 1px solid transparent; border-radius: var(--r); color: var(--sub); }
-    .record.active { background: var(--panel2); border-color: var(--line2); color: var(--text); box-shadow: inset 2px 0 0 var(--amber); }
-    .record-title { display: flex; align-items: center; gap: 6px; font-weight: 620; }
-    .record-meta { margin-top: 6px; display: flex; gap: 8px; color: var(--muted); font-size: 11px; }
-    .task-card { margin: auto 12px 12px; border: 1px solid var(--line); border-radius: var(--r); background: var(--bg); overflow: hidden; }
-    .task-card h3 { margin: 0; height: 40px; padding: 0 11px; display: flex; align-items: center; border-bottom: 1px solid var(--line); font-size: 12px; }
-    .task-row { display: grid; grid-template-columns: 9px 1fr auto; gap: 8px; align-items: center; padding: 10px 11px; border-bottom: 1px solid var(--line); color: var(--sub); font-size: 11px; }
-    .task-row:last-child { border-bottom: 0; }
-    .task-row .led { width: 8px; height: 8px; border-radius: 999px; background: var(--amber); box-shadow: 0 0 0 3px var(--amberSoft); }
-    .task-row.done .led { background: var(--green); box-shadow: 0 0 0 3px var(--greenSoft); }
-    .task-row.warn .led { background: var(--red); box-shadow: 0 0 0 3px var(--redSoft); }
-
-    /* Workspace */
-    .work-top { height: 58px; flex: 0 0 auto; display: flex; align-items: center; gap: 12px; padding: 0 16px; background: #0D1013; border-bottom: 1px solid var(--line); }
-    .work-top h1 { margin: 0; font-size: 17px; line-height: 1.15; letter-spacing: -.02em; }
-    .work-top p { margin: 4px 0 0; color: var(--muted); font-size: 11px; }
-    .work-actions { margin-left: auto; display: flex; gap: 8px; align-items: center; }
-    .workspace { min-height: 0; flex: 1; display: grid; grid-template-columns: 410px minmax(360px, 1fr); }
-    .chat { min-width: 0; min-height: 0; border-right: 1px solid var(--line); display: flex; flex-direction: column; background: var(--bg2); }
-    .chat-scroll { flex: 1; min-height: 0; overflow: hidden; padding: 14px; display: grid; align-content: start; gap: 12px; }
-    .msg { max-width: 94%; padding: 11px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--sub); }
-    .msg.user { justify-self: end; background: #20262D; color: var(--text); }
-    .msg strong { display: block; margin-bottom: 6px; color: var(--text); font-size: 12px; }
-    .msg p { margin: 0; line-height: 1.55; }
-    .task-inline { margin-top: 10px; border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; background: var(--bg); }
-    .inline-row { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px; padding: 9px 10px; border-bottom: 1px solid var(--line); font-size: 11px; color: var(--sub); }
-    .inline-row:last-child { border-bottom: 0; }
-    .composer { flex: 0 0 auto; padding: 10px 12px; border-top: 1px solid var(--line); background: var(--panel); }
-    .composer-box { min-height: 56px; display: grid; grid-template-columns: 1fr auto; gap: 8px; padding: 8px; border: 1px solid var(--line2); border-radius: var(--r); background: var(--bg); }
-    .composer-box textarea { resize: none; width: 100%; height: 38px; border: 0; outline: 0; background: transparent; color: var(--text); }
-    .composer-note { grid-column: 1 / -1; color: var(--muted); font-size: 10px; }
-    .assets { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
-    .asset-toolbar { height: 50px; flex: 0 0 auto; display: flex; align-items: center; gap: 8px; padding: 0 14px; border-bottom: 1px solid var(--line); background: var(--bg); }
-    .asset-grid { min-height: 0; flex: 1; overflow: hidden; padding: 14px; display: grid; grid-template-columns: repeat(2, minmax(180px,1fr)); grid-auto-rows: 216px; gap: 12px; }
-    .asset-card { position: relative; overflow: hidden; border: 1px solid var(--line); border-radius: var(--r); background: var(--panel); }
-    .asset-card.selected { border-color: var(--amber); box-shadow: 0 0 0 1px rgba(240,164,75,.2); }
-    .art { height: 150px; position: relative; overflow: hidden; background: #141414; }
-    .art::before, .art::after { content: ""; position: absolute; inset: 0; }
-    .art-city::before { background: radial-gradient(circle at 70% 18%, rgba(240,164,75,.8), transparent 10%), linear-gradient(160deg, #25212a 0%, #10141a 46%, #08090b 100%); }
-    .art-city::after { background: linear-gradient(90deg, transparent 0 14%, rgba(255,255,255,.08) 14% 15%, transparent 15% 30%, rgba(255,255,255,.05) 30% 31%, transparent 31%), linear-gradient(0deg, #0a0a0b 0 20%, transparent 20%); clip-path: polygon(0 46%, 12% 42%, 16% 28%, 28% 35%, 33% 18%, 45% 32%, 52% 24%, 66% 38%, 73% 19%, 91% 44%, 100% 36%, 100% 100%, 0 100%); }
-    .art-portrait::before { background: radial-gradient(circle at 52% 34%, #e8c9a0 0 11%, transparent 12%), radial-gradient(circle at 50% 68%, #6b3d2d 0 18%, transparent 19%), linear-gradient(145deg, #20242d, #0f1114); }
-    .art-portrait::after { background: radial-gradient(circle at 50% 32%, transparent 0 10%, #322118 11% 13%, transparent 14%), linear-gradient(90deg, transparent 0 36%, #c0392b 36% 64%, transparent 64%); opacity: .8; }
-    .art-video::before { background: linear-gradient(145deg, #14202a, #080b0e), radial-gradient(circle at 76% 20%, var(--amber), transparent 10%); }
-    .art-video::after { background: linear-gradient(90deg, transparent 0 8%, rgba(255,255,255,.06) 8% 9%, transparent 9% 18%); clip-path: polygon(0 56%, 20% 44%, 34% 51%, 52% 35%, 72% 52%, 100% 40%, 100% 100%, 0 100%); }
-    .art-ref::before { background: linear-gradient(145deg, #30251d, #101318), radial-gradient(circle at 32% 28%, #e8a849, transparent 14%); }
-    .card-info { padding: 10px; }
-    .card-info strong { display: block; font-size: 12px; }
-    .card-info span { display: block; margin-top: 4px; color: var(--muted); font-size: 10px; }
-    .card-badge { position: absolute; top: 8px; left: 8px; height: 23px; display: grid; place-items: center; padding: 0 8px; border-radius: 5px; background: rgba(13,16,19,.86); color: var(--sub); font-size: 10px; }
-    .card-badge.amber { background: var(--amber); color: #111; font-weight: 760; }
-
-    /* Inspector */
-    .inspect-scroll { min-height: 0; flex: 1; overflow: hidden; padding: 14px; display: grid; align-content: start; gap: 12px; }
-    .preview { border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; background: var(--bg); }
-    .preview .art { height: 178px; }
-    .section { border: 1px solid var(--line); border-radius: var(--r); background: var(--bg); overflow: hidden; }
-    .section h3 { margin: 0; height: 38px; display: flex; align-items: center; padding: 0 11px; border-bottom: 1px solid var(--line); font-size: 12px; }
-    .section-body { padding: 11px; color: var(--sub); }
-    .kv { display: grid; grid-template-columns: 86px 1fr; gap: 8px; padding: 7px 0; border-bottom: 1px solid rgba(255,255,255,.04); font-size: 11px; }
-    .kv:last-child { border-bottom: 0; }
-    .kv span:first-child { color: var(--muted); }
-    .action-stack { display: grid; gap: 8px; }
-
-    /* Asset detail screen */
-    .detail-main { min-height: 0; flex: 1; padding: 14px; overflow: hidden; }
-    .big-preview { height: 100%; border: 1px solid var(--line); border-radius: var(--r); background: var(--panel); overflow: hidden; display: flex; flex-direction: column; }
-    .big-art { flex: 1; min-height: 0; padding: 18px; display: grid; place-items: center; background: var(--bg); }
-    .big-art .art { width: min(760px, 100%); height: min(500px, 70vh); border: 1px solid var(--line); border-radius: var(--r); }
-    .big-meta { min-height: 72px; display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-top: 1px solid var(--line); }
-    .big-meta h2 { margin: 0; font-size: 15px; }
-    .big-meta p { margin: 4px 0 0; color: var(--muted); font-size: 11px; }
-    .detail-tabs { display: flex; gap: 6px; padding: 10px; border-bottom: 1px solid var(--line); }
-    .tab { height: 30px; padding: 0 10px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg); color: var(--muted); font-size: 11px; }
-    .tab.active { background: var(--amberSoft); border-color: rgba(240,164,75,.4); color: var(--amber); }
-    .prompt-box { padding: 11px; border: 1px solid var(--line); border-radius: var(--r); background: var(--bg); color: var(--sub); line-height: 1.55; }
-
-    /* Recovery */
-    .recovery-body { min-height: 0; flex: 1; padding: 16px; display: grid; grid-template-columns: minmax(540px,1fr) 340px; gap: 14px; overflow: hidden; }
-    .queue-panel, .recovery-panel { border: 1px solid var(--line); border-radius: var(--r); background: var(--panel); overflow: hidden; }
-    .queue-list { padding: 12px; display: grid; gap: 10px; }
-    .queue-item { display: grid; grid-template-columns: 70px 1fr auto; gap: 12px; align-items: center; padding: 12px; border: 1px solid var(--line); border-radius: var(--r); background: var(--bg); }
-    .queue-thumb { height: 52px; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
-    .queue-thumb .art { height: 100%; }
-    .queue-item h3 { margin: 0; font-size: 13px; }
-    .queue-item p { margin: 5px 0 0; color: var(--muted); font-size: 11px; }
-    .progress { margin-top: 8px; height: 5px; border-radius: 999px; background: var(--line); overflow: hidden; }
-    .bar { height: 100%; background: var(--amber); border-radius: inherit; }
-    .bar.green { background: var(--green); }
-    .bar.red { background: var(--red); }
-    .recovery-panel { padding: 14px; display: grid; align-content: start; gap: 12px; }
-    .rule { padding: 12px; border: 1px solid var(--line); border-radius: var(--r); background: var(--bg); }
-    .rule strong { display: block; font-size: 12px; }
-    .rule p { margin: 6px 0 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
-
-    /* Connections */
-    .connections-page { min-height: 0; flex: 1; overflow: hidden; padding: 18px; display: grid; grid-template-columns: 1fr 330px; gap: 14px; }
-    .conn-main, .conn-side { border: 1px solid var(--line); border-radius: var(--r); background: var(--panel); overflow: hidden; }
-    .conn-head { height: 54px; display: flex; align-items: center; gap: 10px; padding: 0 14px; border-bottom: 1px solid var(--line); }
-    .conn-head h2 { margin: 0; font-size: 15px; }
-    .conn-head .btn { margin-left: auto; }
-    .conn-list { padding: 12px; display: grid; gap: 10px; }
-    .conn-row { min-height: 76px; display: grid; grid-template-columns: 44px 1fr auto; gap: 12px; align-items: center; padding: 12px; border: 1px solid var(--line); border-radius: var(--r); background: var(--bg); }
-    .conn-icon { width: 40px; height: 40px; display: grid; place-items: center; border: 1px solid var(--line2); border-radius: 9px; color: var(--amber); font-weight: 800; }
-    .conn-row h3 { margin: 0; font-size: 13px; }
-    .conn-row p { margin: 5px 0 0; color: var(--muted); font-size: 11px; }
-    .caps { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
-    .add-flow { padding: 12px; display: grid; gap: 10px; }
-    .add-card { padding: 13px; border: 1px solid var(--line); border-radius: var(--r); background: var(--bg); }
-    .add-card.active { border-color: rgba(240,164,75,.45); background: var(--amberSoft); }
-    .add-card strong { display: block; font-size: 12px; }
-    .add-card span { display: block; margin-top: 5px; color: var(--muted); font-size: 11px; }
-    .technical { margin: 12px; padding: 12px; border: 1px dashed var(--line2); border-radius: var(--r); color: var(--muted); font-size: 11px; line-height: 1.55; }
-
-    /* Spec */
-    .spec-board { flex: 1; overflow: hidden; padding: 18px; display: grid; grid-template-columns: 1.15fr .85fr; grid-template-rows: auto auto 1fr; gap: 12px; }
-    .spec-card { border: 1px solid var(--line); border-radius: var(--r); background: var(--panel); padding: 14px; overflow: hidden; }
-    .spec-card h2 { margin: 0 0 10px; font-size: 15px; }
-    .spec-card p { margin: 0; color: var(--muted); line-height: 1.55; }
-    .tokens { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
-    .token { height: 70px; border: 1px solid var(--line); border-radius: var(--r); padding: 8px; display: flex; flex-direction: column; justify-content: end; font-size: 10px; color: var(--sub); }
-    .t-bg { background: #0B0D10; } .t-panel { background: #171B20; } .t-raised { background: #1E232A; } .t-amber { background: #F0A44B; color:#111; } .t-green { background:#45B97C;color:#111; } .t-red{background:#E96B68;color:#111;}
-    .layout-mini { display: grid; grid-template-columns: 56px 180px 1fr 180px; height: 104px; border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
-    .layout-mini div { display: grid; place-items: center; border-right: 1px solid var(--line); color: var(--muted); font-size: 11px; line-height: 1.35; text-align: center; }
-    .layout-mini div:last-child { border-right: 0; }
-    .component-grid { display: grid; grid-template-columns: repeat(2, minmax(210px, 1fr)); gap: 10px; }
-    .do-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-    .do, .dont { padding: 12px; border-radius: var(--r); border: 1px solid var(--line); background: var(--bg); }
-    .do h3, .dont h3 { margin: 0 0 8px; font-size: 13px; }
-    .do h3 { color: var(--green); } .dont h3 { color: var(--red); }
-    .do ul, .dont ul { margin: 0; padding-left: 17px; color: var(--sub); line-height: 1.8; font-size: 11px; }
-    .type-sample h1 { margin: 0; font-size: 27px; letter-spacing: -.04em; }
-    .type-sample h2 { margin: 8px 0 0; font-size: 17px; }
-    .type-sample p { margin-top: 8px; }
+    [data-theme="dark"] {
+      --bg-workspace:#0B0D10; --bg-primary:#12151A; --bg-elevated:#191D23; --bg-surface:#20252C; --bg-hover:rgba(255,255,255,.06);
+      --text-primary:#F0F2F5; --text-secondary:#A3A9B2; --text-muted:#7D858F; --text-ghost:#565F6B;
+      --border-subtle:rgba(255,255,255,.06); --border-default:rgba(255,255,255,.12); --border-strong:rgba(255,255,255,.2);
+      --accent:#FFFFFF; --accent-soft:rgba(255,255,255,.08); --success:#3CBA7A; --success-soft:rgba(60,186,122,.12); --danger:#E86060; --danger-soft:rgba(232,96,96,.12); --warning:#F0A44B; --warning-soft:rgba(240,164,75,.14);
+      --shadow-sm:0 1px 2px rgba(0,0,0,.35); --shadow-md:0 8px 28px rgba(0,0,0,.35); --shadow-lg:0 20px 58px rgba(0,0,0,.5); color-scheme:dark;
+    }
+    *{box-sizing:border-box} html,body{margin:0;width:100%;height:100%;overflow:hidden;background:var(--bg-workspace);color:var(--text-primary);font:13px/1.45 var(--font)} button,textarea,select,input{font:inherit} button{cursor:default}
+    .app{height:100vh;display:grid;grid-template-rows:44px 1fr;background:var(--bg-workspace)}
+    .titlebar{height:44px;display:flex;align-items:center;gap:10px;padding:0 10px 0 16px;background:rgba(255,255,255,.72);border-bottom:1px solid var(--border-subtle);backdrop-filter:blur(18px);position:relative;z-index:20}
+    [data-theme="dark"] .titlebar{background:rgba(24,29,35,.72)}
+    .brand-dot{width:7px;height:7px;border-radius:99px;background:var(--accent);box-shadow:0 0 12px var(--accent-soft)} .brand{font-weight:760;letter-spacing:-.02em}.version{padding:2px 6px;border:1px solid var(--border-subtle);border-radius:var(--r-sm);background:var(--bg-surface);font-size:11px;color:var(--text-muted)}
+    .crumb{display:flex;align-items:center;gap:8px;color:var(--text-muted);min-width:340px}.crumb strong{color:var(--text-primary)}.top-spacer{flex:1}.top-chip{height:26px;display:inline-flex;align-items:center;gap:6px;padding:0 9px;border:1px solid var(--border-subtle);border-radius:99px;background:var(--bg-elevated);color:var(--text-secondary);font-size:11px}.window-btn{width:34px;height:30px;border:0;background:transparent;color:var(--text-muted);border-radius:var(--r-sm)}
+    #mount{min-height:0}.shell{height:100%;display:grid;grid-template-columns:56px minmax(350px,400px) minmax(0,1fr);gap:0}.shell.full{grid-template-columns:56px minmax(0,1fr)}.rail{background:rgba(255,255,255,.62);border-right:1px solid var(--border-subtle);padding:10px 0;display:flex;flex-direction:column;align-items:center;gap:8px}.rail-btn{width:38px;min-height:38px;border:1px solid transparent;border-radius:var(--r);background:transparent;color:var(--text-muted);display:grid;place-items:center;font-size:11px;font-weight:700}.rail-btn.active{background:var(--accent);color:var(--bg-elevated);box-shadow:var(--shadow-sm)}.rail-btn.ghost{border-color:var(--border-subtle);background:var(--bg-surface);color:var(--text-secondary)}.rail-spacer{flex:1}[data-theme="dark"] .rail{background:rgba(24,29,35,.62)}[data-theme="dark"] .rail-btn.active{color:#111}
+    .chat-pane{min-height:0;display:flex;flex-direction:column;background:var(--bg-elevated);border-right:1px solid var(--border-subtle)}.pane-head{height:52px;display:flex;align-items:center;gap:8px;padding:0 14px;border-bottom:1px solid var(--border-subtle)}.pane-head strong{font-size:13px}.muted{color:var(--text-muted)}.head-actions{margin-left:auto;display:flex;gap:6px}.btn{height:31px;padding:0 10px;border:1px solid var(--border-default);border-radius:var(--r-sm);background:var(--bg-elevated);color:var(--text-secondary);display:inline-flex;align-items:center;gap:6px;white-space:nowrap}.btn.primary{background:var(--accent);color:var(--bg-elevated);border-color:var(--accent);font-weight:720}.btn.danger{background:var(--danger-soft);border-color:rgba(217,59,59,.22);color:var(--danger)}[data-theme="dark"] .btn.primary{color:#111}.icon-btn{width:31px;padding:0;justify-content:center}.pill{height:23px;display:inline-flex;align-items:center;gap:5px;padding:0 8px;border:1px solid var(--border-subtle);border-radius:99px;background:var(--bg-surface);color:var(--text-secondary);font-size:11px;white-space:nowrap}.pill.success{color:var(--success);border-color:rgba(39,140,92,.25);background:var(--success-soft)}.pill.warn{color:var(--warning);border-color:rgba(215,138,34,.28);background:var(--warning-soft)}.pill.danger{color:var(--danger);border-color:rgba(217,59,59,.25);background:var(--danger-soft)}
+    .conv-list{padding:10px 12px 0;display:grid;gap:6px}.conv{padding:9px 10px;border:1px solid transparent;border-radius:var(--r);color:var(--text-secondary)}.conv.active{background:var(--bg-surface);border-color:var(--border-default);box-shadow:inset 2px 0 0 var(--accent);color:var(--text-primary)}.conv-title{font-weight:650}.conv-meta{margin-top:5px;font-size:11px;color:var(--text-muted);display:flex;gap:8px}
+    .chat-scroll{min-height:0;flex:1;overflow:hidden;padding:12px 14px;display:grid;align-content:start;gap:10px}.msg{max-width:92%;padding:10px 11px;border:1px solid var(--border-subtle);border-radius:12px;background:var(--bg-surface);color:var(--text-secondary)}.msg.user{justify-self:end;background:var(--accent);color:var(--bg-elevated);border-color:var(--accent)}[data-theme="dark"] .msg.user{color:#111}.msg strong{display:block;margin-bottom:5px;color:var(--text-primary)}.msg p{margin:0}.msg.user strong{color:inherit}.task-inline{margin-top:8px;border:1px solid var(--border-subtle);border-radius:var(--r);overflow:hidden;background:var(--bg-elevated)}.inline-row{display:flex;align-items:center;gap:8px;padding:8px 9px;border-bottom:1px solid var(--border-subtle);font-size:11px}.inline-row:last-child{border-bottom:0}.inline-row .pill{margin-left:auto}
+    .composer{padding:11px 12px;border-top:1px solid var(--border-subtle);background:var(--bg-elevated)}.composer-box{display:grid;grid-template-columns:1fr auto;gap:8px;border:1px solid var(--border-default);border-radius:var(--r);background:var(--bg-primary);padding:8px}.composer-box textarea{height:42px;resize:none;border:0;outline:0;background:transparent;color:var(--text-primary)}.composer-note{grid-column:1/-1;display:flex;gap:6px;align-items:center;flex-wrap:wrap;color:var(--text-muted);font-size:11px}
+    .workspace{min-width:0;min-height:0;display:flex;flex-direction:column;background:var(--bg-primary)}.work-head{height:52px;display:flex;align-items:center;gap:10px;padding:0 14px;border-bottom:1px solid var(--border-subtle);background:var(--bg-primary)}.work-title h1{font-size:16px;margin:0}.work-title p{margin:2px 0 0;color:var(--text-muted);font-size:11px}.work-actions{margin-left:auto;display:flex;align-items:center;gap:7px}.canvas-layout{min-height:0;flex:1;display:grid;grid-template-columns:minmax(0,1fr) 322px}.canvas-only{grid-template-columns:minmax(0,1fr)}.canvas-main{min-width:0;display:flex;flex-direction:column}.toolbar{height:47px;display:flex;align-items:center;gap:7px;padding:0 14px;border-bottom:1px solid var(--border-subtle);overflow:hidden}.toolbar .spacer{flex:1}.asset-grid{min-height:0;flex:1;overflow:hidden;padding:14px;display:grid;grid-template-columns:repeat(2,minmax(180px,1fr));grid-auto-rows:210px;gap:12px}.asset-card{position:relative;overflow:hidden;border:1px solid var(--border-subtle);border-radius:var(--r);background:var(--bg-elevated);box-shadow:var(--shadow-sm)}.asset-card.selected{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent-soft),var(--shadow-md)}.art{height:143px;position:relative;overflow:hidden;background:#ddd}.art:before,.art:after{content:"";position:absolute;inset:0}.art-city:before{background:radial-gradient(circle at 72% 18%,#f0a44b 0 7%,transparent 8%),linear-gradient(145deg,#dfe7f2,#9aa9bd 45%,#3d4652)}.art-city:after{background:linear-gradient(90deg,transparent 0 12%,rgba(255,255,255,.5) 12% 13%,transparent 13% 28%,rgba(255,255,255,.35) 28% 29%,transparent 29%),linear-gradient(0deg,#16191d 0 18%,transparent 18%);clip-path:polygon(0 48%,12% 40%,20% 50%,31% 30%,42% 52%,56% 34%,68% 55%,82% 28%,100% 46%,100% 100%,0 100%)}.art-portrait:before{background:radial-gradient(circle at 50% 32%,#e6bd93 0 12%,transparent 13%),radial-gradient(circle at 52% 66%,#7a3f2c 0 18%,transparent 19%),linear-gradient(140deg,#f5ede2,#cdd5e0)}.art-ref:before{background:linear-gradient(135deg,#f5e7cc,#b57b42),radial-gradient(circle at 30% 24%,#f0a44b,transparent 18%)}.art-video:before{background:linear-gradient(145deg,#b5c8d9,#334252),radial-gradient(circle at 77% 19%,#f0a44b 0 8%,transparent 9%)}.art-video:after{clip-path:polygon(0 58%,22% 44%,36% 53%,54% 35%,74% 53%,100% 40%,100% 100%,0 100%);background:#1d2329}.card-info{padding:9px 10px}.card-info strong{display:block;font-size:12px}.card-info span{display:block;margin-top:4px;color:var(--text-muted);font-size:10px}.badge{position:absolute;top:8px;left:8px;height:23px;padding:0 8px;border-radius:var(--r-sm);display:grid;place-items:center;background:rgba(255,255,255,.86);border:1px solid rgba(0,0,0,.08);font-size:10px;color:#333}.badge.primary{background:var(--accent);color:var(--bg-elevated);border-color:var(--accent)}[data-theme="dark"] .badge.primary{color:#111}
+    .detail-pane{min-width:0;background:var(--bg-elevated);border-left:1px solid var(--border-subtle);display:flex;flex-direction:column}.detail-scroll{min-height:0;flex:1;overflow:hidden;padding:12px;display:grid;align-content:start;gap:10px}.preview{border:1px solid var(--border-subtle);border-radius:var(--r);overflow:hidden;background:var(--bg-primary)}.preview .art{height:170px}.section{border:1px solid var(--border-subtle);border-radius:var(--r);background:var(--bg-primary);overflow:hidden}.section h3{height:36px;margin:0;display:flex;align-items:center;padding:0 10px;border-bottom:1px solid var(--border-subtle);font-size:12px}.section-body{padding:10px;color:var(--text-secondary)}.kv{display:grid;grid-template-columns:74px 1fr;gap:8px;padding:6px 0;border-bottom:1px solid var(--border-subtle);font-size:11px}.kv:last-child{border-bottom:0}.kv span:first-child{color:var(--text-muted)}.action-stack{display:grid;gap:8px}.big-area{min-height:0;flex:1;padding:14px;display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:12px}.big-preview{border:1px solid var(--border-subtle);border-radius:var(--r);background:var(--bg-elevated);overflow:hidden;display:flex;flex-direction:column}.big-art{flex:1;display:grid;place-items:center;padding:18px;background:var(--bg-primary)}.big-art .art{width:min(780px,100%);height:min(510px,65vh);border-radius:var(--r);border:1px solid var(--border-subtle)}.big-meta{min-height:74px;padding:12px 14px;border-top:1px solid var(--border-subtle);display:flex;align-items:center;gap:12px}.big-meta h2{margin:0;font-size:15px}.big-meta p{margin:3px 0 0;color:var(--text-muted);font-size:11px}
+    .task-board{padding:14px;display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:12px;min-height:0;flex:1}.queue-list{padding:12px;display:grid;gap:10px}.queue-item{display:grid;grid-template-columns:68px 1fr auto;gap:12px;align-items:center;padding:11px;border:1px solid var(--border-subtle);border-radius:var(--r);background:var(--bg-elevated)}.queue-thumb{height:52px;border:1px solid var(--border-subtle);border-radius:var(--r-sm);overflow:hidden}.queue-thumb .art{height:100%}.queue-item h3{margin:0;font-size:13px}.queue-item p{margin:4px 0 0;color:var(--text-muted);font-size:11px}.progress{margin-top:7px;height:5px;border-radius:99px;background:var(--bg-surface);overflow:hidden}.bar{height:100%;border-radius:inherit;background:var(--warning)}.bar.success{background:var(--success)}.bar.danger{background:var(--danger)}.rule{padding:11px;border:1px solid var(--border-subtle);border-radius:var(--r);background:var(--bg-elevated)}.rule strong{display:block}.rule p{margin:5px 0 0;color:var(--text-muted);font-size:11px}.settings-backdrop{position:absolute;inset:44px 0 0;display:grid;place-items:center;background:rgba(34,48,64,.18);backdrop-filter:blur(3px)}[data-theme="dark"] .settings-backdrop{background:rgba(0,0,0,.45)}.settings-modal{width:880px;max-width:92vw;height:670px;border:1px solid var(--border-default);border-radius:var(--r-lg);background:var(--bg-elevated);box-shadow:var(--shadow-lg);display:flex;flex-direction:column;overflow:hidden}.settings-top{height:54px;display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border-subtle)}.settings-general{padding:12px 18px;border-bottom:1px solid var(--border-subtle);background:var(--bg-primary);display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.pref{display:grid;gap:4px}.pref label{font-size:11px;color:var(--text-muted)}.pref select,.pref .toggle{height:31px;border:1px solid var(--border-default);border-radius:var(--r-sm);background:var(--bg-elevated);color:var(--text-primary);padding:0 8px}.toggle{display:flex;align-items:center;justify-content:space-between}.settings-main{min-height:0;flex:1;display:grid;grid-template-columns:176px 1fr}.settings-nav{border-right:1px solid var(--border-subtle);padding:12px 0;background:var(--bg-primary)}.nav-title{padding:9px 16px;font-size:11px;text-transform:uppercase;font-weight:800;letter-spacing:.08em;color:var(--text-muted)}.nav-item{height:32px;display:flex;align-items:center;padding:0 16px 0 34px;color:var(--text-secondary);font-size:12px}.nav-item.active{background:var(--accent-soft);box-shadow:inset 2px 0 0 var(--accent);color:var(--accent);font-weight:650}.settings-content{padding:18px;overflow:hidden}.account-list{display:grid;gap:10px}.account-row{display:grid;grid-template-columns:42px 1fr auto;gap:12px;align-items:center;padding:12px;border:1px solid var(--border-subtle);border-radius:var(--r);background:var(--bg-primary)}.provider-icon{width:40px;height:40px;border:1px solid var(--border-default);border-radius:9px;display:grid;place-items:center;font-weight:800;color:var(--accent)}
+    .spec-board{min-height:0;flex:1;padding:16px;display:grid;grid-template-columns:1.1fr .9fr;grid-template-rows:auto auto auto 1fr;gap:12px;overflow:hidden}.spec-card{border:1px solid var(--border-subtle);border-radius:var(--r);background:var(--bg-elevated);padding:13px;overflow:hidden}.spec-card h2{margin:0 0 9px;font-size:15px}.spec-card p{margin:0;color:var(--text-muted)}.layout-mini{display:grid;grid-template-columns:56px 390px 1fr 320px;height:92px;border:1px solid var(--border-subtle);border-radius:var(--r);overflow:hidden}.layout-mini div{display:grid;place-items:center;text-align:center;border-right:1px solid var(--border-subtle);color:var(--text-secondary);font-size:11px}.layout-mini div:last-child{border-right:0}.tokens{display:grid;grid-template-columns:repeat(6,1fr);gap:7px}.token{height:64px;border:1px solid var(--border-subtle);border-radius:var(--r-sm);padding:7px;display:flex;flex-direction:column;justify-content:end;font-size:10px;color:#111}.t1{background:#E9EDF2}.t2{background:#F7F9FB}.t3{background:#fff}.t4{background:#2E2E32;color:#fff}.t5{background:#278C5C;color:#fff}.t6{background:#D93B3B;color:#fff}.t7{background:#0B0D10;color:#fff}.t8{background:#12151A;color:#fff}.t9{background:#191D23;color:#fff}.t10{background:#fff}.t11{background:#3CBA7A}.t12{background:#E86060}.component-grid{display:grid;grid-template-columns:repeat(2,minmax(180px,1fr));gap:9px}.do-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.do,.dont{padding:10px;border:1px solid var(--border-subtle);border-radius:var(--r);background:var(--bg-primary)}.do h3,.dont h3{margin:0 0 7px}.do h3{color:var(--success)}.dont h3{color:var(--danger)}.do ul,.dont ul{margin:0;padding-left:17px;color:var(--text-secondary);line-height:1.7;font-size:11px}
   </style>
 </head>
 <body>
 <div class="app">
   <header class="titlebar">
-    <div class="brand">G</div>
-    <div class="crumb"><strong>Gravuresse</strong><span>/</span><span id="crumbText">v0.4 当前创作记录</span></div>
-    <div class="top-right"><span class="dot"></span><span>自动保存完成</span><span class="pill">本地优先</span></div>
+    <span class="brand-dot"></span><span class="brand">Gravuresse</span><span class="version">v2.4.0 / vNext v0.5</span>
+    <div class="crumb"><strong id="crumbTitle">当前创作记录</strong><span>/</span><span id="crumbText">浅色默认 · 可主题化</span></div>
+    <div class="top-spacer"></div><span class="top-chip">● 自动保存</span><span class="top-chip" id="themeChip">浅色</span><span class="top-chip" id="langChip">中文</span><button class="window-btn">—</button><button class="window-btn">□</button><button class="window-btn">×</button>
   </header>
   <div id="mount"></div>
-  <footer class="footer"><b>v0.4 门禁</b><span>当前会话就是工作空间</span><span>素材详情解释“怎么来的”</span><span>画布只负责整理素材</span></footer>
 </div>
-
-<template id="railTpl">
-  <nav class="rail">
-    <div class="rail-btn active">创</div>
-    <div class="rail-btn">素</div>
-    <div class="rail-btn">任</div>
-    <div class="rail-btn">连</div>
-    <div class="rail-spacer"></div>
-    <div class="rail-btn ghost">设</div>
-  </nav>
-</template>
-
-<template id="sideTpl">
-  <aside class="side">
-    <div class="panel-head"><strong>创作记录</strong><span>4 条</span></div>
-    <div class="record-tools"><div class="search">搜索当前记录 / 素材说明</div><button class="btn primary">+ 新建创作记录</button></div>
-    <div class="record-list">
-      <div class="record active"><div class="record-title">雨夜城市角色探索</div><div class="record-meta"><span>14 消息</span><span>9 素材</span><span>刚刚</span></div></div>
-      <div class="record"><div class="record-title">产品海报静物</div><div class="record-meta"><span>8 消息</span><span>6 素材</span><span>昨天</span></div></div>
-      <div class="record"><div class="record-title">短片分镜氛围</div><div class="record-meta"><span>21 消息</span><span>13 素材</span><span>周二</span></div></div>
-    </div>
-    <div class="task-card">
-      <h3>进行中的任务</h3>
-      <div class="task-row done"><span class="led"></span><span>图像候选已完成</span><span>3 张</span></div>
-      <div class="task-row"><span class="led"></span><span>视频生成轮询中</span><span>42%</span></div>
-      <div class="task-row warn"><span class="led"></span><span>旧任务需手动检查</span><span>1 条</span></div>
-    </div>
-  </aside>
-</template>
-
 <script>
-const mount = document.getElementById('mount');
-const rail = () => document.getElementById('railTpl').innerHTML;
-const side = () => document.getElementById('sideTpl').innerHTML;
-
-function inspectorDefault() {
-  return `<aside class="inspector">
-    <div class="panel-head"><strong>素材详情</strong><span>选中作品</span></div>
-    <div class="inspect-scroll">
-      <div class="preview"><div class="art art-city"></div></div>
-      <div class="section"><h3>生成说明</h3><div class="section-body">
-        <div class="kv"><span>提示词</span><span>雨夜城市、红伞、电影感、湿润街面</span></div>
-        <div class="kv"><span>模型</span><span>我的图像连接 · image-vivid</span></div>
-        <div class="kv"><span>比例</span><span>16:9 · 高清</span></div>
-        <div class="kv"><span>参考</span><span>2 张参考图</span></div>
-        <div class="kv"><span>父素材</span><span>无，首轮生成</span></div>
-      </div></div>
-      <div class="section"><h3>继续创作</h3><div class="section-body action-stack">
-        <button class="btn primary">作为参考继续生成</button>
-        <button class="btn">生成视频</button>
-        <button class="btn">保存到磁盘</button>
-      </div></div>
-    </div>
-  </aside>`;
-}
-
-function workspace() {
-  document.getElementById('crumbText').textContent = 'v0.4 当前创作记录';
-  mount.className = 'shell';
-  mount.innerHTML = rail() + side() + `<main class="main"><section class="screen active">
-    <div class="work-top"><div><h1>雨夜城市角色探索</h1><p>当前会话保存消息、任务和素材；不需要新建复杂项目结构。</p></div><div class="work-actions"><span class="pill green">消息已保存</span><span class="pill amber">9 素材</span><button class="btn">导出记录</button></div></div>
-    <div class="workspace">
-      <section class="chat">
-        <div class="chat-scroll">
-          <div class="msg user"><p>做一组雨夜城市里的角色概念图，主角撑红伞，街面有反光。</p></div>
-          <div class="msg"><strong>助手</strong><p>我会按当前图像连接生成 3 张候选，并把 prompt、模型和参考素材写入每张作品的生成说明。</p>
-            <div class="task-inline"><div class="inline-row"><span>图像生成 · 3 张候选</span><span class="pill green">完成</span></div><div class="inline-row"><span>自动加入素材区</span><span>已保存</span></div></div>
-          </div>
-          <div class="msg user"><p>第二张最好。保留红伞和低机位，把雨改成薄雾，灯光自然一点。</p></div>
-          <div class="msg"><strong>助手</strong><p>已选中第二张。可以直接作为参考继续生成，也可以从这张图继续做视频。</p></div>
-        </div>
-        <div class="composer"><div class="composer-box"><textarea>描述下一步：例如“保留构图，把雨改成薄雾，人物表情更安静”</textarea><button class="btn primary">发送</button><div class="composer-note">本轮会带上：当前会话 · 选中素材 · 2 张参考图。密钥和临时链接不会写进记录。</div></div></div>
-      </section>
-      <section class="assets">
-        <div class="asset-toolbar"><strong>素材区</strong><span class="pill amber">网格</span><span class="pill">自由整理</span><span class="pill">图像</span><span class="pill">视频</span><button class="small" style="margin-left:auto">导入素材</button></div>
-        <div class="asset-grid">
-          <div class="asset-card selected"><div class="card-badge amber">已选中</div><div class="art art-city"></div><div class="card-info"><strong>候选 02 · 红伞街景</strong><span>image-vivid · 16:9 · 有生成说明</span></div></div>
-          <div class="asset-card"><div class="card-badge">参考图</div><div class="art art-portrait"></div><div class="card-info"><strong>角色参考</strong><span>本地素材 · 可作为提示参考</span></div></div>
-          <div class="asset-card"><div class="card-badge">视频</div><div class="art art-video"></div><div class="card-info"><strong>镜头测试 01</strong><span>5s · 从候选 02 生成</span></div></div>
-          <div class="asset-card"><div class="card-badge">素材</div><div class="art art-ref"></div><div class="card-info"><strong>霓虹色彩参考</strong><span>导入素材 · 未写入密钥</span></div></div>
-        </div>
-      </section>
-    </div>
-  </section></main>` + inspectorDefault();
-}
-
-function detail() {
-  document.getElementById('crumbText').textContent = '素材详情 / 继续创作';
-  mount.className = 'shell';
-  mount.innerHTML = rail() + side() + `<main class="main"><section class="screen active">
-    <div class="work-top"><div><h1>候选 02 · 红伞街景</h1><p>资产详情是透明度入口：解释作品怎么来的，并给出继续创作动作。</p></div><div class="work-actions"><button class="btn">复制说明</button><button class="btn primary">作为参考继续生成</button></div></div>
-    <div class="detail-main">
-      <section class="big-preview"><div class="big-art"><div class="art art-city"></div></div><div class="big-meta"><div><h2>选中素材：红伞街景</h2><p>当前会话内保存；可继续生成图像或直接发起视频任务。右侧素材详情展示 prompt、模型、父素材、参考素材和任务 ID。</p></div><span class="pill green" style="margin-left:auto">已保存</span><span class="pill amber">可继续创作</span></div></section>
-    </div>
-  </section></main>` + inspectorDefault();
-}
-
-function recovery() {
-  document.getElementById('crumbText').textContent = '视频任务 / 重启恢复';
-  mount.className = 'shell no-inspector';
-  mount.innerHTML = rail() + side() + `<main class="main"><section class="screen active">
-    <div class="work-top"><div><h1>视频任务恢复</h1><p>只做视频任务最小恢复：有信息就继续轮询，不确定就明确告诉用户。</p></div><div class="work-actions"><span class="pill amber">1 条运行中</span><span class="pill red">1 条需检查</span><button class="btn primary">重新查询状态</button></div></div>
-    <div class="recovery-body">
-      <section class="queue-panel"><div class="panel-head"><strong>任务队列</strong><span>来自当前创作记录</span></div><div class="queue-list">
-        <div class="queue-item"><div class="queue-thumb"><div class="art art-video"></div></div><div><h3>从候选 02 生成视频</h3><p>已恢复连接，继续轮询；不会依赖上次内存里的回调。</p><div class="progress"><div class="bar" style="width:42%"></div></div></div><span class="pill amber">运行中 42%</span></div>
-        <div class="queue-item"><div class="queue-thumb"><div class="art art-city"></div></div><div><h3>旧视频任务</h3><p>连接缺失，远程状态未知；保留 taskId，不伪造成失败。</p><div class="progress"><div class="bar red" style="width:100%"></div></div></div><span class="pill red">需手动检查</span></div>
-        <div class="queue-item"><div class="queue-thumb"><div class="art art-ref"></div></div><div><h3>镜头测试 01</h3><p>已完成并写入素材区，保留父素材和生成说明。</p><div class="progress"><div class="bar green" style="width:100%"></div></div></div><span class="pill green">完成</span></div>
-      </div></section>
-      <aside class="recovery-panel"><div class="rule"><strong>恢复规则 1</strong><p>拿到远程任务 ID 后立即写入当前记录，重启后可重新解析连接。</p></div><div class="rule"><strong>恢复规则 2</strong><p>连接不存在时显示“需要手动检查”，不自动重提，避免重复计费。</p></div><div class="rule"><strong>恢复规则 3</strong><p>重试会创建新任务，旧错误和旧任务 ID 保留，方便追查。</p></div><button class="btn primary">查看当前任务字段</button></aside>
-    </div>
-  </section></main>`;
-}
-
-function connections() {
-  document.getElementById('crumbText').textContent = '连接与模型';
-  mount.className = 'shell connections';
-  mount.innerHTML = rail() + `<main class="main"><section class="screen active">
-    <div class="work-top"><div><h1>连接与模型</h1><p>沿用现有连接体系：只回答能不能对话、生成图、生成视频；不替用户新增预设服务。</p></div><div class="work-actions"><button class="btn">导入配置</button><button class="btn primary">添加连接</button></div></div>
-    <div class="connections-page">
-      <section class="conn-main"><div class="conn-head"><h2>已连接</h2><span class="pill green">密钥不回显</span><span class="pill amber">提交前检查限制</span><button class="btn">刷新模型</button></div><div class="conn-list">
-        <div class="conn-row"><div class="conn-icon">图</div><div><h3>我的图像连接</h3><p>最近验证：2 分钟前 · 默认模型 image-vivid · 支持参考图</p></div><div class="caps"><span class="pill green">可生成图</span><span class="pill">比例 16:9</span><span class="pill">高清</span></div></div>
-        <div class="conn-row"><div class="conn-icon">视</div><div><h3>我的视频连接</h3><p>最近验证：今天 · 默认 5s · 必须提供源图片</p></div><div class="caps"><span class="pill green">可生成视频</span><span class="pill amber">需源图片</span></div></div>
-        <div class="conn-row"><div class="conn-icon">聊</div><div><h3>我的对话连接</h3><p>用于整理提示词和错误解释；不参与密钥存储展示。</p></div><div class="caps"><span class="pill green">可对话</span><span class="pill">当前默认</span></div></div>
-        <div class="conn-row"><div class="conn-icon">!</div><div><h3>旧视频连接</h3><p>验证失败：连接不存在。相关旧任务会标记为需要手动检查。</p></div><div class="caps"><span class="pill red">不可恢复</span></div></div>
-      </div></section>
-      <aside class="conn-side"><div class="conn-head"><h2>添加连接</h2></div><div class="add-flow"><div class="add-card active"><strong>添加图像生成</strong><span>配置地址、模型和认证方式；完成后生成一张测试图。</span></div><div class="add-card"><strong>添加视频生成</strong><span>确认是否需要源图片、时长范围和轮询间隔。</span></div><div class="add-card"><strong>添加对话连接</strong><span>用于提示词整理、错误解释和轻量助手。</span></div></div><div class="technical"><b>技术详情折叠：</b>连接地址、请求模板、扩展参数和验证响应只在展开后显示。密钥、token、cookie 永不回显。</div></aside>
-    </div>
-  </section></main>`;
-}
-
-function spec() {
-  document.getElementById('crumbText').textContent = 'UI 规范板';
-  mount.className = 'shell spec';
-  mount.innerHTML = rail() + `<main class="main"><section class="screen active">
-    <div class="work-top"><div><h1>Gravuresse v0.4 UI 规范</h1><p>当前架构优先：会话、消息、素材、生成说明、任务、连接。</p></div><div class="work-actions"><span class="pill amber">暗色媒体工具</span><span class="pill green">默认少概念</span></div></div>
-    <div class="spec-board">
-      <section class="spec-card" style="grid-column:1 / -1"><h2>设计原则</h2><p>界面不假装是新平台。默认工作区贴近当前产品：左侧创作记录，中间聊天与素材区，右侧素材详情。复杂能力藏在当前对象的详情里，而不是新增一套复杂控制台。</p></section>
-      <section class="spec-card"><h2>颜色 Token</h2><div class="tokens"><div class="token t-bg">背景<br>#0B0D10</div><div class="token t-panel">面板<br>#171B20</div><div class="token t-raised">浮层<br>#1E232A</div><div class="token t-amber">主操作<br>#F0A44B</div><div class="token t-green">成功<br>#45B97C</div><div class="token t-red">错误<br>#E96B68</div></div></section>
-      <section class="spec-card type-sample"><h2>字体层级</h2><h1>当前创作记录</h1><h2>素材详情 / 生成说明</h2><p>正文 13px，辅助信息 11px。不要用大营销标题抢媒体内容。</p></section>
-      <section class="spec-card"><h2>桌面布局</h2><div class="layout-mini"><div>56 Rail</div><div>创作记录<br>288</div><div>聊天 + 素材<br>flex</div><div>素材详情<br>332</div></div></section>
-      <section class="spec-card"><h2>组件样例</h2><div class="component-grid"><button class="btn primary">作为参考继续生成</button><button class="btn">生成视频</button><span class="pill green">已保存</span><span class="pill red">需手动检查</span><div class="prompt-box">提示词、模型、比例、父素材、参考素材和任务 ID 收在素材详情里。</div></div></section>
-      <section class="spec-card" style="grid-column:1 / -1"><h2>Do / Don’t</h2><div class="do-grid"><div class="do"><h3>Do</h3><ul><li>当前会话就是默认工作空间</li><li>素材详情解释作品怎么来的</li><li>从素材直接继续生成或转视频</li><li>任务状态未知时明确提示用户</li><li>连接页按任务展示能力</li></ul></div><div class="dont"><h3>Don’t</h3><ul><li>不要新增一整套平台结构</li><li>不要把画布当执行引擎</li><li>不要伪造生成进度或恢复结果</li><li>不要在默认界面堆内部架构词</li><li>不要替用户预设未经要求的服务</li></ul></div></div></section>
-    </div>
-  </section></main>`;
-}
-
-const views = { workspace, detail, recovery, connections, spec };
-const screen = new URLSearchParams(location.search).get('screen') || 'workspace';
-(views[screen] || workspace)();
+const mount=document.getElementById('mount');
+const crumbTitle=document.getElementById('crumbTitle');
+const crumbText=document.getElementById('crumbText');
+const themeChip=document.getElementById('themeChip');
+const langChip=document.getElementById('langChip');
+function setMeta(title,text,theme='light',lang='zh'){document.documentElement.dataset.theme=theme;crumbTitle.textContent=title;crumbText.textContent=text;themeChip.textContent=theme==='dark'?'深色':'浅色';langChip.textContent=lang==='en'?'English':'中文'}
+function rail(active='gen'){return `<nav class="rail"><div class="rail-btn ${active==='gen'?'active':''}">生</div><div class="rail-btn ${active==='video'?'active':''}">视</div><div class="rail-btn ${active==='conn'?'active':''}">连</div><div class="rail-spacer"></div><div class="rail-btn ghost">设</div></nav>`}
+function convList(en=false){return `<div class="conv-list"><div class="conv active"><div class="conv-title">${en?'Rainy City Character Study':'雨夜城市角色探索'}</div><div class="conv-meta"><span>14 ${en?'msgs':'消息'}</span><span>9 ${en?'assets':'素材'}</span><span>${en?'now':'刚刚'}</span></div></div><div class="conv"><div class="conv-title">${en?'Product poster still life':'产品海报静物'}</div><div class="conv-meta"><span>8 ${en?'msgs':'消息'}</span><span>6 ${en?'assets':'素材'}</span><span>${en?'yesterday':'昨天'}</span></div></div><div class="conv"><div class="conv-title">${en?'Short film storyboard mood':'短片分镜氛围'}</div><div class="conv-meta"><span>21 ${en?'msgs':'消息'}</span><span>13 ${en?'assets':'素材'}</span><span>${en?'Tue':'周二'}</span></div></div></div>`}
+function chatPane(en=false){return `<section class="chat-pane"><div class="pane-head"><strong>${en?'Creation Record':'创作记录'}</strong><span class="pill success">${en?'Saved':'已保存'}</span><div class="head-actions"><button class="btn">${en?'Import':'导入'}</button><button class="btn primary">+ ${en?'New':'新建'}</button></div></div>${convList(en)}<div class="chat-scroll"><div class="msg user"><p>${en?'Create a rainy night city character concept. Keep the red umbrella and reflective street.':'做一组雨夜城市里的角色概念图，主角撑红伞，街面有反光。'}</p></div><div class="msg"><strong>${en?'Assistant':'助手'}</strong><p>${en?'I will generate 3 candidates with the current image connection, and save prompt, model and references into each asset detail.':'我会按当前图像连接生成 3 张候选，并把 prompt、模型和参考素材写入每张作品的生成说明。'}</p><div class="task-inline"><div class="inline-row"><span>${en?'Image generation · 3 candidates':'图像生成 · 3 张候选'}</span><span class="pill success">${en?'Done':'完成'}</span></div><div class="inline-row"><span>${en?'Added to assets':'自动加入素材区'}</span><span>${en?'Saved':'已保存'}</span></div></div></div><div class="msg user"><p>${en?'The second one is best. Keep the camera angle and change rain into mist.':'第二张最好。保留红伞和低机位，把雨改成薄雾，灯光自然一点。'}</p></div><div class="msg"><strong>${en?'Assistant':'助手'}</strong><p>${en?'Candidate 02 is selected. Continue from it or turn it into a video.':'已选中第二张。可以直接作为参考继续生成，也可以从这张图继续做视频。'}</p></div></div><div class="composer"><div class="composer-box"><textarea>${en?'Describe next step: keep composition, make the mist softer...':'描述下一步：保留构图，把雨改成薄雾，人物表情更安静…'}</textarea><button class="btn primary">${en?'Send':'发送'}</button><div class="composer-note"><span>${en?'Will include:':'本轮会带上：'}</span><span class="pill">${en?'selected asset':'选中素材'}</span><span class="pill">2 ${en?'references':'张参考图'}</span><span class="pill">image-vivid · 16:9</span></div></div></div></section>`}
+function detailPane(en=false){return `<aside class="detail-pane"><div class="pane-head"><strong>${en?'Asset Detail':'素材详情'}</strong><span class="muted">${en?'Selected':'选中作品'}</span></div><div class="detail-scroll"><div class="preview"><div class="art art-city"></div></div><div class="section"><h3>${en?'Generation Note':'生成说明'}</h3><div class="section-body"><div class="kv"><span>Prompt</span><span>${en?'rainy city, red umbrella, cinematic, wet street':'雨夜城市、红伞、电影感、湿润街面'}</span></div><div class="kv"><span>${en?'Model':'模型'}</span><span>image-vivid · custom-image</span></div><div class="kv"><span>${en?'Ratio':'比例'}</span><span>16:9 · HD</span></div><div class="kv"><span>${en?'Parent':'父素材'}</span><span>${en?'none, first generation':'无，首轮生成'}</span></div><div class="kv"><span>${en?'Refs':'参考'}</span><span>2 ${en?'reference images':'张参考图'}</span></div></div></div><div class="section"><h3>${en?'Continue':'继续创作'}</h3><div class="section-body action-stack"><button class="btn primary">${en?'Use as reference':'作为参考继续生成'}</button><button class="btn">${en?'Generate video':'生成视频'}</button><button class="btn">${en?'Save to disk':'保存到本地'}</button></div></div></div></aside>`}
+function canvas(en=false){return `<section class="workspace"><div class="work-head"><div class="work-title"><h1>${en?'Rainy City Character Study':'雨夜城市角色探索'}</h1><p>${en?'Current record stores messages, tasks and assets.':'当前创作记录保存消息、任务和素材；不需要新增复杂平台结构。'}</p></div><div class="work-actions"><span class="pill success">${en?'Saved':'消息已保存'}</span><span class="pill warn">9 ${en?'assets':'素材'}</span><button class="btn">${en?'Export':'导出记录'}</button></div></div><div class="canvas-layout"><div class="canvas-main"><div class="toolbar"><button class="btn">${en?'Grid':'网格'}</button><button class="btn">${en?'Free':'自由'}</button><button class="btn">${en?'Import':'导入素材'}</button><button class="btn">${en?'Materials':'素材'}</button><button class="btn">${en?'Actions':'批量动作'}</button><span class="spacer"></span><span class="pill">4 ${en?'visible':'个资产'}</span></div><div class="asset-grid"><div class="asset-card selected"><div class="badge primary">${en?'Selected':'已选中'}</div><div class="art art-city"></div><div class="card-info"><strong>${en?'Candidate 02 · Red umbrella street':'候选 02 · 红伞街景'}</strong><span>image-vivid · 16:9 · ${en?'has generation note':'有生成说明'}</span></div></div><div class="asset-card"><div class="badge">${en?'Reference':'参考图'}</div><div class="art art-portrait"></div><div class="card-info"><strong>${en?'Character reference':'角色参考'}</strong><span>${en?'Local material · usable as reference':'本地素材 · 可作为提示参考'}</span></div></div><div class="asset-card"><div class="badge">${en?'Video':'视频'}</div><div class="art art-video"></div><div class="card-info"><strong>${en?'Shot test 01':'镜头测试 01'}</strong><span>5s · ${en?'from candidate 02':'从候选 02 生成'}</span></div></div><div class="asset-card"><div class="badge">${en?'Material':'素材'}</div><div class="art art-ref"></div><div class="card-info"><strong>${en?'Neon color reference':'霓虹色彩参考'}</strong><span>${en?'Imported · no secrets stored':'导入素材 · 未写入密钥'}</span></div></div></div></div>${detailPane(en)}</div></section>`}
+function workspace(){setMeta('当前创作记录','浅色默认 · 现有架构优化');mount.className='shell';mount.innerHTML=rail('gen')+chatPane(false)+canvas(false)}
+function detail(){setMeta('素材详情','继续创作入口');mount.className='shell';mount.innerHTML=rail('gen')+chatPane(false)+`<section class="workspace"><div class="work-head"><div class="work-title"><h1>候选 02 · 红伞街景</h1><p>素材详情解释作品怎么来的，并给出下一步动作。</p></div><div class="work-actions"><button class="btn">复制说明</button><button class="btn primary">作为参考继续生成</button></div></div><div class="big-area"><section class="big-preview"><div class="big-art"><div class="art art-city"></div></div><div class="big-meta"><div><h2>选中素材：红伞街景</h2><p>当前创作记录内保存；可继续生成图像或直接发起视频任务。</p></div><span class="pill success" style="margin-left:auto">已保存</span><span class="pill warn">可继续创作</span></div></section>${detailPane(false)}</div></section>`}
+function recovery(){setMeta('视频任务','重启恢复策略');mount.className='shell';mount.innerHTML=rail('video')+chatPane(false)+`<section class="workspace"><div class="work-head"><div class="work-title"><h1>视频任务恢复</h1><p>只做最小可靠恢复：有信息就继续轮询，不确定就明确告诉用户。</p></div><div class="work-actions"><span class="pill warn">1 条运行中</span><span class="pill danger">1 条需检查</span><button class="btn primary">重新查询状态</button></div></div><div class="task-board"><section class="section"><h3>任务队列</h3><div class="queue-list"><div class="queue-item"><div class="queue-thumb"><div class="art art-video"></div></div><div><h3>从候选 02 生成视频</h3><p>已恢复连接，继续轮询；不会依赖上次内存里的回调。</p><div class="progress"><div class="bar" style="width:42%"></div></div></div><span class="pill warn">运行中 42%</span></div><div class="queue-item"><div class="queue-thumb"><div class="art art-city"></div></div><div><h3>旧视频任务</h3><p>连接缺失，远程状态未知；保留 taskId，不伪造成失败。</p><div class="progress"><div class="bar danger" style="width:100%"></div></div></div><span class="pill danger">需手动检查</span></div><div class="queue-item"><div class="queue-thumb"><div class="art art-ref"></div></div><div><h3>镜头测试 01</h3><p>已完成并写入素材区，保留父素材和生成说明。</p><div class="progress"><div class="bar success" style="width:100%"></div></div></div><span class="pill success">完成</span></div></div></section><aside style="display:grid;align-content:start;gap:10px"><div class="rule"><strong>恢复规则 1</strong><p>拿到远程 taskId 后立即写入当前记录，重启后可重新解析连接。</p></div><div class="rule"><strong>恢复规则 2</strong><p>连接不存在时显示“需手动检查”，不自动重提，避免重复计费。</p></div><div class="rule"><strong>恢复规则 3</strong><p>重试会创建新任务，旧错误和旧 taskId 保留，方便追查。</p></div></aside></div></section>`}
+function settings(){setMeta('设置','主题 · 语言 · Provider');mount.className='shell';mount.innerHTML=rail('conn')+chatPane(false)+canvas(false)+`<div class="settings-backdrop"><div class="settings-modal"><div class="settings-top"><strong>提供商设置</strong><span class="pill success">通用偏好即时保存</span><span style="margin-left:auto" class="muted">Esc 关闭</span></div><div class="settings-general"><div class="pref"><label>语言</label><select><option>中文</option><option>English</option></select></div><div class="pref"><label>主题</label><select><option>浅色</option><option>深色</option><option>跟随系统</option></select></div><div class="pref"><label>字号</label><select><option>小</option><option selected>中</option><option>大</option></select></div><div class="pref"><label>参考图</label><div class="toggle"><span>启用参考图</span><span class="pill success">开</span></div></div><div class="pref"><label>视频工作区</label><div class="toggle"><span>显示视频入口</span><span class="pill warn">实验</span></div></div><div class="pref"><label>自动保存</label><div class="toggle"><span>保存创作历史</span><span class="pill success">开</span></div></div></div><div class="settings-main"><aside class="settings-nav"><div class="nav-title">提供商设置</div><div class="nav-item active">账号</div><div class="nav-item">API 密钥</div><div class="nav-item">自定义（中转）</div><div class="nav-item">默认模型搭配</div></aside><main class="settings-content"><h2 style="margin:0 0 6px;font-size:18px">账号</h2><p class="muted" style="margin:0 0 14px">账号、API Key 和自定义中转仍在同一设置体系里；密钥不回显。</p><div class="account-list"><div class="account-row"><div class="provider-icon">O</div><div><strong>OpenAI Codex</strong><p class="muted" style="margin:4px 0 0">设备码 · 需要自有 OAuth 客户端注册信息</p></div><span class="pill warn">待官方注册</span></div><div class="account-row"><div class="provider-icon">X</div><div><strong>xAI OAuth</strong><p class="muted" style="margin:4px 0 0">浏览器 OAuth · 不复用第三方客户端身份</p></div><span class="pill warn">待官方注册</span></div><div class="account-row"><div class="provider-icon">Q</div><div><strong>Qwen OAuth</strong><p class="muted" style="margin:4px 0 0">浏览器 OAuth · 凭据由主进程安全保存</p></div><span class="pill warn">待官方注册</span></div></div></main></div></div></div>`}
+function dark(){setMeta('Current Workspace','Dark theme · English preview','dark','en');mount.className='shell';mount.innerHTML=rail('gen')+chatPane(true)+canvas(true)}
+function spec(){setMeta('UI 规范板','布局 · 主题 · 组件');mount.className='shell full';mount.innerHTML=rail('gen')+`<main class="workspace"><div class="work-head"><div class="work-title"><h1>Gravuresse v0.5 UI 规范</h1><p>当前架构优先：浅色默认、深色主题、中文/英文、组件可维护。</p></div><div class="work-actions"><span class="pill success">Light first</span><span class="pill warn">Dark theme</span><span class="pill">i18n</span></div></div><div class="spec-board"><section class="spec-card" style="grid-column:1/-1"><h2>设计原则</h2><p>不推翻现有简洁架构。默认仍是模块栏 + 聊天 + 素材/画布 + 素材详情；优化创作流程、组件一致性、主题和语言。</p></section><section class="spec-card"><h2>桌面布局</h2><div class="layout-mini"><div>56<br>模块</div><div>Chat<br>360–420</div><div>Canvas<br>flex</div><div>Detail<br>300–340</div></div></section><section class="spec-card"><h2>Light Token</h2><div class="tokens"><div class="token t1">workspace</div><div class="token t2">primary</div><div class="token t3">elevated</div><div class="token t4">accent</div><div class="token t5">success</div><div class="token t6">danger</div></div></section><section class="spec-card"><h2>Dark Token</h2><div class="tokens"><div class="token t7">workspace</div><div class="token t8">primary</div><div class="token t9">elevated</div><div class="token t10">accent</div><div class="token t11">success</div><div class="token t12">danger</div></div></section><section class="spec-card"><h2>组件样例</h2><div class="component-grid"><button class="btn primary">作为参考继续生成</button><button class="btn">生成视频</button><span class="pill success">已保存</span><span class="pill danger">需手动检查</span><div class="composer-box" style="grid-column:1/-1"><textarea>输入栏显示当前参考、模型和参数摘要…</textarea><button class="btn primary">发送</button></div></div></section><section class="spec-card"><h2>主题 / 语言规则</h2><p>主题是 token 切换，不是新 UI；语言是 i18n 能力，不是组件里散落的硬编码文案。Provider 名称、模型 ID、taskId 保持原文。</p></section><section class="spec-card" style="grid-column:1/-1"><h2>Do / Don’t</h2><div class="do-grid"><div class="do"><h3>Do</h3><ul><li>保留当前简洁架构</li><li>优化真实创作流程</li><li>浅色默认，深色作为主题</li><li>中文/英文进入 i18n</li><li>小步抽组件，小步验证</li></ul></div><div class="dont"><h3>Don’t</h3><ul><li>不要新增一整套平台结构</li><li>不要把画布当执行引擎</li><li>不要伪造任务恢复结果</li><li>不要让深色变成另一套产品</li><li>不要新增未经要求的 Provider</li></ul></div></div></section></div></main>`}
+const views={workspace,detail,recovery,settings,dark,spec};const screen=new URLSearchParams(location.search).get('screen')||'workspace';(views[screen]||workspace)();
 </script>
 </body>
 </html>
