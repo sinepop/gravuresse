@@ -2,26 +2,32 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline';" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Gravuresse vNext UI Prototype</title>
+  <title>Gravuresse vNext Simple First Prototype</title>
   <style>
     :root {
-      --bg: #0b0d10;
-      --bg-deep: #080a0c;
-      --panel: #171b20;
-      --raised: #1e232a;
-      --hover: #252b33;
-      --line: #2a3038;
-      --line-strong: #3a424d;
-      --text: #f4f5f7;
-      --text-2: #b6bdc7;
-      --muted: #7f8894;
-      --amber: #f0a44b;
-      --amber-2: #ffb65e;
+      --bg: #0B0D10;
+      --bg-deep: #080A0C;
+      --title: #0D1013;
+      --panel: #171B20;
+      --raised: #1E232A;
+      --hover: #252B33;
+      --line: #2A3038;
+      --line-strong: #3A424D;
+      --text: #F4F5F7;
+      --text-2: #B6BDC7;
+      --muted: #7F8894;
+      --amber: #F0A44B;
+      --amber-2: #FFB65E;
       --amber-soft: rgba(240,164,75,.12);
-      --green: #45b97c;
-      --red: #e96b68;
-      --blue: #70a5eb;
+      --green: #45B97C;
+      --green-soft: rgba(69,185,124,.12);
+      --red: #E96B68;
+      --red-soft: rgba(233,107,104,.12);
+      --blue: #70A5EB;
+      --blue-soft: rgba(112,165,235,.12);
+      --radius-xs: 4px;
       --radius-sm: 6px;
       --radius: 8px;
       --radius-lg: 12px;
@@ -29,557 +35,304 @@
       --mono: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
     }
     * { box-sizing: border-box; }
-    html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: var(--font); font-size: 13px; }
+    html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: var(--font); font-size: 13px; }
     button, input, textarea { font: inherit; }
     button { color: inherit; }
     :focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
-    .app { height: 100vh; display: grid; grid-template-rows: 40px 1fr 30px; background: var(--bg); }
-    .titlebar { display: flex; align-items: center; border-bottom: 1px solid var(--line); background: #0d1013; user-select: none; }
-    .brand { width: 56px; display: grid; place-items: center; font-weight: 700; font-size: 16px; color: var(--amber); }
-    .project-crumb { display: flex; align-items: center; gap: 8px; min-width: 260px; color: var(--text-2); }
-    .project-crumb strong { color: var(--text); font-weight: 600; }
-    .view-tabs { margin-left: auto; margin-right: auto; padding: 3px; display: flex; gap: 2px; background: var(--bg-deep); border: 1px solid var(--line); border-radius: var(--radius); }
-    .view-tab { border: 0; background: transparent; color: var(--muted); height: 26px; padding: 0 12px; border-radius: 5px; cursor: pointer; }
-    .view-tab:hover { color: var(--text-2); background: var(--raised); }
-    .view-tab.active { background: var(--raised); color: var(--text); box-shadow: inset 0 -1px 0 rgba(255,255,255,.04); }
-    .title-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; min-width: 260px; padding-right: 10px; }
-    .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 3px rgba(69,185,124,.1); }
-    .icon-btn, .small-btn { border: 1px solid var(--line); background: var(--raised); border-radius: var(--radius-sm); cursor: pointer; }
-    .icon-btn { width: 28px; height: 28px; display: grid; place-items: center; }
-    .small-btn { height: 28px; padding: 0 10px; color: var(--text-2); }
-    .icon-btn:hover, .small-btn:hover { background: var(--hover); color: var(--text); }
-    .primary-btn { border: 0; background: var(--amber); color: #0b0d10; height: 30px; padding: 0 13px; border-radius: var(--radius-sm); font-weight: 650; cursor: pointer; }
-    .primary-btn:hover { background: var(--amber-2); }
-    .shell { min-height: 0; display: grid; grid-template-columns: 56px 302px minmax(520px, 1fr) 328px; }
-    .shell.home-mode { grid-template-columns: 56px minmax(720px, 1fr); }
-    .shell.home-mode .side, .shell.home-mode .inspector { display: none; }
-    .rail { background: #0d1013; border-right: 1px solid var(--line); display: flex; flex-direction: column; align-items: center; padding: 10px 0; gap: 7px; }
-    .rail-btn { width: 36px; height: 36px; border: 1px solid transparent; background: transparent; color: var(--muted); border-radius: 8px; cursor: pointer; display: grid; place-items: center; font-size: 12px; }
-    .rail-btn:hover { color: var(--text); background: var(--raised); }
-    .rail-btn.active { color: #101214; background: var(--amber); }
+    .app { width: 100vw; height: 100vh; display: grid; grid-template-rows: 40px 1fr 30px; background: var(--bg); }
+    .titlebar { display: flex; align-items: center; gap: 12px; background: var(--title); border-bottom: 1px solid var(--line); user-select: none; }
+    .brand { width: 56px; height: 40px; display: grid; place-items: center; color: var(--amber); font-weight: 760; font-size: 16px; letter-spacing: -.03em; }
+    .crumb { min-width: 320px; display: flex; align-items: center; gap: 8px; color: var(--text-2); }
+    .crumb strong { color: var(--text); font-weight: 620; }
+    .crumb span { color: var(--muted); }
+    .top-status { margin-left: auto; display: flex; align-items: center; gap: 8px; padding-right: 12px; color: var(--text-2); font-size: 12px; }
+    .status-dot { width: 7px; height: 7px; border-radius: 999px; background: var(--green); box-shadow: 0 0 0 3px rgba(69,185,124,.12); }
+    .shell { min-height: 0; display: grid; grid-template-columns: 56px 304px minmax(620px, 1fr) 332px; }
+    .shell.home-shell, .shell.spec-shell { grid-template-columns: 56px minmax(900px, 1fr); }
+    .rail { background: var(--title); border-right: 1px solid var(--line); display: flex; flex-direction: column; align-items: center; padding: 10px 0; gap: 8px; }
+    .rail-btn { width: 36px; height: 36px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--muted); display: grid; place-items: center; font-size: 12px; }
+    .rail-btn.active { background: var(--amber); color: #101214; font-weight: 760; }
+    .rail-btn.ghost { background: var(--raised); border-color: var(--line); color: var(--text-2); }
     .rail-spacer { flex: 1; }
-    .side { min-width: 0; background: var(--panel); border-right: 1px solid var(--line); display: flex; flex-direction: column; }
-    .side-head, .inspect-head { height: 48px; padding: 0 12px 0 14px; display: flex; align-items: center; border-bottom: 1px solid var(--line); }
-    .side-head strong, .inspect-head strong { font-size: 13px; }
-    .side-head .small-btn { margin-left: auto; }
-    .context-summary { margin: 10px; padding: 10px; border: 1px solid var(--line); background: var(--bg-deep); border-radius: var(--radius); color: var(--text-2); cursor: pointer; }
-    .context-summary:hover { border-color: var(--line-strong); }
-    .context-summary b { color: var(--amber); font-weight: 600; }
-    .context-summary span { display: block; margin-top: 5px; color: var(--muted); font-size: 11px; }
-    .section-label { display: flex; align-items: center; padding: 8px 12px 5px; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .07em; }
-    .section-label button { margin-left: auto; border: 0; background: transparent; color: var(--muted); cursor: pointer; }
-    .conv-list { padding: 0 8px; display: grid; gap: 3px; }
-    .conv { position: relative; padding: 9px 9px 9px 12px; border: 1px solid transparent; border-radius: 7px; color: var(--text-2); cursor: pointer; }
-    .conv:hover { background: var(--hover); }
-    .conv.active { background: var(--raised); border-color: var(--line-strong); color: var(--text); }
-    .conv.active::before { content: ""; position: absolute; left: -1px; top: 9px; bottom: 9px; width: 2px; background: var(--amber); }
-    .conv-title { display: flex; align-items: center; gap: 6px; font-weight: 560; }
-    .conv-meta { margin-top: 4px; color: var(--muted); font-size: 11px; display: flex; gap: 8px; }
-    .branch { font-family: var(--mono); font-size: 10px; color: var(--blue); }
-    .pinned { color: var(--amber); }
-    .agent-card { margin: 10px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg-deep); overflow: hidden; }
-    .agent-title { padding: 10px; display: flex; align-items: center; gap: 8px; cursor: pointer; }
-    .agent-title strong { font-size: 12px; }
-    .agent-title span { color: var(--muted); font-size: 11px; margin-left: auto; }
-    .agent-steps { padding: 0 10px 10px; display: grid; gap: 7px; }
-    .agent-step { display: grid; grid-template-columns: 15px 1fr auto; align-items: center; gap: 8px; color: var(--text-2); font-size: 11px; }
-    .agent-state { width: 8px; height: 8px; border: 1px solid var(--line-strong); border-radius: 50%; }
-    .agent-step.done .agent-state { background: var(--green); border-color: var(--green); }
-    .agent-step.running .agent-state { background: var(--amber); border-color: var(--amber); animation: pulse 1.4s infinite; }
-    .agent-step em { font-style: normal; color: var(--muted); }
-    .agent-controls { display: flex; gap: 6px; padding-top: 4px; }
+    .side, .inspector { min-width: 0; background: var(--panel); display: flex; flex-direction: column; }
+    .side { border-right: 1px solid var(--line); }
+    .inspector { border-left: 1px solid var(--line); }
+    .panel-head { height: 50px; flex: 0 0 auto; padding: 0 14px; display: flex; align-items: center; border-bottom: 1px solid var(--line); }
+    .panel-head strong { font-size: 13px; font-weight: 640; }
+    .panel-head span { margin-left: auto; color: var(--muted); font-size: 11px; }
+    .small-btn, .icon-btn, .primary, .secondary, .ghost-btn { border-radius: var(--radius-sm); cursor: default; }
+    .small-btn { height: 28px; padding: 0 10px; border: 1px solid var(--line); background: var(--raised); color: var(--text-2); }
+    .icon-btn { width: 30px; height: 30px; border: 1px solid var(--line); background: var(--raised); display: grid; place-items: center; }
+    .primary { height: 36px; padding: 0 14px; border: 0; background: var(--amber); color: #0B0D10; font-weight: 720; }
+    .secondary { height: 36px; padding: 0 13px; border: 1px solid var(--line-strong); background: var(--raised); color: var(--text); }
+    .ghost-btn { height: 32px; padding: 0 12px; border: 1px solid var(--line); background: transparent; color: var(--text-2); }
     .main { min-width: 0; min-height: 0; position: relative; overflow: hidden; background: var(--bg); }
     .screen { position: absolute; inset: 0; display: none; }
     .screen.active { display: flex; flex-direction: column; }
-    .work-head { height: 58px; flex: 0 0 auto; display: flex; align-items: center; padding: 0 18px; border-bottom: 1px solid var(--line); }
-    .work-title h1 { margin: 0; font-size: 17px; font-weight: 620; letter-spacing: -.02em; }
-    .work-title p { margin: 3px 0 0; color: var(--muted); font-size: 11px; }
-    .work-actions { margin-left: auto; display: flex; gap: 7px; }
-    .pipeline { min-height: 0; display: grid; grid-template-rows: auto 1fr auto; }
-    .step-strip { display: grid; grid-template-columns: repeat(5, minmax(115px, 1fr)); gap: 6px; padding: 12px 14px; border-bottom: 1px solid var(--line); background: #0e1115; }
-    .step-tab { min-width: 0; border: 1px solid var(--line); background: var(--panel); color: var(--muted); border-radius: 7px; padding: 8px 9px; text-align: left; cursor: pointer; }
-    .step-tab strong { display: block; color: var(--text-2); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .step-tab small { display: block; margin-top: 3px; font-size: 10px; }
-    .step-tab.done strong { color: var(--text); }
-    .step-tab.done small { color: var(--green); }
-    .step-tab.current { border-color: var(--amber); background: var(--amber-soft); }
-    .step-tab.current strong, .step-tab.current small { color: var(--amber); }
-    .pipeline-content { min-height: 0; overflow: auto; padding: 16px; }
-    .brief-bar { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center; border: 1px solid var(--line); background: var(--panel); padding: 12px 14px; border-radius: var(--radius); }
-    .brief-title { display: flex; align-items: center; gap: 8px; }
-    .version { color: var(--amber); font-family: var(--mono); font-size: 10px; }
-    .brief-copy { margin-top: 5px; color: var(--text-2); line-height: 1.45; }
-    .constraint-row { display: flex; gap: 5px; margin-top: 8px; flex-wrap: wrap; }
-    .tag { padding: 3px 7px; background: var(--raised); border: 1px solid var(--line); color: var(--text-2); border-radius: 999px; font-size: 10px; }
-    .tag.lock { color: var(--amber); border-color: rgba(240,164,75,.4); background: var(--amber-soft); }
-    .candidate-head { margin: 16px 1px 9px; display: flex; align-items: end; }
+    .footer { height: 30px; display: flex; align-items: center; gap: 14px; padding: 0 12px; background: var(--title); border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; }
+    .footer b { color: var(--text-2); font-weight: 520; }
+    .kbd { font-family: var(--mono); font-size: 10px; padding: 2px 5px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg-deep); color: var(--text-2); }
+    .pill { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px; border-radius: 999px; border: 1px solid var(--line); background: var(--raised); color: var(--text-2); font-size: 11px; white-space: nowrap; }
+    .pill.amber { color: var(--amber); border-color: rgba(240,164,75,.36); background: var(--amber-soft); }
+    .pill.green { color: var(--green); border-color: rgba(69,185,124,.32); background: var(--green-soft); }
+    .pill.blue { color: var(--blue); border-color: rgba(112,165,235,.32); background: var(--blue-soft); }
+    .pill.red { color: var(--red); border-color: rgba(233,107,104,.32); background: var(--red-soft); }
+    .muted { color: var(--muted); }
+    .mono { font-family: var(--mono); }
+
+    /* Home */
+    .home { min-height: 0; overflow: auto; padding: 38px 44px 40px; }
+    .home-hero { display: grid; grid-template-columns: minmax(560px, .9fr) minmax(300px, .45fr); gap: 26px; align-items: stretch; }
+    .hero-copy { min-height: 326px; display: flex; flex-direction: column; justify-content: center; padding: 34px 34px 32px; border: 1px solid var(--line); border-radius: var(--radius-lg); background: linear-gradient(180deg, #12161b 0%, #0d1013 100%); }
+    .eyebrow { color: var(--amber); font-size: 12px; font-weight: 680; letter-spacing: .08em; text-transform: uppercase; }
+    .hero-copy h1 { margin: 12px 0 0; max-width: 720px; font-size: 36px; line-height: 1.08; letter-spacing: -.045em; }
+    .hero-copy p { margin: 16px 0 0; max-width: 620px; color: var(--text-2); font-size: 15px; line-height: 1.62; }
+    .start-card { margin-top: 24px; width: min(580px,100%); display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; padding: 10px; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--bg-deep); }
+    .start-input { height: 48px; display: flex; align-items: center; padding: 0 14px; color: var(--muted); border-radius: var(--radius-sm); background: var(--panel); }
+    .start-card .primary { height: 48px; padding: 0 18px; }
+    .home-aside { border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--panel); overflow: hidden; }
+    .aside-head { height: 52px; display: flex; align-items: center; justify-content: space-between; padding: 0 16px; border-bottom: 1px solid var(--line); }
+    .aside-head strong { font-size: 13px; }
+    .aside-body { padding: 14px; display: grid; gap: 10px; }
+    .check-row { display: grid; grid-template-columns: 28px 1fr; gap: 10px; align-items: start; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg-deep); }
+    .check { width: 22px; height: 22px; display: grid; place-items: center; border-radius: 999px; background: var(--green-soft); color: var(--green); font-weight: 800; }
+    .check-row strong { display: block; font-size: 12px; }
+    .check-row span { display: block; margin-top: 4px; color: var(--muted); font-size: 11px; line-height: 1.42; }
+    .home-lower { margin-top: 22px; display: grid; grid-template-columns: 1fr 360px; gap: 18px; }
+    .section-title { margin: 0 0 10px; font-size: 13px; font-weight: 650; }
+    .recent-list { border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+    .recent { display: grid; grid-template-columns: 104px 1fr auto; gap: 12px; align-items: center; padding: 11px; background: var(--panel); border-bottom: 1px solid var(--line); }
+    .recent:last-child { border-bottom: 0; }
+    .thumb { width: 104px; height: 64px; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); }
+    .recent strong { display: block; font-size: 13px; }
+    .recent p { margin: 5px 0 0; color: var(--muted); font-size: 11px; }
+    .recent time { color: var(--muted); font-size: 11px; }
+    .advanced-entry { border: 1px dashed var(--line-strong); border-radius: var(--radius); padding: 14px; background: var(--bg-deep); color: var(--text-2); line-height: 1.55; }
+    .advanced-entry b { color: var(--text); }
+    .advanced-entry .links { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px; }
+
+    /* Records */
+    .context-summary { margin: 12px; padding: 11px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg-deep); color: var(--text-2); line-height: 1.44; }
+    .context-summary b { color: var(--amber); }
+    .context-summary span { display: block; margin-top: 6px; color: var(--muted); font-size: 11px; }
+    .record-list { padding: 0 8px 10px; display: grid; gap: 4px; }
+    .record { position: relative; padding: 10px 10px 10px 13px; border: 1px solid transparent; border-radius: 7px; color: var(--text-2); }
+    .record.active { background: var(--raised); border-color: var(--line-strong); color: var(--text); }
+    .record.active::before { content: ""; position: absolute; left: -1px; top: 9px; bottom: 9px; width: 2px; background: var(--amber); }
+    .record-title { display: flex; align-items: center; gap: 6px; font-weight: 580; }
+    .record-meta { margin-top: 5px; display: flex; gap: 8px; color: var(--muted); font-size: 11px; }
+    .assistant-card { margin: 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg-deep); overflow: hidden; }
+    .assistant-top { height: 42px; padding: 0 11px; display: flex; align-items: center; gap: 9px; border-bottom: 1px solid var(--line); }
+    .assistant-top strong { font-size: 12px; }
+    .assistant-top .small-btn { margin-left: auto; color: var(--red); }
+    .assistant-steps { padding: 10px 11px 12px; display: grid; gap: 8px; }
+    .assistant-step { display: grid; grid-template-columns: 12px 1fr auto; align-items: center; gap: 8px; color: var(--text-2); font-size: 11px; }
+    .dot { width: 8px; height: 8px; border-radius: 999px; border: 1px solid var(--line-strong); }
+    .assistant-step.done .dot { background: var(--green); border-color: var(--green); }
+    .assistant-step.running .dot { background: var(--amber); border-color: var(--amber); box-shadow: 0 0 0 3px var(--amber-soft); }
+    .assistant-step em { font-style: normal; color: var(--muted); }
+
+    /* Workspace */
+    .work-head { height: 62px; flex: 0 0 auto; display: flex; align-items: center; gap: 14px; padding: 0 18px; border-bottom: 1px solid var(--line); background: #0d1013; }
+    .work-title h1 { margin: 0; font-size: 18px; line-height: 1.15; letter-spacing: -.025em; }
+    .work-title p { margin: 4px 0 0; color: var(--muted); font-size: 11px; }
+    .work-actions { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+    .step-strip { height: 98px; flex: 0 0 auto; display: grid; grid-template-columns: repeat(6, minmax(74px,1fr)); gap: 6px; padding: 12px 12px; border-bottom: 1px solid var(--line); background: #0e1115; }
+    .step-card { min-width: 0; padding: 8px 8px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); color: var(--muted); }
+    .step-card strong { display: block; color: var(--text-2); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .step-card small { display: block; margin-top: 5px; font-size: 10px; line-height: 1.35; }
+    .step-card.done { border-color: rgba(69,185,124,.3); }
+    .step-card.done small { color: var(--green); }
+    .step-card.current { border-color: var(--amber); background: var(--amber-soft); }
+    .step-card.current strong, .step-card.current small { color: var(--amber); }
+    .workspace-body { min-height: 0; flex: 1; overflow: auto; padding: 16px; }
+    .brief-box { display: grid; grid-template-columns: 1fr auto; gap: 14px; align-items: center; padding: 13px 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
+    .brief-box h2 { margin: 0; font-size: 14px; }
+    .brief-box p { margin: 6px 0 0; color: var(--text-2); line-height: 1.5; }
+    .tag-row { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; }
+    .candidate-head { margin: 18px 1px 10px; display: flex; align-items: end; gap: 8px; }
     .candidate-head h2 { margin: 0; font-size: 14px; }
-    .candidate-head p { margin: 0 0 0 8px; color: var(--muted); font-size: 11px; }
+    .candidate-head p { margin: 0; color: var(--muted); font-size: 11px; }
     .candidate-head .small-btn { margin-left: auto; }
     .candidate-grid { display: grid; grid-template-columns: 1.15fr 1fr 1fr; gap: 10px; }
-    .candidate { position: relative; overflow: hidden; min-width: 0; border: 1px solid var(--line); background: var(--panel); border-radius: var(--radius); cursor: pointer; }
-    .candidate:hover { border-color: var(--line-strong); }
+    .candidate { position: relative; overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
     .candidate.selected { border-color: var(--amber); box-shadow: 0 0 0 1px rgba(240,164,75,.18); }
-    .candidate-media { aspect-ratio: 16/10; overflow: hidden; background: #111; }
-    .candidate-media img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform .35s ease; }
-    .candidate:hover img { transform: scale(1.018); }
-    .candidate:nth-child(2) img { filter: saturate(.78) brightness(1.08); object-position: 54% center; }
-    .candidate:nth-child(3) img { filter: sepia(.2) contrast(1.08) brightness(.8); object-position: 45% center; }
-    .selected-mark { position: absolute; top: 8px; left: 8px; background: var(--amber); color: #111; border-radius: 4px; padding: 4px 7px; font-size: 10px; font-weight: 700; }
-    .candidate-info { padding: 9px 10px 10px; }
+    .candidate-media { aspect-ratio: 16/10; overflow: hidden; background: #121212; }
+    .candidate-media img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .candidate:nth-child(2) img { filter: saturate(.72) brightness(1.06); object-position: 56% center; }
+    .candidate:nth-child(3) img { filter: sepia(.22) contrast(1.08) brightness(.78); object-position: 45% center; }
+    .selected-mark { position: absolute; top: 8px; left: 8px; height: 24px; display: grid; place-items: center; padding: 0 8px; border-radius: 5px; background: var(--amber); color: #111; font-size: 10px; font-weight: 780; }
+    .candidate-info { padding: 10px; }
     .candidate-info strong { font-size: 12px; }
-    .candidate-info p { margin: 4px 0 0; color: var(--muted); font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .candidate-foot { display: flex; align-items: center; margin-top: 8px; color: var(--muted); font-size: 10px; }
-    .confidence { margin-left: auto; color: var(--amber); }
-    .composer { min-height: 76px; border-top: 1px solid var(--line); background: var(--panel); padding: 10px 12px; }
-    .composer-box { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; min-height: 46px; border: 1px solid var(--line-strong); background: var(--bg-deep); border-radius: var(--radius); padding: 7px 8px; }
-    .composer-box textarea { resize: none; width: 100%; height: 30px; border: 0; outline: 0; background: transparent; color: var(--text); padding: 6px 4px; }
+    .candidate-info p { margin: 5px 0 0; color: var(--muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .candidate-foot { margin-top: 9px; display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 10px; }
+    .candidate-foot span:last-child { margin-left: auto; color: var(--amber); }
+    .composer { min-height: 84px; flex: 0 0 auto; padding: 10px 12px; border-top: 1px solid var(--line); background: var(--panel); }
+    .composer-box { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; min-height: 50px; padding: 7px 8px; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--bg-deep); }
+    .composer-box textarea { width: 100%; height: 32px; resize: none; border: 0; outline: 0; padding: 7px 4px; background: transparent; color: var(--text); }
     .composer-box textarea::placeholder { color: var(--muted); }
-    .context-inline { grid-column: 2; margin-top: -4px; color: var(--muted); font-size: 10px; }
-    .canvas { position: relative; flex: 1; overflow: hidden; background-color: #0c0f12; background-image: radial-gradient(circle at 1px 1px, #303741 1px, transparent 0); background-size: 20px 20px; }
-    .canvas-toolbar { position: absolute; left: 14px; top: 14px; z-index: 20; display: flex; gap: 3px; padding: 4px; border: 1px solid var(--line); background: var(--panel); border-radius: var(--radius); box-shadow: 0 8px 24px rgba(0,0,0,.24); }
-    .tool { width: 30px; height: 30px; border: 0; border-radius: 5px; color: var(--muted); background: transparent; cursor: pointer; }
-    .tool:hover, .tool.active { background: var(--raised); color: var(--text); }
-    .canvas-stage { position: absolute; inset: 0; min-width: 590px; }
-    .edge-layer { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
-    .edge { fill: none; stroke: #444d58; stroke-width: 1.5; }
-    .edge.active { stroke: var(--amber); }
-    .node { position: absolute; width: 210px; border: 1px solid var(--line); background: var(--panel); border-radius: var(--radius); overflow: hidden; box-shadow: 0 8px 24px rgba(0,0,0,.18); }
-    .node.selected { border-color: var(--amber); box-shadow: 0 0 0 1px rgba(240,164,75,.16), 0 10px 30px rgba(0,0,0,.28); }
-    .node-head { height: 31px; display: flex; align-items: center; gap: 7px; padding: 0 9px; border-bottom: 1px solid var(--line); color: var(--text-2); font-size: 11px; }
-    .node-head span { margin-left: auto; color: var(--muted); font-size: 9px; font-family: var(--mono); }
-    .node-body { padding: 10px; color: var(--text-2); line-height: 1.45; }
-    .node-media { width: 100%; aspect-ratio: 16/10; object-fit: cover; display: block; }
-    .node-chip { display: inline-block; margin-top: 6px; padding: 3px 6px; border-radius: 999px; color: var(--amber); background: var(--amber-soft); font-size: 9px; }
-    .node.idea { left: 18px; top: 150px; width: 150px; }
-    .node.brief { left: 202px; top: 92px; width: 174px; }
-    .node.output { left: 407px; top: 46px; width: 172px; }
-    .node.variant { left: 202px; top: 266px; width: 174px; }
-    .node.video { left: 407px; top: 266px; width: 172px; }
-    .node.variant .node-media, .node.video .node-media { aspect-ratio: 16/8; }
-    .video-cover { position: relative; }
-    .play { position: absolute; inset: 0; display: grid; place-items: center; font-size: 20px; color: #fff; text-shadow: 0 2px 8px #000; }
-    .canvas-zoom { position: absolute; right: 14px; bottom: 14px; z-index: 20; display: flex; align-items: center; gap: 4px; border: 1px solid var(--line); background: var(--panel); padding: 4px; border-radius: var(--radius); }
-    .canvas-zoom button { width: 28px; height: 26px; border: 0; background: transparent; color: var(--muted); border-radius: 5px; cursor: pointer; }
-    .canvas-zoom span { min-width: 40px; text-align: center; color: var(--text-2); font-family: var(--mono); font-size: 10px; }
-    .connections { min-height: 0; overflow: auto; padding: 16px 18px 30px; }
-    .cap-filter { display: flex; gap: 5px; margin-bottom: 14px; }
-    .filter { height: 28px; padding: 0 10px; border: 1px solid var(--line); background: transparent; color: var(--muted); border-radius: var(--radius-sm); cursor: pointer; }
-    .filter.active { background: var(--raised); color: var(--text); border-color: var(--line-strong); }
+    .context-inline { grid-column: 2; margin-top: -5px; color: var(--muted); font-size: 10px; }
+
+    /* Edit */
+    .edit-layout { min-height: 0; flex: 1; display: grid; grid-template-columns: minmax(220px, 1fr) 300px; gap: 12px; padding: 14px; overflow: hidden; }
+    .edit-preview, .edit-panel { min-height: 0; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); overflow: hidden; }
+    .edit-preview { display: flex; flex-direction: column; }
+    .preview-image { flex: 1; min-height: 0; display: grid; place-items: center; padding: 16px; background: var(--bg-deep); }
+    .preview-image img { max-width: 100%; max-height: 100%; border-radius: 7px; border: 1px solid var(--line); object-fit: contain; }
+    .preview-meta { min-height: 62px; display: flex; align-items: center; gap: 10px; padding: 11px 13px; border-top: 1px solid var(--line); }
+    .preview-meta strong { font-size: 13px; }
+    .preview-meta p { margin: 4px 0 0; color: var(--muted); font-size: 11px; }
+    .edit-panel { display: flex; flex-direction: column; }
+    .edit-section { padding: 14px; border-bottom: 1px solid var(--line); }
+    .edit-section:last-child { border-bottom: 0; }
+    .edit-section h2 { margin: 0; font-size: 14px; }
+    .edit-section p { margin: 7px 0 0; color: var(--muted); line-height: 1.5; }
+    .keep-change { display: grid; gap: 10px; margin-top: 12px; }
+    .kc-box { padding: 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg-deep); }
+    .kc-box strong { display: flex; align-items: center; gap: 7px; font-size: 12px; }
+    .kc-box.keep strong { color: var(--green); }
+    .kc-box.change strong { color: var(--amber); }
+    .kc-box ul { margin: 9px 0 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 6px; }
+    .kc-box li { padding: 4px 7px; border-radius: 999px; background: var(--raised); color: var(--text-2); font-size: 11px; }
+    .edit-actions { display: flex; gap: 8px; margin-top: 12px; }
+    .accordion { border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; margin-top: 12px; }
+    .acc-row { min-height: 42px; display: grid; grid-template-columns: 1fr auto; align-items: center; padding: 0 11px; border-bottom: 1px solid var(--line); background: var(--bg-deep); }
+    .acc-row:last-child { border-bottom: 0; }
+    .acc-row strong { font-size: 12px; }
+    .acc-row span { color: var(--muted); font-size: 11px; }
+
+    /* Connections */
+    .connections-body { min-height: 0; flex: 1; overflow: auto; padding: 18px; }
+    .wizard-grid { display: grid; grid-template-columns: repeat(3, minmax(180px,1fr)); gap: 10px; margin-bottom: 18px; }
+    .wizard-card { padding: 15px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
+    .wizard-card.active { border-color: var(--amber); box-shadow: inset 0 0 0 1px rgba(240,164,75,.18); }
+    .wizard-card strong { display: block; font-size: 13px; }
+    .wizard-card p { margin: 7px 0 0; color: var(--muted); line-height: 1.45; font-size: 11px; }
     .connection-list { border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
-    .connection { min-height: 67px; display: grid; grid-template-columns: 34px 1fr auto auto; align-items: center; gap: 10px; padding: 10px 12px; background: var(--panel); border-bottom: 1px solid var(--line); cursor: pointer; }
-    .connection:last-child { border-bottom: 0; }
-    .connection:hover, .connection.selected { background: var(--raised); }
-    .connection.selected { box-shadow: inset 2px 0 var(--amber); }
-    .conn-icon { width: 32px; height: 32px; display: grid; place-items: center; border: 1px solid var(--line-strong); border-radius: 7px; color: var(--amber); font-weight: 700; }
+    .connection-row { min-height: 72px; display: grid; grid-template-columns: 38px 1fr auto auto; gap: 11px; align-items: center; padding: 11px 12px; border-bottom: 1px solid var(--line); background: var(--panel); }
+    .connection-row:last-child { border-bottom: 0; }
+    .conn-icon { width: 34px; height: 34px; border-radius: 8px; border: 1px solid var(--line-strong); display: grid; place-items: center; color: var(--amber); font-weight: 760; }
     .conn-main strong { display: block; font-size: 12px; }
-    .conn-main span { display: block; margin-top: 3px; color: var(--muted); font-size: 10px; font-family: var(--mono); }
-    .caps { display: flex; gap: 4px; }
-    .cap { padding: 3px 6px; border: 1px solid var(--line); border-radius: 999px; color: var(--text-2); font-size: 9px; }
-    .conn-state { min-width: 98px; text-align: right; }
-    .conn-state strong { color: var(--green); font-size: 10px; }
-    .conn-state span { display: block; margin-top: 3px; color: var(--muted); font-size: 9px; }
-    .advanced-note { margin-top: 14px; padding: 11px 12px; border: 1px dashed var(--line-strong); border-radius: var(--radius); color: var(--muted); font-size: 11px; line-height: 1.5; }
-    .home { min-height: 0; overflow: auto; padding: 34px 42px; }
-    .home-intro { display: flex; align-items: end; gap: 18px; padding-bottom: 22px; border-bottom: 1px solid var(--line); }
-    .home-intro h1 { margin: 0; font-size: 24px; letter-spacing: -.03em; }
-    .home-intro p { margin: 6px 0 0; color: var(--muted); }
-    .home-intro .primary-btn { margin-left: auto; height: 34px; }
-    .home-grid { display: grid; grid-template-columns: 1.2fr .8fr; gap: 18px; margin-top: 20px; }
-    .home-section h2 { margin: 0 0 10px; font-size: 13px; }
-    .recent-list { border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
-    .recent { display: grid; grid-template-columns: 92px 1fr auto; gap: 12px; padding: 10px; border-bottom: 1px solid var(--line); background: var(--panel); align-items: center; cursor: pointer; }
-    .recent:last-child { border-bottom: 0; }
-    .recent:hover { background: var(--raised); }
-    .recent img { width: 92px; height: 58px; object-fit: cover; border-radius: 5px; }
-    .recent strong { display: block; }
-    .recent p { margin: 4px 0 0; color: var(--muted); font-size: 10px; }
-    .recent time { color: var(--muted); font-size: 10px; }
-    .mode-list { display: grid; gap: 8px; }
-    .mode-card { padding: 14px; border: 1px solid var(--line); background: var(--panel); border-radius: var(--radius); cursor: pointer; text-align: left; }
-    .mode-card:hover { border-color: var(--amber); background: var(--raised); }
-    .mode-card strong { font-size: 13px; }
-    .mode-card p { margin: 6px 0 0; color: var(--muted); line-height: 1.45; font-size: 11px; }
-    .mode-card span { display: inline-block; margin-top: 9px; color: var(--amber); font-size: 10px; }
-    .connection-detail { display: none; min-height: 0; overflow: auto; padding: 12px; }
-    .connection-detail.active { display: block; }
-    .conn-hero { padding: 12px; border: 1px solid var(--line); background: var(--bg-deep); border-radius: var(--radius); }
-    .conn-hero-top { display: flex; align-items: center; gap: 9px; }
-    .conn-hero-top .conn-icon { flex: 0 0 auto; }
-    .conn-hero strong { display: block; font-size: 13px; }
-    .conn-hero code { display: block; margin-top: 3px; color: var(--muted); font: 10px var(--mono); }
-    .detail-list { margin-top: 10px; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
-    .detail-row { min-height: 42px; display: grid; grid-template-columns: 82px 1fr; align-items: center; gap: 10px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+    .conn-main span { display: block; margin-top: 4px; color: var(--muted); font-size: 10px; }
+    .caps { display: flex; flex-wrap: wrap; gap: 5px; justify-content: flex-end; }
+    .conn-state { min-width: 106px; text-align: right; }
+    .conn-state strong { color: var(--green); font-size: 11px; }
+    .conn-state span { display: block; margin-top: 4px; color: var(--muted); font-size: 10px; }
+    .tech-fold { margin-top: 14px; padding: 13px; border: 1px dashed var(--line-strong); border-radius: var(--radius); background: var(--bg-deep); color: var(--text-2); line-height: 1.5; }
+
+    /* Inspector */
+    .detail-body { min-height: 0; overflow: auto; padding: 12px; display: grid; gap: 10px; align-content: start; }
+    .detail-card { border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg-deep); overflow: hidden; }
+    .detail-card header { min-height: 38px; display: flex; align-items: center; justify-content: space-between; padding: 0 11px; border-bottom: 1px solid var(--line); }
+    .detail-card header strong { font-size: 12px; }
+    .detail-card header span { color: var(--muted); font-size: 11px; }
+    .detail-card .body { padding: 11px; color: var(--text-2); line-height: 1.5; }
+    .detail-row { min-height: 34px; display: grid; grid-template-columns: 92px 1fr; gap: 10px; align-items: center; border-bottom: 1px solid rgba(42,48,56,.72); }
     .detail-row:last-child { border-bottom: 0; }
-    .detail-row b { color: var(--muted); font-size: 10px; font-weight: 500; }
+    .detail-row b { color: var(--muted); font-weight: 520; font-size: 11px; }
     .detail-row span { color: var(--text-2); font-size: 11px; }
-    .security-note { margin-top: 10px; padding: 9px 10px; border: 1px solid rgba(69,185,124,.28); background: rgba(69,185,124,.07); color: var(--text-2); border-radius: var(--radius); font-size: 10px; line-height: 1.5; }
-    .connection-actions { display: none; padding: 10px 12px; border-top: 1px solid var(--line); grid-template-columns: 1fr auto; gap: 7px; }
-    .connection-actions.active { display: grid; }
-    .inspector { background: var(--panel); border-left: 1px solid var(--line); display: flex; flex-direction: column; min-width: 0; }
-    .inspect-tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; padding: 8px; border-bottom: 1px solid var(--line); }
-    .inspect-tab { height: 28px; border: 1px solid transparent; background: transparent; color: var(--muted); border-radius: 5px; cursor: pointer; }
-    .inspect-tab.active { color: var(--text); background: var(--raised); border-color: var(--line); }
-    .inspect-body { min-height: 0; overflow: auto; padding: 12px; }
-    .mode-panel { display: none; }
-    .mode-panel.active { display: block; }
-    .field-label { margin: 12px 0 6px; color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .06em; }
-    .change-box { width: 100%; min-height: 76px; resize: vertical; border: 1px solid var(--line); background: var(--bg-deep); color: var(--text); border-radius: var(--radius-sm); padding: 9px; outline: 0; }
-    .diff-summary { display: grid; gap: 6px; }
-    .diff-line { display: grid; grid-template-columns: 50px 1fr; gap: 8px; padding: 7px 8px; border: 1px solid var(--line); border-radius: 6px; }
-    .diff-line b { font-size: 10px; color: var(--muted); }
-    .diff-line.keep b { color: var(--green); }
-    .diff-line.change b { color: var(--amber); }
-    .lock-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-    .lock-btn { height: 32px; display: flex; align-items: center; justify-content: space-between; padding: 0 8px; border: 1px solid var(--line); background: var(--bg-deep); color: var(--text-2); border-radius: 6px; cursor: pointer; }
-    .lock-btn.on { color: var(--amber); border-color: rgba(240,164,75,.45); background: var(--amber-soft); }
-    .lock-btn small { color: inherit; opacity: .72; }
-    .slider { width: 100%; accent-color: var(--amber); }
-    .recipe { border: 1px solid var(--line); background: var(--bg-deep); border-radius: var(--radius); padding: 9px; color: #cbd2da; font-family: var(--mono); font-size: 10px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
-    .recipe .changed { color: var(--amber); }
-    .repro { margin-top: 10px; padding: 9px; border: 1px solid rgba(240,164,75,.35); background: var(--amber-soft); border-radius: var(--radius); }
-    .repro-head { display: flex; align-items: center; }
-    .repro-head strong { font-size: 11px; }
-    .repro-head span { margin-left: auto; color: var(--amber); font-family: var(--mono); font-size: 10px; }
-    .repro p { margin: 5px 0 0; color: var(--text-2); font-size: 10px; line-height: 1.45; }
-    .inspector-action { padding: 10px 12px; border-top: 1px solid var(--line); display: grid; grid-template-columns: 1fr auto; gap: 7px; }
-    .inspector-action .primary-btn { height: 34px; }
-    .statusbar { display: flex; align-items: center; gap: 12px; padding: 0 10px 0 60px; background: #0d1013; border-top: 1px solid var(--line); color: var(--muted); font-size: 10px; }
-    .statusbar .live { color: var(--green); }
-    .statusbar .task { color: var(--amber); }
-    .statusbar span:last-child { margin-left: auto; font-family: var(--mono); }
-    .modal-backdrop { position: fixed; inset: 0; z-index: 100; display: none; place-items: center; background: rgba(0,0,0,.72); }
-    .modal-backdrop.open { display: grid; }
-    .modal { width: min(720px, calc(100vw - 40px)); background: var(--panel); border: 1px solid var(--line-strong); border-radius: var(--radius-lg); box-shadow: 0 24px 80px rgba(0,0,0,.55); }
-    .modal-head { height: 48px; display: flex; align-items: center; padding: 0 14px; border-bottom: 1px solid var(--line); }
-    .modal-head strong { font-size: 14px; }
-    .modal-head button { margin-left: auto; }
-    .modal-body { padding: 16px; }
-    .modal-copy { color: var(--muted); margin-bottom: 14px; }
-    .modal-modes { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-    .modal-mode { border: 1px solid var(--line); background: var(--bg-deep); border-radius: var(--radius); padding: 15px; cursor: pointer; }
-    .modal-mode:hover, .modal-mode.selected { border-color: var(--amber); background: var(--amber-soft); }
-    .modal-mode strong { font-size: 13px; }
-    .modal-mode p { color: var(--muted); font-size: 11px; line-height: 1.5; }
-    .modal-foot { display: flex; justify-content: flex-end; gap: 7px; padding: 12px 16px; border-top: 1px solid var(--line); }
-    @keyframes pulse { 50% { opacity: .35; } }
+
+    /* Spec board */
+    .spec-board { min-height: 0; overflow: auto; padding: 28px 32px 34px; }
+    .spec-head { display: flex; align-items: end; gap: 20px; padding-bottom: 18px; border-bottom: 1px solid var(--line); }
+    .spec-head h1 { margin: 0; font-size: 28px; letter-spacing: -.04em; }
+    .spec-head p { margin: 6px 0 0; color: var(--muted); }
+    .spec-grid { margin-top: 18px; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .spec-card { border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--panel); overflow: hidden; }
+    .spec-card header { height: 48px; display: flex; align-items: center; justify-content: space-between; padding: 0 16px; border-bottom: 1px solid var(--line); }
+    .spec-card header strong { font-size: 13px; }
+    .spec-card header span { color: var(--muted); font-size: 11px; }
+    .spec-card .body { padding: 15px; }
+    .swatches { display: grid; grid-template-columns: repeat(4,1fr); gap: 8px; }
+    .swatch { min-height: 82px; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; background: var(--bg-deep); }
+    .swatch-color { height: 42px; }
+    .swatch-label { padding: 8px; display: grid; gap: 3px; }
+    .swatch-label b { font-size: 11px; }
+    .swatch-label span { color: var(--muted); font: 10px var(--mono); }
+    .type-samples { display: grid; gap: 11px; }
+    .type-row { display: grid; grid-template-columns: 132px 1fr; gap: 12px; align-items: baseline; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+    .type-row:last-child { border-bottom: 0; }
+    .type-row b { color: var(--muted); font-size: 11px; font-weight: 520; }
+    .sample-title { font-size: 24px; font-weight: 650; letter-spacing: -.02em; }
+    .sample-section { font-size: 14px; font-weight: 650; }
+    .sample-body { color: var(--text-2); font-size: 14px; line-height: 1.5; }
+    .sample-meta { color: var(--muted); font: 11px var(--mono); }
+    .component-demo { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+    .rules { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .rule { padding: 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg-deep); }
+    .rule.good strong { color: var(--green); }
+    .rule.bad strong { color: var(--red); }
+    .rule ul { margin: 8px 0 0; padding-left: 17px; color: var(--text-2); line-height: 1.55; }
+    .layout-strip { display: grid; grid-template-columns: 56px 132px 1fr 132px; height: 110px; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+    .layout-strip div { display: grid; place-items: center; border-right: 1px solid var(--line); color: var(--text-2); font-size: 11px; text-align: center; padding: 8px; }
+    .layout-strip div:last-child { border-right: 0; }
+    .layout-strip .main-zone { color: var(--amber); background: var(--amber-soft); }
+
     @media (max-width: 1180px) {
-      .shell { grid-template-columns: 56px 286px minmax(500px, 1fr); }
-      .inspector { position: absolute; right: 0; top: 40px; bottom: 30px; width: 328px; z-index: 50; box-shadow: -18px 0 40px rgba(0,0,0,.35); }
+      .shell { grid-template-columns: 56px 286px minmax(520px, 1fr); }
+      .inspector { display: none; }
+      .home-hero, .home-lower, .spec-grid { grid-template-columns: 1fr; }
     }
     @media (prefers-reduced-motion: reduce) {
-      *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+      * { animation: none !important; transition: none !important; }
     }
   </style>
 </head>
 <body>
-<div class="app">
-  <header class="titlebar">
-    <div class="brand" title="Gravuresse">G</div>
-    <div class="project-crumb"><span>Projects</span><span>/</span><strong id="crumbTitle">雨城叙事</strong><span class="version">v3</span></div>
-    <nav class="view-tabs" aria-label="工作区视图">
-      <button class="view-tab" data-screen="home">项目</button>
-      <button class="view-tab active" data-screen="pipeline">Pipeline</button>
-      <button class="view-tab" data-screen="canvas">无限画布</button>
-      <button class="view-tab" data-screen="connections">连接</button>
-    </nav>
-    <div class="title-actions">
-      <span class="status-dot"></span><span style="color:var(--muted);font-size:10px">已自动保存</span>
-      <button class="icon-btn" title="任务队列">3</button>
-      <button class="icon-btn" title="设置">···</button>
-    </div>
-  </header>
+  <div id="root"></div>
+  <script>
+    const image = 'assets/rain-city-red-umbrella.png';
+    const screen = new URLSearchParams(location.search).get('screen') || 'home';
+    const screenTitle = {
+      home: '首页 · Simple First',
+      creation: '步骤式创作工作区',
+      edit: '简单修改',
+      connections: '连接向导',
+      spec: 'UI 规范板'
+    }[screen] || '首页 · Simple First';
 
-  <div class="shell">
-    <aside class="rail" aria-label="项目栏">
-      <button class="rail-btn active" data-screen="pipeline" title="当前项目">雨</button>
-      <button class="rail-btn" data-screen="home" title="全部项目">P</button>
-      <button class="rail-btn" title="素材库">A</button>
-      <button class="rail-btn" data-screen="connections" title="连接设置">API</button>
-      <div class="rail-spacer"></div>
-      <button class="rail-btn" title="帮助">?</button>
-    </aside>
-
-    <aside class="side">
-      <div class="side-head"><strong>会话</strong><button class="small-btn" id="newConv">＋ 新会话</button></div>
-      <div class="context-summary" id="contextSummary"><b>本轮上下文</b> · Brief v3 · 18项<span>项目记忆 4 · 当前会话 12条 · 参考图 2</span></div>
-      <div class="section-label">当前项目 <button id="forkBtn">Fork</button></div>
-      <div class="conv-list" id="convList">
-        <div class="conv active">
-          <div class="conv-title">雨夜主视觉 <span class="pinned">◆</span></div>
-          <div class="conv-meta"><span>12条消息</span><span>3个输出</span></div>
-        </div>
-        <div class="conv">
-          <div class="conv-title">清晨光线测试 <span class="branch">↳ A</span></div>
-          <div class="conv-meta"><span>8条消息</span><span>运行中</span></div>
-        </div>
-        <div class="conv">
-          <div class="conv-title">插画风格分支 <span class="branch">↳ A</span></div>
-          <div class="conv-meta"><span>6条消息</span><span>2个输出</span></div>
-        </div>
-      </div>
-      <div class="section-label">Agent 计划 <button id="agentToggle">收起</button></div>
-      <div class="agent-card" id="agentCard">
-        <div class="agent-title" id="agentTitle"><strong>提示词收敛</strong><span>最多 5 次调用</span></div>
-        <div class="agent-steps" id="agentSteps">
-          <div class="agent-step done"><i class="agent-state"></i><span>意图解析</span><em>完成</em></div>
-          <div class="agent-step running"><i class="agent-state"></i><span>2 个 Prompt 方案</span><em>顺序生成</em></div>
-          <div class="agent-step"><i class="agent-state"></i><span>连续性检查</span><em>等待</em></div>
-          <div class="agent-step"><i class="agent-state"></i><span>模型能力适配</span><em>等待</em></div>
-          <div class="agent-controls"><button class="primary-btn" id="runAgent">继续运行</button><button class="small-btn" id="stopAgent">停止</button></div>
-        </div>
-      </div>
-    </aside>
-
-    <main class="main">
-      <section class="screen active" id="screen-pipeline">
-        <div class="work-head">
-          <div class="work-title"><h1>图像探索</h1><p>从确认的创意简报生成、比较并选定主视觉</p></div>
-          <div class="work-actions"><button class="small-btn" id="expandCanvas">展开为画布</button><button class="primary-btn">生成新候选</button></div>
-        </div>
-        <div class="pipeline">
-          <div class="step-strip">
-            <button class="step-tab done"><strong>01 想法</strong><small>已确认</small></button>
-            <button class="step-tab done"><strong>02 创意简报</strong><small>Brief v3</small></button>
-            <button class="step-tab current"><strong>03 图像探索</strong><small>3 个候选</small></button>
-            <button class="step-tab"><strong>04 选定与修改</strong><small>等待选择</small></button>
-            <button class="step-tab"><strong>05 视频</strong><small>可选</small></button>
-          </div>
-          <div class="pipeline-content">
-            <div class="brief-bar">
-              <div>
-                <div class="brief-title"><strong>雨夜里的中式未来老街</strong><span class="version">Brief v3</span></div>
-                <div class="brief-copy">一位撑红伞的人从镜头前走向老街深处；潮湿石板反射冷暖灯光，未来建筑只作为克制背景。</div>
-                <div class="constraint-row"><span class="tag lock">锁定 · 红伞人物</span><span class="tag lock">锁定 · 中央构图</span><span class="tag">电影感</span><span class="tag">低饱和青橙</span><span class="tag">避免霓虹赛博朋克</span></div>
-              </div>
-              <button class="small-btn">查看 Brief</button>
-            </div>
-            <div class="candidate-head"><h2>候选结果</h2><p>点击查看配方；F 标记最终候选</p><button class="small-btn">对比 3 个</button></div>
-            <div class="candidate-grid">
-              <article class="candidate selected" data-candidate="A">
-                <div class="candidate-media"><img src="assets/rain-city-red-umbrella.png" alt="雨夜老街红伞候选A" /></div>
-                <span class="selected-mark">已选</span>
-                <div class="candidate-info"><strong>A · 平衡构图</strong><p>保持红伞和街道纵深，未来元素克制</p><div class="candidate-foot"><span>Image · 16:9</span><span class="confidence">复现：中</span></div></div>
-              </article>
-              <article class="candidate" data-candidate="B">
-                <div class="candidate-media"><img src="assets/rain-city-red-umbrella.png" alt="雨夜老街红伞候选B" /></div>
-                <div class="candidate-info"><strong>B · 更明亮</strong><p>提升环境可读性，削弱雨夜压迫感</p><div class="candidate-foot"><span>Image · 16:9</span><span class="confidence">复现：中</span></div></div>
-              </article>
-              <article class="candidate" data-candidate="C">
-                <div class="candidate-media"><img src="assets/rain-city-red-umbrella.png" alt="雨夜老街红伞候选C" /></div>
-                <div class="candidate-info"><strong>C · 更电影化</strong><p>收紧暗部和景深，人物轮廓更孤独</p><div class="candidate-foot"><span>Image · 16:9</span><span class="confidence">复现：低</span></div></div>
-              </article>
-            </div>
-          </div>
-          <div class="composer">
-            <div class="composer-box"><button class="icon-btn" title="添加参考">＋</button><textarea placeholder="描述想修改的内容，例如：保留人物和构图，把时间改成清晨……"></textarea><button class="primary-btn">发送</button><div class="context-inline">将使用 Brief v3、当前候选 A、2 张参考图；Agent 多步骤执行需要确认</div></div>
-          </div>
-        </div>
-      </section>
-
-      <section class="screen" id="screen-canvas">
-        <div class="work-head">
-          <div class="work-title"><h1>无限画布</h1><p>同一工作流 · 已叠加当前路径的一跳谱系</p></div>
-          <div class="work-actions"><button class="small-btn">隐藏谱系</button><button class="primary-btn">＋ 生成节点</button></div>
-        </div>
-        <div class="canvas">
-          <div class="canvas-toolbar"><button class="tool active" title="选择">V</button><button class="tool" title="移动">H</button><button class="tool" title="连接">L</button><button class="tool" title="文字">T</button><button class="tool" title="上传">＋</button></div>
-          <div class="canvas-stage">
-            <svg class="edge-layer" aria-hidden="true">
-              <path class="edge active" d="M168 205 C185 205 184 170 202 170"/>
-              <path class="edge active" d="M376 160 C392 160 392 145 407 145"/>
-              <path class="edge" d="M492 245 C492 252 492 258 492 266"/>
-              <path class="edge active" d="M438 245 C420 252 394 274 376 296"/>
-            </svg>
-            <article class="node idea"><div class="node-head">想法 <span>note</span></div><div class="node-body">雨夜里的中式未来城市，一个撑红伞的人走过老街。<div class="node-chip">源输入</div></div></article>
-            <article class="node brief"><div class="node-head">Creative Brief <span>v3</span></div><div class="node-body">主体、构图、镜头、风格和禁用项已确认。<div class="constraint-row"><span class="tag lock">主体</span><span class="tag lock">构图</span></div></div></article>
-            <article class="node output selected"><div class="node-head">候选 A <span>img_29a1</span></div><img class="node-media" src="assets/rain-city-red-umbrella.png" alt="画布主候选"/><div class="node-body">平衡构图 · 已选定<div class="node-chip">复现：中</div></div></article>
-            <article class="node video"><div class="node-head">视频草案 <span>queued</span></div><div class="video-cover"><img class="node-media" src="assets/rain-city-red-umbrella.png" alt="视频草案封面"/><div class="play">▶</div></div><div class="node-body">镜头缓慢推进 · 5s</div></article>
-            <article class="node variant"><div class="node-head">清晨变体 <span>branch</span></div><img class="node-media" style="filter:brightness(1.22) saturate(.72) sepia(.16)" src="assets/rain-city-red-umbrella.png" alt="清晨变体"/><div class="node-body">保持人物与构图，改变光线<div class="node-chip">2 项锁定</div></div></article>
-          </div>
-          <div class="canvas-zoom"><button>−</button><span>82%</span><button>＋</button><button style="width:auto;padding:0 8px">适应</button></div>
-        </div>
-      </section>
-
-      <section class="screen" id="screen-connections">
-        <div class="work-head"><div class="work-title"><h1>连接与能力</h1><p>先验证连接能做什么，再把能力提供给项目和 Agent</p></div><div class="work-actions"><button class="primary-btn" id="addConnection">＋ 添加连接</button></div></div>
-        <div class="connections">
-          <div class="cap-filter"><button class="filter active">全部</button><button class="filter">Chat</button><button class="filter">Image</button><button class="filter">Video</button><button class="filter">需要验证</button></div>
-          <div class="connection-list">
-            <div class="connection selected"><div class="conn-icon">OC</div><div class="conn-main"><strong>OpenCode Go</strong><span>api.opencode.example / verified revision 18</span></div><div class="caps"><span class="cap">Chat</span><span class="cap">Image</span></div><div class="conn-state"><strong>真实推理已验证</strong><span>12 models · 84ms</span></div></div>
-            <div class="connection"><div class="conn-icon">C1</div><div class="conn-main"><strong>自定义图像连接</strong><span>image.example.com / OpenAI-compatible</span></div><div class="caps"><span class="cap">Image</span><span class="cap">Edit</span></div><div class="conn-state"><strong>真实推理已验证</strong><span>4 models · 312ms</span></div></div>
-            <div class="connection"><div class="conn-icon">V1</div><div class="conn-main"><strong>自定义视频任务</strong><span>video.example.com / submit + poll</span></div><div class="caps"><span class="cap">Video</span><span class="cap">I2V</span></div><div class="conn-state"><strong style="color:var(--amber)">仅目录已验证</strong><span>需要最小推理</span></div></div>
-            <div class="connection"><div class="conn-icon">L</div><div class="conn-main"><strong>本地实验端点</strong><span>127.0.0.1:8188 / Local Connection</span></div><div class="caps"><span class="cap">Image</span></div><div class="conn-state"><strong style="color:var(--red)">离线</strong><span>3 分钟前</span></div></div>
-          </div>
-          <div class="advanced-note"><strong style="color:var(--text-2)">能力驱动，而不是 Provider 驱动。</strong><br/>项目只保存 connectionId、modelId 和本次能力解析结果，不保存密钥。高级请求模板只在自定义连接中展开；未通过真实推理验证的能力不会被 Agent 自动选择。</div>
-        </div>
-      </section>
-
-      <section class="screen" id="screen-home">
-        <div class="home">
-          <div class="home-intro"><div><h1>把脑海中的画面变成可控制的创作过程</h1><p>最近项目、会话分支、生成配方和输出谱系都保留在本地。</p></div><button class="primary-btn" id="homeNew">＋ 新建项目</button></div>
-          <div class="home-grid">
-            <section class="home-section"><h2>最近项目</h2><div class="recent-list"><div class="recent" data-open="pipeline"><img src="assets/rain-city-red-umbrella.png" alt="雨城叙事项目封面"><div><strong>雨城叙事</strong><p>Pipeline · 3 个会话 · 6 个输出</p></div><time>刚刚</time></div><div class="recent"><div style="width:92px;height:58px;border-radius:5px;background:#232930;display:grid;place-items:center;color:var(--muted)">No cover</div><div><strong>微缩建筑实验</strong><p>无限画布 · 1 个会话</p></div><time>昨天</time></div></div></section>
-            <section class="home-section"><h2>开始方式</h2><div class="mode-list"><button class="mode-card" data-mode="pipeline"><strong>Pipeline</strong><p>步骤清晰地完成想法、简报、图像探索、修改和视频生成。适合快速收敛。</p><span>推荐第一次使用 →</span></button><button class="mode-card" data-mode="canvas"><strong>无限画布</strong><p>自由组织素材、分支和谱系，适合已有素材或复杂专业工作流。</p><span>进入自由工作区 →</span></button></div></section>
-          </div>
-        </div>
-      </section>
-    </main>
-
-    <aside class="inspector" id="inspector">
-      <div class="inspect-head"><strong id="inspectTitle">修改与配方</strong><button class="icon-btn" style="margin-left:auto" title="更多">···</button></div>
-      <div class="inspect-tabs" id="inspectTabs" role="tablist" aria-label="修改透明度"><button class="inspect-tab active" id="tab-black" role="tab" aria-selected="true" aria-controls="mode-black" tabindex="0" data-mode="black">黑盒</button><button class="inspect-tab" id="tab-gray" role="tab" aria-selected="false" aria-controls="mode-gray" tabindex="-1" data-mode="gray">灰盒</button><button class="inspect-tab" id="tab-white" role="tab" aria-selected="false" aria-controls="mode-white" tabindex="-1" data-mode="white">白盒</button></div>
-      <div class="connection-detail" id="connectionDetail">
-        <div class="conn-hero"><div class="conn-hero-top"><div class="conn-icon">OC</div><div><strong>OpenCode Go</strong><code>api.opencode.example</code></div></div><div class="constraint-row"><span class="tag">Chat</span><span class="tag">Image</span><span class="tag lock">真实推理已验证</span></div></div>
-        <div class="detail-list"><div class="detail-row"><b>认证</b><span>Bearer · 凭据已保存并脱敏</span></div><div class="detail-row"><b>模型目录</b><span>12 models · revision 18</span></div><div class="detail-row"><b>能力证据</b><span>目录验证 + 最小真实推理</span></div><div class="detail-row"><b>最近验证</b><span>刚刚 · 84ms</span></div><div class="detail-row"><b>项目默认</b><span>Chat / Image</span></div></div>
-        <div class="security-note"><strong style="color:#8ee0b3">凭据边界正常</strong><br/>密钥只在 Electron 主进程解析，并与当前 endpoint 绑定；项目导出、Renderer 状态和日志均不包含明文凭据。</div>
-      </div>
-      <div class="inspect-body" id="recipeInspectBody">
-        <div class="mode-panel active" id="mode-black" role="tabpanel" aria-labelledby="tab-black">
-          <div class="field-label">你想修改什么</div><textarea class="change-box">保留人物和构图，把雨夜改成清晨薄雾。</textarea>
-          <div class="field-label">系统理解</div><div class="diff-summary"><div class="diff-line keep"><b>保持</b><span>红伞人物、中央构图、老街纵深</span></div><div class="diff-line change"><b>改变</b><span>夜晚 → 清晨；雨 → 薄雾；暖灯 → 自然晨光</span></div></div>
-          <div class="repro"><div class="repro-head"><strong>复现可信度</strong><span>MEDIUM</span></div><p>配方与参考图完整；当前模型不返回 seed，无法保证像素级一致。</p></div>
-        </div>
-        <div class="mode-panel" id="mode-gray" role="tabpanel" aria-labelledby="tab-gray">
-          <div class="field-label">稳定锁</div><div class="lock-grid"><button class="lock-btn on">主体 <small>Strict</small></button><button class="lock-btn on">构图 <small>Strict</small></button><button class="lock-btn">镜头 <small>Off</small></button><button class="lock-btn">环境 <small>Off</small></button><button class="lock-btn on">风格 <small>Prefer</small></button><button class="lock-btn">色彩 <small>Off</small></button></div>
-          <div class="field-label">变化强度 · 32%</div><input class="slider" type="range" value="32" />
-          <div class="field-label">参考图权重 · 70%</div><input class="slider" type="range" value="70" />
-          <div class="field-label">语义控制</div><div class="diff-summary"><div class="diff-line"><b>镜头</b><span>35mm，平视，缓慢推进感</span></div><div class="diff-line"><b>光线</b><span>清晨散射光，薄雾，关闭霓虹</span></div><div class="diff-line"><b>避免</b><span>赛博朋克、过饱和、额外人物</span></div></div>
-          <div class="repro"><div class="repro-head"><strong>主体 Strict</strong><span>有限支持</span></div><p>当前连接支持参考图，但不支持身份控制模型；系统会优先保持，不能绝对保证。</p></div>
-        </div>
-        <div class="mode-panel" id="mode-white" role="tabpanel" aria-labelledby="tab-white">
-          <div class="field-label">Prompt Diff</div><div class="recipe">model: image-model-v4
-ratio: 16:9
-resolution: 1536
-seed: <span class="changed">unsupported</span>
-
-prompt:
-  same solitary person with red umbrella,
-  same centered vanishing-point composition,
-<span class="changed">+ early morning diffused light, thin mist
-- rainy night, warm lantern dominance</span>
-
-references:
-  - asset_img_29a1 @ 0.70
-locks:
-  subject: strict
-  composition: strict
-  style: prefer</div>
-          <div class="field-label">能力证据</div><div class="diff-summary"><div class="diff-line keep"><b>模型</b><span>inventory revision 18 · verified</span></div><div class="diff-line change"><b>Seed</b><span>当前端点不支持</span></div></div>
-          <div class="repro"><div class="repro-head"><strong>Recipe hash</strong><span>9d72…4af1</span></div><p>密钥、临时签名 URL 和本地隐私路径不参与 hash。</p></div>
-        </div>
-      </div>
-      <div class="inspector-action" id="recipeActions"><button class="primary-btn">创建修改分支</button><button class="small-btn">保存配方</button></div>
-      <div class="connection-actions" id="connectionActions"><button class="primary-btn">重新验证</button><button class="small-btn">编辑连接</button></div>
-    </aside>
-  </div>
-
-  <footer class="statusbar"><span class="live">● 3 个连接可用</span><span class="task">● 1 个 Agent 运行中</span><span>任务队列 2 waiting / 1 running</span><span>Gravuresse vNext prototype</span></footer>
-</div>
-
-<div class="modal-backdrop" id="newProjectModal" role="dialog" aria-modal="true" aria-labelledby="newProjectTitle">
-  <div class="modal"><div class="modal-head"><strong id="newProjectTitle">新建项目</strong><button class="icon-btn" id="closeModal">×</button></div><div class="modal-body"><div class="modal-copy">选择开始方式。两种模式使用同一项目数据，之后可以切换或从 Pipeline 展开为画布。</div><div class="modal-modes"><div class="modal-mode selected" data-modal-mode="pipeline"><strong>Pipeline</strong><p>从想法到图像和视频的受控步骤，适合第一次创作和快速收敛。</p></div><div class="modal-mode" data-modal-mode="canvas"><strong>无限画布</strong><p>自由组织素材、分支与谱系，适合复杂探索和专业用户。</p></div></div></div><div class="modal-foot"><button class="small-btn" id="cancelModal">取消</button><button class="primary-btn" id="createProject">创建项目</button></div></div>
-</div>
-
-<script>
-  const screens = ['home','pipeline','canvas','connections'];
-  function showScreen(name) {
-    if (!screens.includes(name)) return;
-    document.querySelectorAll('.screen').forEach(el => el.classList.toggle('active', el.id === `screen-${name}`));
-    document.querySelectorAll('[data-screen]').forEach(el => el.classList.toggle('active', el.dataset.screen === name));
-    const inspector = document.getElementById('inspector');
-    const title = document.getElementById('inspectTitle');
-    const tabs = document.getElementById('inspectTabs');
-    document.querySelector('.shell').classList.toggle('home-mode', name === 'home');
-    document.getElementById('crumbTitle').textContent = name === 'home' ? '全部项目' : '雨城叙事';
-    document.querySelector('.project-crumb .version').style.display = name === 'home' ? 'none' : '';
-    if (name === 'home') {
-      inspector.style.visibility = 'hidden';
-    } else {
-      inspector.style.visibility = 'visible';
+    function rail(active = 'home') {
+      const items = [['home','首'],['records','记'],['work','创'],['tasks','任'],['settings','设']];
+      return `<aside class="rail">${items.map(([id,label]) => `<div class="rail-btn ${id === active ? 'active' : ''}">${label}</div>`).join('')}<div class="rail-spacer"></div><div class="rail-btn ghost">?</div></aside>`;
     }
-    const isConnections = name === 'connections';
-    title.textContent = isConnections ? '连接详情' : (name === 'canvas' ? '节点与配方' : '修改与配方');
-    tabs.style.display = isConnections ? 'none' : 'grid';
-    document.getElementById('recipeInspectBody').style.display = isConnections ? 'none' : 'block';
-    document.getElementById('recipeActions').style.display = isConnections ? 'none' : 'grid';
-    document.getElementById('connectionDetail').classList.toggle('active', isConnections);
-    document.getElementById('connectionActions').classList.toggle('active', isConnections);
-    localStorage.setItem('gravuresse-prototype-screen', name);
-  }
-  document.querySelectorAll('[data-screen]').forEach(btn => btn.addEventListener('click', () => showScreen(btn.dataset.screen)));
-  document.getElementById('expandCanvas').addEventListener('click', () => showScreen('canvas'));
-  document.querySelectorAll('[data-open]').forEach(el => el.addEventListener('click', () => showScreen(el.dataset.open)));
+    function titlebar(title) {
+      return `<header class="titlebar"><div class="brand">G</div><div class="crumb"><strong>Gravuresse</strong><span>/</span><span>${title}</span></div><div class="top-status"><span class="status-dot"></span><span>本地项目已自动保存</span><span class="kbd">Ctrl K</span></div></header>`;
+    }
+    function footer() {
+      return `<footer class="footer"><b>Simple First 门禁</b><span>默认路径只保留：描述 / 生成 / 选择 / 修改</span><span>1280×720 核心路径无遮挡</span></footer>`;
+    }
+    function sideRecords() {
+      return `<aside class="side"><div class="panel-head"><strong>创作记录</strong><span>3 条</span></div><div class="context-summary"><b>本轮参考：</b>创作说明 · 当前记录 · 2 张参考图<span>展开后可查看来源与排除原因</span></div><div class="record-list"><div class="record active"><div class="record-title">雨夜红伞主方向 <span class="pill amber">当前</span></div><div class="record-meta"><span>12 分钟前</span><span>2 张候选</span></div></div><div class="record"><div class="record-title">另开方向：清晨薄雾</div><div class="record-meta"><span>来自主方向</span><span>已 Pin 角色</span></div></div><div class="record"><div class="record-title">视频镜头测试</div><div class="record-meta"><span>等待连接</span><span>图生视频</span></div></div></div><div class="assistant-card"><div class="assistant-top"><strong>助手正在处理</strong><button class="small-btn">停止</button></div><div class="assistant-steps"><div class="assistant-step done"><span class="dot"></span><span>理解画面</span><em>完成</em></div><div class="assistant-step done"><span class="dot"></span><span>准备两个方向</span><em>完成</em></div><div class="assistant-step running"><span class="dot"></span><span>检查人物和构图</span><em>运行中</em></div><div class="assistant-step"><span class="dot"></span><span>等待用户确认</span><em>下一步</em></div></div></div></aside>`;
+    }
+    function inspectorBasic(kind = 'creation') {
+      const edit = kind === 'edit';
+      return `<aside class="inspector"><div class="panel-head"><strong>${edit ? '作品详情' : '详情'}</strong><span>${edit ? '已选作品' : '默认折叠'}</span></div><div class="detail-body"><div class="detail-card"><header><strong>来源记录</strong><span>折叠</span></header><div class="body">选中作品后可查看父版本、参考素材和生成设置。默认只给出人话摘要，不打断创作。</div></div><div class="detail-card"><header><strong>生成设置</strong><span>折叠</span></header><div class="body"><div class="detail-row"><b>画幅</b><span>16:10 · 1536px</span></div><div class="detail-row"><b>连接</b><span>图像生成连接 A</span></div><div class="detail-row"><b>可重做</b><span>按当前设置可再试一次，但结果可能有差异</span></div></div></div><div class="detail-card"><header><strong>高级</strong><span>按需展开</span></header><div class="body">稳定锁、参数差异和技术证据等只在用户需要时展开。</div></div></div></aside>`;
+    }
+    function candidateGrid() {
+      return `<div class="candidate-grid"><article class="candidate selected"><div class="selected-mark">已选</div><div class="candidate-media"><img src="${image}" alt="雨夜红伞候选" /></div><div class="candidate-info"><strong>电影感雨夜</strong><p>保持红伞和背光，街面反射更强</p><div class="candidate-foot"><span>候选 A</span><span>更接近</span></div></div></article><article class="candidate"><div class="candidate-media"><img src="${image}" alt="清晨薄雾候选" /></div><div class="candidate-info"><strong>清晨薄雾</strong><p>雨改为雾，光线更自然</p><div class="candidate-foot"><span>候选 B</span><span>可比较</span></div></div></article><article class="candidate"><div class="candidate-media"><img src="${image}" alt="夜色剪影候选" /></div><div class="candidate-info"><strong>夜色剪影</strong><p>人物更抽象，氛围更强</p><div class="candidate-foot"><span>候选 C</span><span>偏探索</span></div></div></article></div>`;
+    }
+    function composer(text = '保留人物和构图，把时间改成清晨，雨改成薄雾') {
+      return `<div class="composer"><div class="composer-box"><button class="icon-btn">＋</button><textarea>${text}</textarea><button class="primary">发送</button><div class="context-inline">本轮参考：创作说明 · 当前记录 · 2 张参考图</div></div></div>`;
+    }
 
-  function setMode(name) {
-    document.querySelectorAll('.inspect-tab').forEach(el => {
-      const active = el.dataset.mode === name;
-      el.classList.toggle('active', active);
-      el.setAttribute('aria-selected', String(active));
-      el.tabIndex = active ? 0 : -1;
-    });
-    document.querySelectorAll('.mode-panel').forEach(el => el.classList.toggle('active', el.id === `mode-${name}`));
-  }
-  const inspectTabs = [...document.querySelectorAll('.inspect-tab')];
-  inspectTabs.forEach((btn, index) => {
-    btn.addEventListener('click', () => setMode(btn.dataset.mode));
-    btn.addEventListener('keydown', event => {
-      if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
-      event.preventDefault();
-      const delta = event.key === 'ArrowRight' ? 1 : -1;
-      const next = inspectTabs[(index + delta + inspectTabs.length) % inspectTabs.length];
-      setMode(next.dataset.mode);
-      next.focus();
-    });
-  });
-  document.querySelectorAll('.lock-btn').forEach(btn => btn.addEventListener('click', () => {
-    btn.classList.toggle('on');
-    btn.querySelector('small').textContent = btn.classList.contains('on') ? 'Prefer' : 'Off';
-  }));
-  document.querySelectorAll('.candidate').forEach(card => card.addEventListener('click', () => {
-    document.querySelectorAll('.candidate').forEach(c => { c.classList.remove('selected'); const m = c.querySelector('.selected-mark'); if (m) m.remove(); });
-    card.classList.add('selected');
-    const mark = document.createElement('span'); mark.className='selected-mark'; mark.textContent='已选'; card.appendChild(mark);
-  }));
-  document.querySelectorAll('.conv').forEach(item => item.addEventListener('click', () => {
-    document.querySelectorAll('.conv').forEach(x => x.classList.remove('active')); item.classList.add('active');
-  }));
-  document.getElementById('forkBtn').addEventListener('click', () => {
-    const item = document.createElement('div'); item.className='conv active'; item.innerHTML='<div class="conv-title">新探索分支 <span class="branch">↳ A</span></div><div class="conv-meta"><span>继承当前快照</span><span>未开始</span></div>';
-    document.querySelectorAll('.conv').forEach(x => x.classList.remove('active'));
-    document.getElementById('convList').prepend(item);
-  });
-  document.getElementById('newConv').addEventListener('click', () => {
-    const item = document.createElement('div'); item.className='conv active'; item.innerHTML='<div class="conv-title">空白会话</div><div class="conv-meta"><span>不继承私有历史</span><span>0条消息</span></div>';
-    document.querySelectorAll('.conv').forEach(x => x.classList.remove('active'));
-    document.getElementById('convList').prepend(item);
-  });
-  document.getElementById('agentToggle').addEventListener('click', e => {
-    const steps = document.getElementById('agentSteps'); const hidden = steps.style.display === 'none';
-    steps.style.display = hidden ? 'grid' : 'none'; e.currentTarget.textContent = hidden ? '收起' : '展开';
-  });
-  document.getElementById('runAgent').addEventListener('click', () => {
-    const steps = [...document.querySelectorAll('.agent-step')].filter(x => !x.classList.contains('agent-controls'));
-    steps.forEach((step, i) => { step.classList.remove('running','done'); const em=step.querySelector('em'); em.textContent=i===0?'完成':'等待'; if(i===0) step.classList.add('done'); });
-    let i=1; const tick=()=>{ if(i>=steps.length) return; steps.forEach(s=>s.classList.remove('running')); steps[i].classList.add('running'); steps[i].querySelector('em').textContent='运行中'; setTimeout(()=>{steps[i].classList.remove('running');steps[i].classList.add('done');steps[i].querySelector('em').textContent='完成';i++;tick();},700);}; tick();
-  });
-  document.getElementById('stopAgent').addEventListener('click', () => { document.querySelectorAll('.agent-step.running').forEach(s=>{s.classList.remove('running');s.querySelector('em').textContent='已停止';}); });
-
-  const modal = document.getElementById('newProjectModal');
-  const openModal = () => modal.classList.add('open');
-  const closeModal = () => modal.classList.remove('open');
-  document.getElementById('homeNew').addEventListener('click', openModal);
-  document.getElementById('addConnection').addEventListener('click', () => alert('原型：打开“添加自定义连接”流程；不会预置新的 Provider。'));
-  document.getElementById('closeModal').addEventListener('click', closeModal);
-  document.getElementById('cancelModal').addEventListener('click', closeModal);
-  modal.addEventListener('click', e => { if (e.target === modal) closeModal(); });
-  document.querySelectorAll('.mode-card[data-mode]').forEach(btn => btn.addEventListener('click', () => { openModal(); document.querySelectorAll('[data-modal-mode]').forEach(x=>x.classList.toggle('selected',x.dataset.modalMode===btn.dataset.mode)); }));
-  document.querySelectorAll('[data-modal-mode]').forEach(btn => btn.addEventListener('click', () => { document.querySelectorAll('[data-modal-mode]').forEach(x=>x.classList.remove('selected')); btn.classList.add('selected'); }));
-  document.getElementById('createProject').addEventListener('click', () => { const m=document.querySelector('[data-modal-mode].selected')?.dataset.modalMode||'pipeline'; closeModal(); showScreen(m); });
-  document.getElementById('contextSummary').addEventListener('click', () => alert('上下文清单：Brief v3、项目记忆4、当前会话12条、参考图2；其他会话私有历史未包含。'));
-
-  const query = new URLSearchParams(location.search).get('screen');
-  showScreen(screens.includes(query) ? query : (localStorage.getItem('gravuresse-prototype-screen') || 'pipeline'));
-</script>
+    function home() {
+      return `<div class="app">${titlebar('首页 · Simple First')}<div class="shell home-shell">${rail('home')}<main class="main"><section class="screen active"><div class="home"><div class="home-hero"><div class="hero-copy"><div class="eyebrow">Simple First</div><h1>先描述你想要的画面，剩下的复杂度放到后台。</h1><p>Gravuresse 默认只让你做四件事：描述、生成、选择、修改。步骤视图、来源记录、自由画布和生成设置都在，但不会在第一屏压给你。</p><div class="start-card"><div class="start-input">例如：雨夜街头，一个撑红伞的人，电影感，低角度镜头…</div><button class="primary">开始创作</button></div></div><aside class="home-aside"><div class="aside-head"><strong>启动前只确认这些</strong><span>30 秒内进入输入</span></div><div class="aside-body"><div class="check-row"><div class="check">✓</div><div><strong>不先选模式</strong><span>首页没有“步骤 / 自由画布”并列选择，只有开始创作。</span></div></div><div class="check-row"><div class="check">✓</div><div><strong>连接缺失时再提示</strong><span>第一次生成前才提醒需要图像生成连接。</span></div></div><div class="check-row"><div class="check">✓</div><div><strong>高级入口不抢主路径</strong><span>导入项目、连接设置、自由画布放在次级入口。</span></div></div></div></aside></div><div class="home-lower"><section><h2 class="section-title">最近项目</h2><div class="recent-list"><div class="recent"><img class="thumb" src="${image}" alt="项目缩略图" /><div><strong>雨夜红伞短片概念</strong><p>当前步骤：选择结果 · 本轮参考 2 张图</p></div><time>今天</time></div><div class="recent"><img class="thumb" src="${image}" alt="项目缩略图" style="filter:saturate(.65) brightness(1.08)" /><div><strong>清晨薄雾角色设定</strong><p>已 Pin：人物、服装、色彩方向</p></div><time>昨天</time></div></div></section><aside><h2 class="section-title">次级入口</h2><div class="advanced-entry"><b>需要专业控制时再展开。</b><br/>自由画布、导入项目、连接设置都保留，但不是新用户必须先理解的产品模式。<div class="links"><span class="pill">导入项目</span><span class="pill">连接设置</span><span class="pill">高级：自由画布</span></div></div></aside></div></div></section></main></div>${footer()}</div>`;
+    }
+    function creation() {
+      return `<div class="app">${titlebar('雨夜红伞短片概念')}<div class="shell">${rail('work')}${sideRecords()}<main class="main"><section class="screen active"><div class="work-head"><div class="work-title"><h1>步骤视图</h1><p>描述 → 确认创作说明 → 生成候选 → 选择结果 → 简单修改</p></div><div class="work-actions"><button class="ghost-btn">高级：展开为自由画布</button><button class="secondary">导出</button></div></div><div class="step-strip"><div class="step-card done"><strong>1 描述想法</strong><small>已整理为创作说明</small></div><div class="step-card done"><strong>2 确认说明</strong><small>角色、场景、构图已确认</small></div><div class="step-card current"><strong>3 生成候选</strong><small>哪个更接近？</small></div><div class="step-card"><strong>4 选择结果</strong><small>人工选定后继续</small></div><div class="step-card"><strong>5 简单修改</strong><small>保持 / 改变</small></div><div class="step-card"><strong>6 导出或视频</strong><small>可选下一步</small></div></div><div class="workspace-body"><div class="brief-box"><div><h2>系统理解是否正确？</h2><p>一个撑红伞的人走在雨夜街头，低角度镜头，湿润路面反射霓虹，保持孤独但不恐怖的电影感。</p><div class="tag-row"><span class="pill amber">必须保留：红伞</span><span class="pill">人物居中偏左</span><span class="pill">雨夜反射</span><span class="pill">避免恐怖氛围</span></div></div><button class="secondary">编辑说明</button></div><div class="candidate-head"><h2>生成候选</h2><p>选择最接近的一张，未选择前不会覆盖下游。</p><button class="small-btn">重跑本步</button></div>${candidateGrid()}</div>${composer('哪个方向更接近？可以直接说“选第一张，但把雨减弱”。')}</section></main>${inspectorBasic('creation')}</div>${footer()}</div>`;
+    }
+    function edit() {
+      return `<div class="app">${titlebar('雨夜红伞短片概念')}<div class="shell">${rail('work')}${sideRecords()}<main class="main"><section class="screen active"><div class="work-head"><div class="work-title"><h1>简单修改</h1><p>默认只回答：保持什么、改变什么。高级设置收起。</p></div><div class="work-actions"><button class="ghost-btn">返回步骤视图</button><button class="secondary">继续做视频</button></div></div><div class="edit-layout"><section class="edit-preview"><div class="preview-image"><img src="${image}" alt="已选候选" /></div><div class="preview-meta"><span class="pill amber">版本 03 · 已选</span><div><strong>电影感雨夜</strong><p>每次修改都会创建非破坏分支，原图和原设置保留。</p></div></div></section><aside class="edit-panel"><div class="edit-section"><h2>准备生成修改版</h2><p>我会保留满意部分，只改变你指出的方向。执行前可以展开高级设置检查细节。</p><div class="keep-change"><div class="kc-box keep"><strong>✓ 保持</strong><ul><li>人物</li><li>红伞</li><li>低角度构图</li><li>街面反射</li></ul></div><div class="kc-box change"><strong>↻ 改变</strong><ul><li>时间改清晨</li><li>雨改薄雾</li><li>灯光更自然</li><li>降低霓虹饱和</li></ul></div></div><div class="edit-actions"><button class="primary">生成修改版</button><button class="secondary">编辑文字</button></div></div><div class="edit-section"><h2>高级设置</h2><p>默认折叠；需要控制稳定锁、参考权重或参数时再展开。</p><div class="accordion"><div class="acc-row"><strong>稳定锁</strong><span>主体：严格参考 · 构图：尽量保持</span></div><div class="acc-row"><strong>生成设置差异</strong><span>查看文字和参数变化</span></div><div class="acc-row"><strong>来源记录</strong><span>父版本、参考图和任务证据</span></div><div class="acc-row"><strong>可重做程度</strong><span>当前设置可再试一次，结果可能有差异</span></div></div></div></aside></div>${composer()}</section></main>${inspectorBasic('edit')}</div>${footer()}</div>`;
+    }
+    function connections() {
+      return `<div class="app">${titlebar('连接设置')}<div class="shell">${rail('settings')}${sideRecords()}<main class="main"><section class="screen active"><div class="work-head"><div class="work-title"><h1>添加连接向导</h1><p>先按任务选择：我要对话、生成图，还是生成视频。技术详情默认折叠。</p></div><div class="work-actions"><button class="primary">添加连接</button></div></div><div class="connections-body"><div class="wizard-grid"><div class="wizard-card active"><strong>添加图像生成</strong><p>用于文生图、图生图和简单修改。只显示已验证能力。</p></div><div class="wizard-card"><strong>添加视频生成</strong><p>用于图生视频和镜头延展。缺少连接时在继续视频前提示。</p></div><div class="wizard-card"><strong>添加对话连接</strong><p>用于整理创作说明和候选方向，不把密钥暴露给界面。</p></div></div><div class="connection-list"><div class="connection-row"><div class="conn-icon">图</div><div class="conn-main"><strong>图像生成连接 A</strong><span>已验证：能生成图 · 能读取模型 · 密钥已保存</span></div><div class="caps"><span class="pill green">可生成图</span><span class="pill">可编辑图</span></div><div class="conn-state"><strong>可用</strong><span>2 分钟前验证</span></div></div><div class="connection-row"><div class="conn-icon">视</div><div class="conn-main"><strong>视频生成连接 B</strong><span>已验证：支持图生视频 · 预计异步排队</span></div><div class="caps"><span class="pill blue">可生成视频</span><span class="pill">图生视频</span></div><div class="conn-state"><strong>可用</strong><span>今天 14:20</span></div></div><div class="connection-row"><div class="conn-icon">聊</div><div class="conn-main"><strong>对话连接 C</strong><span>已验证：能整理创作说明 · 不保存到项目导出</span></div><div class="caps"><span class="pill green">可对话</span></div><div class="conn-state"><strong>可用</strong><span>昨天</span></div></div></div><div class="tech-fold"><b>技术详情已折叠：</b>连接地址、模型版本、请求模板、扩展参数和验证证据只在“查看技术详情”中显示。默认列表不出现密钥或内部能力字段。</div></div></section></main><aside class="inspector"><div class="panel-head"><strong>连接详情</strong><span>已脱敏</span></div><div class="detail-body"><div class="detail-card"><header><strong>安全</strong><span>主进程处理</span></header><div class="body"><div class="detail-row"><b>密钥状态</b><span>已保存，不回显</span></div><div class="detail-row"><b>项目导出</b><span>只包含连接引用</span></div><div class="detail-row"><b>日志</b><span>自动脱敏</span></div></div></div><div class="detail-card"><header><strong>验证证据</strong><span>折叠</span></header><div class="body">能列模型和能真实生成分开验证；失败时给出“重新验证 / 编辑连接 / 查看安全错误”。</div></div></div></aside></div>${footer()}</div>`;
+    }
+    function specBoard() {
+      return `<div class="app">${titlebar('UI 规范板')}<div class="shell spec-shell">${rail('settings')}<main class="main"><section class="screen active"><div class="spec-board"><div class="spec-head"><div><div class="eyebrow">Gravuresse vNext · UI System</div><h1>底层复杂，默认简单。</h1><p>深色媒体工作台、单一暖琥珀交互信号、主路径只投影描述 / 生成 / 选择 / 修改。</p></div><span class="pill amber">Slop Score 0 / 10 目标</span></div><div class="spec-grid"><section class="spec-card"><header><strong>颜色 Token</strong><span>媒体承担色彩，UI chrome 克制</span></header><div class="body"><div class="swatches"><div class="swatch"><div class="swatch-color" style="background:#0B0D10"></div><div class="swatch-label"><b>Primary</b><span>#0B0D10</span></div></div><div class="swatch"><div class="swatch-color" style="background:#171B20"></div><div class="swatch-label"><b>Panel</b><span>#171B20</span></div></div><div class="swatch"><div class="swatch-color" style="background:#1E232A"></div><div class="swatch-label"><b>Raised</b><span>#1E232A</span></div></div><div class="swatch"><div class="swatch-color" style="background:#F0A44B"></div><div class="swatch-label"><b>Amber</b><span>#F0A44B</span></div></div><div class="swatch"><div class="swatch-color" style="background:#F4F5F7"></div><div class="swatch-label"><b>Text</b><span>#F4F5F7</span></div></div><div class="swatch"><div class="swatch-color" style="background:#7F8894"></div><div class="swatch-label"><b>Muted</b><span>#7F8894</span></div></div><div class="swatch"><div class="swatch-color" style="background:#45B97C"></div><div class="swatch-label"><b>Success</b><span>#45B97C</span></div></div><div class="swatch"><div class="swatch-color" style="background:#E96B68"></div><div class="swatch-label"><b>Danger</b><span>#E96B68</span></div></div></div></div></section><section class="spec-card"><header><strong>字体与层级</strong><span>Windows Electron 优先</span></header><div class="body"><div class="type-samples"><div class="type-row"><b>Project Title</b><span class="sample-title">雨夜红伞短片概念</span></div><div class="type-row"><b>Section</b><span class="sample-section">生成候选</span></div><div class="type-row"><b>Body</b><span class="sample-body">用户默认只需要描述、生成、选择和修改。</span></div><div class="type-row"><b>Meta / Mono</b><span class="sample-meta">version 03 · local saved</span></div></div></div></section><section class="spec-card"><header><strong>布局约束</strong><span>主工作面优先</span></header><div class="body"><div class="layout-strip"><div>56px<br/>Rail</div><div>304px<br/>创作记录</div><div class="main-zone">Flexible<br/>步骤视图 / 候选 / 修改</div><div>332px<br/>详情折叠</div></div><p class="muted" style="line-height:1.55;margin:12px 0 0">小于 1180px 时只能保留一个侧栏；1280×720 下核心路径无遮挡。</p></div></section><section class="spec-card"><header><strong>组件样例</strong><span>一个高强调动作</span></header><div class="body"><div class="component-demo"><button class="primary">开始创作</button><button class="secondary">高级设置</button><button class="ghost-btn">展开为自由画布</button><span class="pill amber">已选</span><span class="pill green">可用</span><span class="pill blue">本轮参考</span></div></div></section><section class="spec-card" style="grid-column:1 / -1"><header><strong>Do / Don’t</strong><span>v0.3 Simple First 门禁</span></header><div class="body"><div class="rules"><div class="rule good"><strong>Do</strong><ul><li>首页只有“开始创作”一个主入口。</li><li>默认显示步骤视图和简单修改。</li><li>选中作品后再显示来源记录和生成设置。</li><li>连接页先回答能不能生成图、视频、对话。</li></ul></div><div class="rule bad"><strong>Don’t</strong><ul><li>不要让用户先选 Pipeline / 自由画布。</li><li>不要把黑盒 / 灰盒 / 白盒做成首屏三标签。</li><li>不要常驻展示 Provider、Capability、Recipe、Lineage。</li><li>不要使用紫蓝 AI 渐变或玻璃拟态堆效果。</li></ul></div></div></div></section></div></div></section></main></div>${footer()}</div>`;
+    }
+    const views = { home, creation, edit, connections, spec: specBoard };
+    document.getElementById('root').innerHTML = (views[screen] || home)();
+    document.title = `Gravuresse vNext · ${screenTitle}`;
+  </script>
 </body>
 </html>
