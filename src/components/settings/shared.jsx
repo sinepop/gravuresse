@@ -157,7 +157,7 @@ export function statusLabel(status, lang) {
 export function statusColor(status) {
   if (status === 'verified') return 'var(--success)'
   if (status === 'detected' || status === 'available' || status === 'directory_verified') return 'var(--accent)'
-  if (status === 'pending_configuration' || status === 'registration_required' || status === 'authenticated_unavailable' || status === 'unsupported' || status === 'unavailable' || status === 'connected_unverified' || status === 'pending' || status === 'exchanging') return '#f59e0b'
+  if (status === 'pending_configuration' || status === 'registration_required' || status === 'authenticated_unavailable' || status === 'unsupported' || status === 'unavailable' || status === 'connected_unverified' || status === 'pending' || status === 'exchanging') return 'var(--warning)'
   if (status === 'error') return 'var(--danger)'
   return 'var(--text-muted)'
 }

@@ -68,10 +68,10 @@ function ConnectorCard({ connector, onConnect, onCancel, onOpen, onRefresh, onDi
       {localText(lang, '授权剩余时间', 'Authorization expires in')} {formatAuthCountdown(secondsRemaining)}
     </div>}
     {connector.message && <div style={{ color: connector.status === 'error' ? 'var(--danger)' : 'var(--text-secondary)', fontSize: 12, lineHeight: 1.4 }}>{connector.message}</div>}
-    {connector.status === 'registration_required' && <div style={{ color: '#f59e0b', fontSize: 11 }}>
+    {connector.status === 'registration_required' && <div style={{ color: 'var(--warning)', fontSize: 11 }}>
       {localText(lang, '需要 Gravuresse 自有 OAuth 客户端注册信息；不会复用 Hermes 或其他第三方客户端身份。', 'A Gravuresse-owned OAuth client registration is required; Hermes and other third-party client identities are not reused.')}
     </div>}
-    {connector.status === 'authenticated_unavailable' && <div style={{ color: '#f59e0b', fontSize: 11 }}>
+    {connector.status === 'authenticated_unavailable' && <div style={{ color: 'var(--warning)', fontSize: 11 }}>
       {localText(lang, '官网认证已完成，但该连接器尚无可执行的运行时映射，暂不能用于生成。', 'Official authentication completed, but this connector has no executable runtime mapping and cannot generate yet.')}
     </div>}
     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
