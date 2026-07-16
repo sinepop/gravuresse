@@ -29,6 +29,13 @@ http://127.0.0.1:8765/docs/prototypes/gravuresse-vnext-prototype.html
 | 无限画布 | `?screen=canvas` | `screens/03-infinite-canvas.png` |
 | 连接与能力 | `?screen=connections` | `screens/04-connections.png` |
 
+## UI 规范板
+
+- 可视化源码：`gravuresse-ui-system-board.html`
+- 导出图片：`screens/05-ui-specification.png`（1920×1380）
+- 内容来源：根目录 `DESIGN.md` 与 `docs/UI-GUIDELINES.md`
+- 覆盖：颜色、字体、组件状态、空间与圆角、工作区层级、Workflow/Canvas/Lineage 分层和不可违反的体验规则
+
 ## 可交互内容
 
 - 项目、Pipeline、无限画布、连接四屏切换；
