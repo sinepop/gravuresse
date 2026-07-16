@@ -8,6 +8,8 @@ import Settings from './components/Settings'
 import TaskQueue from './components/TaskQueue'
 import ContextMenu from './components/ContextMenu'
 import Ic from './components/icons'
+import Pill from './components/ui/Pill'
+import StatusBadge from './components/ui/StatusBadge'
 import useConfig from './hooks/useConfig'
 import useChat from './hooks/useChat'
 import useCanvas from './hooks/useCanvas'
@@ -690,6 +692,7 @@ export default function App() {
 
   const videoEnabled = generalConfig.enableVideo === true
   const referenceEnabled = generalConfig.enableReference === true
+  const workspaceMode = generalConfig.workspaceMode === 'pipeline' ? 'pipeline' : 'canvas'
   const visibleModules = useMemo(
     () => MODULES.filter(module => module.id !== 'video' || videoEnabled),
     [videoEnabled]
@@ -699,11 +702,26 @@ export default function App() {
     if (!videoEnabled && activeModule === 'video') setActiveModule('image')
   }, [videoEnabled, activeModule])
 
+  // Derive active conversation title for topbar breadcrumb
+  const activeConversation = useMemo(
+    () => conversations.find(c => c.id === activeConvId) || null,
+    [conversations, activeConvId]
+  )
+  const activeConversationTitle = activeConversation?.title || ''
+  const activeTaskCount = taskQueue.tasks?.length || 0
+  const autosaveReady = Boolean(activeConvId && !conversationBusy)
+
   return (
     <div className="app-shell">
       <TitleBar onOpenSettings={() => openSettings('accounts')} lang={lang} />
       <div className="workspace-shell">
         <nav className="module-sidebar" aria-label={lang === 'en' ? 'Workspace modules' : '工作区模块'}>
+          {/* Brand block */}
+          <div className="sidebar-brand-block">
+            <div className="sidebar-brand-dot" />
+            <span className="sidebar-brand-label">Grav</span>
+          </div>
+          <div style={{ height: 8 }} />
           {visibleModules.map(module => {
             const active = activeModule === module.id
             const label = module.labels[lang] || module.labels.zh
@@ -721,8 +739,53 @@ export default function App() {
               </button>
             )
           })}
+          {/* Settings entry */}
+          <button
+            className="module-nav-button"
+            onClick={() => openSettings('accounts')}
+            title={t('settingsTitle', lang)}
+            aria-label={t('settingsTitle', lang)}
+            style={{ marginTop: 4 }}
+          >
+            <Ic n="link" size={16} sw={1.6} />
+            <span>{t('connection', lang)}</span>
+          </button>
+          {/* Status block */}
+          <div className="sidebar-status-block">
+            <div className="sidebar-status-dot" />
+            <span className="sidebar-status-label">
+              {autosaveReady ? t('statusReady', lang) : t('statusSaving', lang)}
+            </span>
+          </div>
         </nav>
         <main className="module-content">
+          {/* Workspace top bar */}
+          <div className="workspace-topbar">
+            <div className="workspace-topbar-breadcrumb">
+              <span>{activeModule === 'video' ? t('video', lang) : t('image', lang)}</span>
+              <span className="workspace-topbar-breadcrumb-sep">/</span>
+              <span>{lang === 'en' ? 'Chat' : t('chat', lang)}</span>
+            </div>
+            {activeConversationTitle && (
+              <span className="workspace-topbar-title" title={activeConversationTitle}>
+                {activeConversationTitle}
+              </span>
+            )}
+            <div className="workspace-topbar-spacer" />
+            <div className="workspace-topbar-actions">
+              <Pill variant="active" size="sm">
+                {workspaceMode === 'pipeline' ? t('workspacePipeline', lang) : t('workspaceCanvas', lang)}
+              </Pill>
+              {activeTaskCount > 0 && (
+                <StatusBadge status="saving" label={`${activeTaskCount} ${t('running', lang)}`} size="sm" />
+              )}
+              {autosaveReady && (
+                <span style={{ fontSize: 'var(--font-size-meta)', color: 'var(--text-ghost)' }}>
+                  {t('statusAutosave', lang)}
+                </span>
+              )}
+            </div>
+          </div>
           <div className="workspace-main">
             <div className="chat-pane">
                 <ChatPanel chat={chat} config={runtimeConfig} providerLists={providerLists} activeSelections={activeSelections} onConnectionModelChange={/** @param {Track} track @param {ActiveSelection} selection */ (track, selection) => setActiveSelections(current => ({ ...current, [track]: selection }))} lang={lang} generationMode={activeModule}
@@ -742,7 +805,8 @@ export default function App() {
                 onAssetAction={handleAssetAction}
                 onImportImages={handleImportImages}
                 videoEnabled={videoEnabled}
-                referenceEnabled={referenceEnabled} />
+                referenceEnabled={referenceEnabled}
+                workspaceMode={workspaceMode} />
             </div>
           </div>
         </main>
