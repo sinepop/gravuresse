@@ -5,6 +5,8 @@ import AssetCard from './AssetCard'
 import AssetDetail from './AssetDetail'
 import Ic from './icons'
 import { t } from '../i18n'
+import EmptyState from './ui/EmptyState'
+import Pill from './ui/Pill'
 
 /** @typedef {import('../types/domain').Asset} Asset */
 /** @typedef {import('../types/domain').CanvasController} CanvasController */
@@ -873,8 +875,8 @@ function isSupportedImageFile(file) {
 }
 
 /** @typedef {{ name: string, reason: string }} RejectedImageImport */
-/** @param {{ canvas: CanvasController, lang: string, onContextMenu?: (event: React.MouseEvent, asset: Asset) => void, onAssetAction?: (action: string, asset: Asset) => void | Promise<void>, onImportImages?: (options: { files?: File[], position?: { x: number, y: number } | null }) => Promise<{ canceled: boolean, imported: unknown[], rejected: RejectedImageImport[] }>, generationMode?: 'image' | 'video', videoEnabled?: boolean, referenceEnabled?: boolean }} props */
-export default function CanvasPanel({ canvas, lang, onContextMenu, onAssetAction, onImportImages, generationMode = 'image', videoEnabled = false, referenceEnabled = false }) {
+/** @param {{ canvas: CanvasController, lang: string, onContextMenu?: (event: React.MouseEvent, asset: Asset) => void, onAssetAction?: (action: string, asset: Asset) => void | Promise<void>, onImportImages?: (options: { files?: File[], position?: { x: number, y: number } | null }) => Promise<{ canceled: boolean, imported: unknown[], rejected: RejectedImageImport[] }>, generationMode?: 'image' | 'video', videoEnabled?: boolean, referenceEnabled?: boolean, workspaceMode?: 'canvas' | 'pipeline' }} props */
+export default function CanvasPanel({ canvas, lang, onContextMenu, onAssetAction, onImportImages, generationMode = 'image', videoEnabled = false, referenceEnabled = false, workspaceMode = 'canvas' }) {
   const { selectedAsset, selectedId, setSelectedId, viewMode, setViewMode } = canvas
   const modeAssets = (canvas.assets || []).filter(asset => asset.type === generationMode)
   const materialCount = modeAssets.filter(asset => asset.isMaterial === true).length
@@ -1076,6 +1078,48 @@ export default function CanvasPanel({ canvas, lang, onContextMenu, onAssetAction
   }, [canvas.allAssets, generationMode, onAssetAction, setSelectedId])
 
   const emptyTitle = showMaterialsOnly && modeAssets.length > 0 ? t('noMaterialAssets', lang) : t('canvasEmpty', lang)
+
+  // Pipeline mode: honest placeholder, no grid/free/infinite canvas
+  if (workspaceMode === 'pipeline') {
+    return (
+      <div style={{ display: 'flex', height: '100%' }}>
+        <div className="pipeline-placeholder">
+          <div className="pipeline-placeholder-icon">
+            <Ic n="layoutGrid" size={24} color="var(--text-muted)" />
+          </div>
+          <div className="pipeline-placeholder-title">
+            {t('pipelineActive', lang)}
+          </div>
+          <div className="pipeline-placeholder-desc">
+            {t('pipelinePlaceholder', lang)}
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center', marginTop: 4 }}>
+            <Pill variant="default" size="md">
+              {assets.length} {t('assetUnit', lang)}
+            </Pill>
+            {materialCount > 0 && (
+              <Pill variant="active" size="md">
+                {materialCount} {t('materialsOnly', lang)}
+              </Pill>
+            )}
+          </div>
+          <div className="pipeline-placeholder-hint">
+            {t('pipelineHint', lang)}
+          </div>
+        </div>
+        {visibleSelectedAsset && (
+          <AssetDetail asset={visibleSelectedAsset} onClose={() => setSelectedId(null)}
+            allAssets={canvas.allAssets}
+            onDelete={() => onAssetAction?.('delete', visibleSelectedAsset)}
+            onAction={onAssetAction}
+            onSelectAsset={handleSelectLinkedAsset}
+            lang={lang}
+            videoEnabled={videoEnabled}
+            referenceEnabled={referenceEnabled} />
+        )}
+      </div>
+    )
+  }
 
   return (
     <div style={{ display: 'flex', height: '100%' }}>
