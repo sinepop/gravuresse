@@ -13,7 +13,7 @@ Gravuresse v1.0 的北极星不是“更复杂的生图软件”，而是：
 
 > **一个本地优先、可配置多模型 API、由对话和 Agent 协作驱动的 AI 图像/视频创作系统，帮助用户把脑海中的画面通过多轮生成、稳定修改、上下文管理和可追溯复现逐步实现。**
 
-当前 v0.5.1 的浅色双区工作区继续作为默认入口；v1.0 在它背后增加 Project / Thread / Context / Capability / Task / Revision / Lineage / Pipeline / Canvas 等核心能力。
+当前 v0.5.1 的浅色双区工作区继续作为默认入口；v1.0 在它背后增加 Project / Thread / Context / Capability / Task / Revision / Lineage / WorkspaceMode 等核心能力。其中 Pipeline 与 Canvas 是互斥工作区形态，不是同时出现的两个主界面。
 
 原则：
 
@@ -62,8 +62,8 @@ Gravuresse 是面向个人创作者、设计学生、AI 视觉实验者和小型
 - Agent 协作式 prompt 规划；
 - 稳定修改与来源追踪；
 - 多 Thread 上下文；
-- Pipeline 高级执行视图；
-- Infinite Canvas 素材/关系视图。
+- 可切换的工作区形态：Pipeline 模式或 Canvas 模式；
+- Canvas 模式下的网格 + Infinite Canvas 素材/关系视图。
 
 ### 2.2 不是什么
 
@@ -116,18 +116,19 @@ WorkflowGraph / ContextSnapshot / CapabilityResolution / Attempt / LineageEdge
 - 对比版本；
 - 图转视频任务恢复。
 
-### 3.3 专家层：Pipeline / Agent / API / Lineage
+### 3.3 专家层：Workspace Mode / Agent / API / Lineage
 
 面向高阶用户和复杂项目。
 
 能力包括：
 
+- Workspace Mode 设置：Pipeline 或 Canvas 二选一；
 - Pipeline 高级视图；
 - 自定义 API 能力配置；
 - Agent 角色和协作链；
 - ContextSnapshot 详情；
 - Lineage / Replay 记录；
-- Infinite Canvas 关系视图；
+- Canvas 模式下的 Infinite Canvas 关系视图；
 - 参数 diff 和复现等级。
 
 ---
@@ -240,9 +241,27 @@ v1.0 需要从“素材文件”升级为“可追溯作品版本”。
 | recipe | 配方完整，但远程模型只保证尽量接近 |
 | record-only | 只保留历史记录，不承诺重做 |
 
-### 4.6 Pipeline View
+### 4.6 Workspace Mode：Pipeline 与 Canvas 二选一
 
-Pipeline 是专家视图，不是默认首页。
+v1.0 不把 Pipeline、网格和无限画布同时塞进主工作区。设置里提供“工作区形态”开关：
+
+| 模式 | 主工作区 | 取消/隐藏 | 适合用户 |
+|---|---|---|---|
+| Canvas Mode | 网格 + Infinite Canvas + 素材详情 | Pipeline 节点主视图 | 日常创作、整理素材、选中继续修改 |
+| Pipeline Mode | Pipeline 节点、执行顺序、节点输出和状态 | 网格视图、自由/无限画布入口 | 专家用户编排复杂生成链路 |
+
+核心规则：
+
+- 默认 `Canvas Mode`；
+- 使用 Pipeline 形式时，取消网格和无限画布主视图；
+- 不用 Pipeline 形式时，就是网格 + 自由/无限画布形式；
+- 切换工作区形态不删除素材、消息、任务或来源记录；
+- 不承诺 Pipeline 与自由/无限画布无损互转；
+- Lineage 是历史事实层，可投影到当前工作区，但不决定工作区形态。
+
+### 4.7 Pipeline Mode
+
+Pipeline 是专家工作区形态，不是默认首页。
 
 它表达“计划怎么执行”：
 
@@ -256,15 +275,16 @@ Intent → Prompt Plan → Image Generation → Selection → Edit → Video Gen
 - 不同 Provider 的能力差异可见；
 - Pipeline 可由对话生成初稿；
 - 用户可手动调整节点；
-- 非专家用户可以完全不打开。
+- Pipeline Mode 下不显示 Grid / Free Canvas / Infinite Canvas 主视图。
 
-### 4.7 Infinite Canvas
+### 4.8 Canvas Mode：Grid + Infinite Canvas
 
 Canvas 表达“素材和想法如何摆放”，不是执行真相。
 
 能力：
 
-- 摆放图片、视频、参考图、便签、Prompt Brief；
+- Grid 用于快速浏览、筛选和选择素材；
+- Infinite Canvas 用于摆放图片、视频、参考图、便签、Prompt Brief；
 - 显示选中素材详情；
 - 可开关 Lineage overlay；
 - 可从素材发起继续生成；
@@ -274,9 +294,10 @@ Canvas 表达“素材和想法如何摆放”，不是执行真相。
 
 - 任务调度唯一真相；
 - Agent 执行状态唯一真相；
-- Pipeline 语义唯一真相。
+- Pipeline 语义唯一真相；
+- Pipeline Mode 的节点主视图。
 
-### 4.8 ContextSnapshot
+### 4.9 ContextSnapshot
 
 “完整上下文”必须变成“明确、可冻结、可解释的上下文”。
 
@@ -321,15 +342,19 @@ Canvas 表达“素材和想法如何摆放”，不是执行真相。
 
 用户添加一个自定义图像 API，填写 endpoint、auth、模型、参数 schema 和任务查询方式；系统检测能力并在生成时匹配。
 
-### AC-06：Pipeline 高级控制
+### AC-06：Workspace Mode 切换
 
-用户把当前对话转成 Pipeline，查看 Prompt refinement、Image generation、Upscale、Image-to-video 等节点，并修改某个节点参数。
+用户在设置中选择 Canvas Mode 时，主工作区显示网格 + Infinite Canvas；选择 Pipeline Mode 时，主工作区显示 Pipeline 节点、执行顺序和节点输出，并取消网格与无限画布入口。
 
-### AC-07：Canvas + Lineage
+### AC-07：Pipeline 高级控制
 
-用户在无限画布上整理素材，打开来源记录 overlay，看到候选图来自哪个 prompt、参考图、模型和任务。
+在 Pipeline Mode 下，用户把当前对话转成 Pipeline，查看 Prompt refinement、Image generation、Upscale、Image-to-video 等节点，并修改某个节点参数。
 
-### AC-08：复现记录
+### AC-08：Canvas + Lineage
+
+在 Canvas Mode 下，用户在无限画布上整理素材，打开来源记录 overlay，看到候选图来自哪个 prompt、参考图、模型和任务。
+
+### AC-09：复现记录
 
 用户打开某个结果的 Replay Recipe，看到 prompt、参考、模型、参数、context snapshot 和复现等级。
 
@@ -366,11 +391,12 @@ Canvas 表达“素材和想法如何摆放”，不是执行真相。
 - 修改模式：简单 / 稳定 / 专家；
 - Prompt diff 和参数 diff。
 
-### v1.0：Agent + Pipeline + Canvas + Lineage
+### v1.0：Agent + Workspace Mode + Lineage
 
 - Agent Planner / Critic / Model Router；
-- Pipeline View；
-- Infinite Canvas；
+- Workspace Mode 设置开关；
+- Pipeline Mode；
+- Canvas Mode：Grid + Infinite Canvas；
 - Lineage overlay；
 - ArtifactRevision；
 - Replay Recipe。
@@ -395,7 +421,7 @@ Canvas 表达“素材和想法如何摆放”，不是执行真相。
 立即停止或降级的信号：
 
 - 默认界面变成工程控制台；
-- Pipeline 和 Canvas 混成一个万能图；
+- Pipeline 和 Canvas 同时作为主工作区，或混成一个万能图；
 - Agent 可以绕过用户确认直接调用付费模型；
 - Renderer 成为任务和凭据的唯一真相；
 - 远程生成被承诺像素级复现；
@@ -412,7 +438,7 @@ Canvas 表达“素材和想法如何摆放”，不是执行真相。
 - 用户能理解本轮为什么这样生成；
 - 用户能在多 Thread 中控制上下文；
 - 用户能配置至少一种自定义 API 并完成能力检测；
-- 用户能打开 Pipeline 但不被迫使用；
+- 用户能在设置中切换 Pipeline / Canvas，且不会同时面对两套主工作区；
 - 用户能看到来源和复现等级。
 
 ### 工程指标

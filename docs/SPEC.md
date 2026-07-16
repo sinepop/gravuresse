@@ -71,8 +71,8 @@ v0.5 不做“大重构”。它做五件事：
 | `Generation` | 生成元数据 | 作为最小来源记录 |
 | `ProviderProfile` / connections | 连接、模型、调用参数 | 沿用现有体系 |
 | `VideoQueueTask` | Renderer 内视频轮询任务 | 可由持久 MessageTask 恢复 |
-| `CanvasController` | 资产列表、选中、网格/自由视图 | 保留为视图控制器 |
-| `ConfigPayload.general` | 主题、语言、字号、功能开关 | v0.5 偏好系统核心 |
+| `CanvasController` | 资产列表、选中、网格/自由视图 | 仅在 `workspaceMode='canvas'` 时作为主工作区视图控制器 |
+| `ConfigPayload.general` | 主题、语言、字号、工作区形态、功能开关 | v0.5 偏好系统核心 |
 
 ### 1.3 关键文件所有权
 
@@ -98,6 +98,7 @@ v0.5 不做“大重构”。它做五件事：
 general.theme: light | dark | system
 general.language: zh | en
 general.fontSize: small | medium | large
+general.workspaceMode: canvas | pipeline
 general.enableReference
 general.enableVideo
 general.autoSave
@@ -183,7 +184,7 @@ general.autoSave
 
 ---
 
-## 3. 偏好系统：主题、语言、字号
+## 3. 偏好系统：主题、语言、字号、工作区形态
 
 ### 3.1 数据来源
 
@@ -194,6 +195,7 @@ general: {
   theme: 'light',
   language: 'zh',
   fontSize: 'medium',
+  workspaceMode: 'canvas',
   autoSave: true,
   enableVideo: false,
   enableReference: false
@@ -208,6 +210,7 @@ general: {
 config.general.theme      -> document.documentElement.dataset.theme
 config.general.fontSize   -> --font-size-base
 config.general.language   -> lang prop / t(key, lang)
+config.general.workspaceMode -> main workspace projection
 ```
 
 要求：
@@ -215,6 +218,9 @@ config.general.language   -> lang prop / t(key, lang)
 - `theme='system'` 时由 CSS `prefers-color-scheme` 生效；
 - 语言切换即时刷新，不需要重启；
 - 字号切换不能破坏标题栏、工具栏、设置弹窗；
+- `workspaceMode='canvas'` 时挂载网格/自由画布；`workspaceMode='pipeline'` 时挂载 Pipeline 主视图；
+- Renderer 不得同时挂载 Canvas 主视图和 Pipeline 主视图；
+- 切换工作区形态只改变投影，不删除 Conversation、Message、Asset 或 Generation 数据；
 - 偏好保存失败要回滚本地 UI 或给出错误。
 
 ### 3.3 i18n 规则
@@ -254,6 +260,41 @@ config.general.language   -> lang prop / t(key, lang)
 ```
 
 不要在组件中直接写死 `#fff`、`#000` 或固定透明黑白；除非是临时媒体 mock 或明确不可主题化内容。
+
+### 3.5 Workspace mode 规则
+
+新增偏好字段：
+
+```ts
+type WorkspaceMode = 'canvas' | 'pipeline'
+```
+
+持久位置：
+
+```text
+config.general.workspaceMode
+```
+
+默认值：
+
+```text
+canvas
+```
+
+规则：
+
+| `workspaceMode` | 主工作区组件 | 必须不显示 |
+|---|---|---|
+| `canvas` | `CanvasPanel` 的 grid/free canvas 投影 | Pipeline 节点主视图 |
+| `pipeline` | 未来 `PipelinePanel` / `PipelineWorkspace` | Grid / Free Canvas / Infinite Canvas |
+
+实现要求：
+
+- 不新增第二套素材数据；Pipeline 模式的节点输出继续引用现有 `Asset` / `Generation`；
+- 不把自由画布改造成 Pipeline 执行引擎；
+- 不承诺 Pipeline 与自由画布无损互转；
+- 设置项进入 `Settings.jsx` 通用偏好区，文案进入 `src/i18n.js`；
+- `electron/security/sanitize.js` 和配置合并逻辑必须允许并校验 `workspaceMode`，非法值回退为 `canvas`。
 
 ---
 
@@ -396,7 +437,7 @@ type MessageTaskP0Additions = {
 
 ### 5.4 偏好字段不进入 Conversation
 
-主题、语言、字号是应用偏好，不是创作记录数据。不得写入每个 Conversation。
+主题、语言、字号、工作区形态是应用偏好，不是创作记录数据。不得写入每个 Conversation。
 
 正确位置：
 
@@ -404,6 +445,7 @@ type MessageTaskP0Additions = {
 config.general.theme
 config.general.language
 config.general.fontSize
+config.general.workspaceMode
 ```
 
 错误位置：
@@ -412,6 +454,7 @@ config.general.fontSize
 Conversation.theme
 Asset.language
 Message.locale
+Conversation.workspaceMode
 ```
 
 除非未来真的支持单文档语言快照，否则不要增加这类字段。
@@ -527,7 +570,7 @@ npm run build
 
 ### Phase 1：偏好系统和设计 token
 
-- 验证 theme/language/fontSize 保存、生效和重启恢复；
+- 验证 theme/language/fontSize/workspaceMode 保存、生效和重启恢复；
 - 补齐 `system` 主题行为；
 - 补齐主路径 i18n；
 - 定义基础 Button/Pill/Panel/PreferenceRow 样式；
@@ -572,6 +615,7 @@ v0.5 P0/P0.5 完成必须满足：
 - secrets 不进入 Conversation/Asset/MessageTask；
 - 主题 light/dark/system 可用；
 - 中文/英文主路径可用；
+- 工作区形态 `canvas/pipeline` 互斥渲染，非法值回退 `canvas`；
 - 新增组件使用 token 和 i18n；
 - `npm run test:core`、`npm run typecheck`、`npm run build` 通过。
 
