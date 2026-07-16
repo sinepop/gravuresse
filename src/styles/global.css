@@ -743,6 +743,195 @@ option {
   display: none;
 }
 
+/* Workspace top bar — breadcrumb, mode badge, status */
+.workspace-topbar {
+  height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--glass-floating);
+  backdrop-filter: blur(var(--glass-blur-control)) saturate(140%);
+  -webkit-backdrop-filter: blur(var(--glass-blur-control)) saturate(140%);
+  box-shadow: inset 0 1px 0 var(--glass-specular);
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.workspace-topbar-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.workspace-topbar-breadcrumb-sep {
+  color: var(--text-ghost);
+  font-size: 10px;
+}
+
+.workspace-topbar-title {
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.workspace-topbar-spacer {
+  flex: 1;
+  min-width: 0;
+}
+
+.workspace-topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+/* Sidebar brand block */
+.sidebar-brand-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 0 4px;
+  width: 100%;
+}
+
+.sidebar-brand-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent-glow), 0 0 3px var(--accent);
+  animation: breathe 3s ease-in-out infinite;
+}
+
+.sidebar-brand-label {
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  line-height: 1;
+}
+
+/* Sidebar status block at bottom */
+.sidebar-status-block {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 0;
+  width: 100%;
+}
+
+.sidebar-status-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--success);
+}
+
+.sidebar-status-label {
+  font-size: 8px;
+  color: var(--text-ghost);
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  line-height: 1;
+}
+
+/* Pipeline placeholder — honest empty state when workspaceMode=pipeline */
+.pipeline-placeholder {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 48px 24px;
+  text-align: center;
+  background: var(--bg-primary);
+}
+
+.pipeline-placeholder-icon {
+  width: 56px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  box-shadow: var(--shadow-sm);
+}
+
+.pipeline-placeholder-title {
+  color: var(--text-secondary);
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+  font-family: var(--font-display);
+}
+
+.pipeline-placeholder-desc {
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+  max-width: 380px;
+  line-height: 1.6;
+}
+
+.pipeline-placeholder-hint {
+  color: var(--text-ghost);
+  font-size: var(--font-size-meta);
+  font-family: var(--font-mono);
+}
+
+/* Asset type badge overlay on cards */
+.asset-type-badge {
+  position: absolute;
+  bottom: 6px;
+  left: 6px;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--overlay-dark);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--border-white-subtle);
+  color: var(--text-white);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  line-height: 1.6;
+}
+
+/* Composer summary bar */
+.composer-summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--font-size-meta);
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.composer-summary-value {
+  color: var(--accent);
+  font-weight: 500;
+}
+
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .glass-shell,
   .glass-panel,
