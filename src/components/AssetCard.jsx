@@ -17,12 +17,16 @@ import useSafeMediaUrl from '../hooks/useSafeMediaUrl'
 export default function AssetCard({ asset, selected, onClick, onContextMenu }) {
   const [mediaError, setMediaError] = useState(false)
   const isVideo = asset.type === 'video'
+  const isGenerating = asset._generating === true
   const model = asset.generation?.model || asset.model || ''
   const { src } = useSafeMediaUrl(asset.url, asset.type)
 
   useEffect(() => {
     setMediaError(false)
   }, [asset.id, src])
+
+  const statusColor = isGenerating ? 'var(--accent)' : undefined
+  const statusLabel = isGenerating ? '...' : undefined
 
   return (
     <div onClick={() => onClick(asset.id)}
@@ -40,6 +44,19 @@ export default function AssetCard({ asset, selected, onClick, onContextMenu }) {
           <div className="asset-card-fallback">
             <Ic n={asset.type === 'video' ? 'film' : 'image'} size={20} />
           </div>
+        )}
+        {/* Type badge */}
+        <div className="asset-type-badge">
+          {isVideo ? 'MP4' : 'IMG'}
+        </div>
+        {/* Generating pulse overlay */}
+        {isGenerating && (
+          <div style={{
+            position: 'absolute', inset: -2, borderRadius: 'var(--radius-md)',
+            border: '2px solid var(--accent)',
+            animation: 'genPulse 1.5s ease-in-out infinite',
+            pointerEvents: 'none', zIndex: 2
+          }} />
         )}
         {selected && (
           <div className="asset-card-selected-badge">
@@ -60,7 +77,10 @@ export default function AssetCard({ asset, selected, onClick, onContextMenu }) {
       </div>
       <div className="asset-card-info">
         <div className="asset-card-label">{asset.label}</div>
-        <div className="asset-card-model">{model}</div>
+        <div className="asset-card-model">
+          {model}
+          {statusLabel && <span style={{ color: statusColor, marginLeft: 4 }}>{statusLabel}</span>}
+        </div>
       </div>
     </div>
   )

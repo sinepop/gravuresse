@@ -115,9 +115,9 @@ const zoomBtnStyle = {
 function DetailRow({ label, value }) {
   if (value === undefined || value === null || value === '') return null
   return (
-    <div style={{ display: 'flex', gap: 6 }}>
-      <span style={{ color: 'var(--text-muted)', flex: '0 0 74px' }}>{label}</span>
-      <span style={{ color: 'var(--text-secondary)', wordBreak: 'break-word' }}>{value}</span>
+    <div style={{ display: 'flex', gap: 6, alignItems: 'baseline' }}>
+      <span style={{ color: 'var(--text-muted)', flex: '0 0 74px', fontSize: 'var(--font-size-meta)', fontWeight: 500, letterSpacing: '0.2px' }}>{label}</span>
+      <span style={{ color: 'var(--text-secondary)', wordBreak: 'break-word', fontSize: 11 }}>{value}</span>
     </div>
   )
 }

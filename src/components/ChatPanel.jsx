@@ -700,6 +700,18 @@ export default function ChatPanel({ chat, config, providerLists, activeSelection
       {/* Input */}
       <div style={{ padding: '8px 14px 14px', borderTop: '1px solid var(--border-glass)', background: 'transparent' }}>
         {/* Toolbar row */}
+        <div className="composer-summary" style={{ marginBottom: 6 }}>
+          <span>{t('ratio', lang)}</span>
+          <span className="composer-summary-value">{genRatio}</span>
+          {genStyle && <>
+            <span style={{ color: 'var(--text-ghost)' }}>·</span>
+            <span>{t('style', lang)}</span>
+            <span className="composer-summary-value">{styleLabel(genStyle, lang)}</span>
+          </>}
+          <span style={{ color: 'var(--text-ghost)' }}>·</span>
+          <span>{t('resolution', lang)}</span>
+          <span className="composer-summary-value">{resolutionLabel(genResolution, lang)}</span>
+        </div>
         <div style={{
           display: 'flex', alignItems: 'center', gap: 4, marginBottom: 8, flexWrap: 'wrap'
         }}>
