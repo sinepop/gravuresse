@@ -10,10 +10,10 @@ app.on('window-all-closed', event => event.preventDefault());
 const root = path.resolve(__dirname, '..');
 const outDir = path.join(root, 'docs', 'prototypes', 'screens');
 const shots = [
-  ['home', '01-start-home.png', 1280, 900],
-  ['creation', '02-guided-creation.png', 1280, 900],
-  ['edit', '03-simple-edit.png', 1280, 900],
-  ['connections', '04-connection-wizard.png', 1280, 900],
+  ['workspace', '01-current-workspace.png', 1280, 900],
+  ['detail', '02-asset-detail-continue.png', 1280, 900],
+  ['recovery', '03-video-task-recovery.png', 1280, 900],
+  ['connections', '04-connections-models.png', 1280, 900],
   ['spec', '05-ui-specification.png', 1280, 1100],
 ];
 const mime = {
