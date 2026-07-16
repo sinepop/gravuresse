@@ -14,8 +14,14 @@ function normalizeAssetSaveParams(params) {
   return { url, label, type }
 }
 
+function crossPlatformBasename(value, fallback = 'image') {
+  const input = String(value || fallback)
+  const normalized = input.replace(/\\+/g, '/')
+  return path.posix.basename(normalized) || fallback
+}
+
 function safeImageLabel(value) {
-  const name = path.basename(String(value || 'Imported image'))
+  const name = crossPlatformBasename(value, 'Imported image')
   return name.replace(/\.(?:png|jpe?g|webp)$/i, '').slice(0, 120) || 'Imported image'
 }
 
@@ -25,7 +31,7 @@ function publicImportFailure(name, error) {
     ? raw
     : 'Unable to read or import this image'
   return {
-    name: path.basename(String(name || 'image')).slice(0, 160),
+    name: crossPlatformBasename(name, 'image').slice(0, 160),
     reason: safeReason
   }
 }
@@ -96,7 +102,7 @@ function registerAssetIpc({
   })
 
   ipcMain.handle('api:importImageBytes', async (_, params = {}) => {
-    const name = path.basename(String(params.name || 'Pasted image'))
+    const name = crossPlatformBasename(params.name, 'Pasted image')
     try {
       return { canceled: false, imported: [importBytes(name, params.mime, params.bytes)], rejected: [] }
     } catch (error) {
