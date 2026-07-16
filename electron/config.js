@@ -44,7 +44,8 @@ const DEFAULT_CONFIG = {
     theme: 'light', language: 'zh', fontSize: 'medium',
     autoSave: true, exportPath: '', apiTimeout: 60000, autoSaveImage: false,
     enableVideo: false, enableReference: false, defaultRatio: '1:1',
-    defaultStyle: '', defaultResolution: '1024', defaultDuration: 5
+    defaultStyle: '', defaultResolution: '1024', defaultDuration: 5,
+    workspaceMode: 'canvas'
   },
   canvasLayout: 'grid'
 }
