@@ -169,18 +169,18 @@ export default function Settings({ config, providerLists, onSave, onClose, onCan
           <PreferenceToggle label={lang === 'en' ? 'Video workspace' : '视频工作区'} checked={local.general?.enableVideo === true} onChange={value => saveGeneral({ enableVideo: value })} disabled={busy} />
           <PreferenceToggle label={lang === 'en' ? 'Auto-save history' : '自动保存历史'} checked={local.general?.autoSave !== false} onChange={value => saveGeneral({ autoSave: value })} disabled={busy} />
           <div style={{ flexBasis: '100%', display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>{lang === 'en' ? 'Workspace Mode' : '工作区模式'}</span>
+            <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>{t('workspaceMode', lang)}</span>
             <SegmentedControl
               options={[
-                { value: 'canvas', label: lang === 'en' ? 'Canvas' : '画布', description: lang === 'en' ? 'Grid + free/infinite canvas' : '网格 + 自由/无限画布' },
-                { value: 'pipeline', label: lang === 'en' ? 'Pipeline' : '流水线', description: lang === 'en' ? 'Staged flow; no grid or infinite canvas' : '阶段式流程；不显示网格/无限画布' }
+                { value: 'canvas', label: t('canvasMode', lang), description: t('canvasModeDesc', lang) },
+                { value: 'pipeline', label: t('pipelineMode', lang), description: t('pipelineModeDesc', lang) }
               ]}
               value={local.general?.workspaceMode === 'pipeline' ? 'pipeline' : 'canvas'}
               onChange={value => saveGeneral({ workspaceMode: value })}
               disabled={busy}
             />
           </div>
-          <span style={{ flexBasis: '100%', color: 'var(--text-muted)', fontSize: 'var(--font-size-meta)' }}>{lang === 'en' ? 'Changes are saved immediately.' : '更改会立即保存。'}</span>
+          <span style={{ flexBasis: '100%', color: 'var(--text-muted)', fontSize: 'var(--font-size-meta)' }}>{t('changesSavedImmediately', lang)}</span>
         </div>}
         <div className="settings-layout" style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
           <div className="settings-sidebar glass-shell" style={{ width: 170, borderRight: '1px solid var(--border-subtle)', padding: '12px 0', overflow: 'auto', flexShrink: 0 }}>

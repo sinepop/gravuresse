@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import Ic from './icons'
 import useSafeMediaUrl from '../hooks/useSafeMediaUrl'
+import { t } from '../i18n'
 
 /** @typedef {import('../types/domain').Asset} Asset */
 
@@ -11,10 +12,11 @@ import useSafeMediaUrl from '../hooks/useSafeMediaUrl'
  *   asset: Asset,
  *   selected: boolean,
  *   onClick: (id: string) => void,
- *   onContextMenu?: (event: React.MouseEvent, asset: Asset) => void
+ *   onContextMenu?: (event: React.MouseEvent, asset: Asset) => void,
+ *   lang?: string
  * }} props
  */
-export default function AssetCard({ asset, selected, onClick, onContextMenu }) {
+export default function AssetCard({ asset, selected, onClick, onContextMenu, lang = 'zh' }) {
   const [mediaError, setMediaError] = useState(false)
   const isVideo = asset.type === 'video'
   const isGenerating = asset._generating === true
@@ -47,7 +49,7 @@ export default function AssetCard({ asset, selected, onClick, onContextMenu }) {
         )}
         {/* Type badge */}
         <div className="asset-type-badge">
-          {isVideo ? 'MP4' : 'IMG'}
+          {t(isVideo ? 'videoAsset' : 'imageAsset', lang)}
         </div>
         {/* Generating pulse overlay */}
         {isGenerating && (

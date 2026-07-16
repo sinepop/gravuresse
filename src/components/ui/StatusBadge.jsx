@@ -17,8 +17,8 @@ export default function StatusBadge({ status, label, size = 'sm' }) {
     connected: 'var(--accent)',
     active: 'var(--success)',
     ready: 'var(--success)',
-    pending: '#f59e0b',
-    saving: '#f59e0b',
+    pending: 'var(--warning)',
+    saving: 'var(--warning)',
     error: 'var(--danger)',
     disconnected: 'var(--text-muted)'
   }

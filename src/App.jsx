@@ -764,7 +764,7 @@ export default function App() {
             <div className="workspace-topbar-breadcrumb">
               <span>{activeModule === 'video' ? t('video', lang) : t('image', lang)}</span>
               <span className="workspace-topbar-breadcrumb-sep">/</span>
-              <span>{lang === 'en' ? 'Chat' : t('chat', lang)}</span>
+              <span>{t('moduleChat', lang)}</span>
             </div>
             {activeConversationTitle && (
               <span className="workspace-topbar-title" title={activeConversationTitle}>

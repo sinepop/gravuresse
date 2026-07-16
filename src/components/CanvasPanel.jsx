@@ -5,7 +5,6 @@ import AssetCard from './AssetCard'
 import AssetDetail from './AssetDetail'
 import Ic from './icons'
 import { t } from '../i18n'
-import EmptyState from './ui/EmptyState'
 import Pill from './ui/Pill'
 
 /** @typedef {import('../types/domain').Asset} Asset */
@@ -1229,7 +1228,7 @@ export default function CanvasPanel({ canvas, lang, onContextMenu, onAssetAction
                   <div key={a.id} data-asset-card="true" style={{ position: 'relative' }}>
                     <GeneratingOverlay asset={a} />
                     <AssetCard asset={a} selected={a.id === selectedId} onClick={setSelectedId}
-                      onContextMenu={(e, asset) => onContextMenu?.(e, asset)} />
+                      onContextMenu={(e, asset) => onContextMenu?.(e, asset)} lang={lang} />
                   </div>
                 ))}
               </div>
@@ -1274,7 +1273,7 @@ export default function CanvasPanel({ canvas, lang, onContextMenu, onAssetAction
                       >
                         <GeneratingOverlay asset={a} />
                         <AssetCard asset={a} selected={a.id === selectedId} onClick={setSelectedId}
-                          onContextMenu={(e, asset) => onContextMenu?.(e, asset)} />
+                          onContextMenu={(e, asset) => onContextMenu?.(e, asset)} lang={lang} />
                       </div>
                     )
                   })}
