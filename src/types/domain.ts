@@ -71,6 +71,15 @@ export interface MessageTask {
   elapsed?: number
   batchTotal?: number
   batchDone?: number
+  /** Persisted for video task recovery across restarts */
+  providerId?: string
+  connectionId?: string
+  model?: string
+  baseUrl?: string
+  accountId?: string
+  submittedAt?: string
+  recoveredAt?: string
+  recoveryStatus?: 'resumable' | 'unknown' | 'not-resumable'
   [key: string]: unknown
 }
 
@@ -207,6 +216,7 @@ export interface VideoQueueTask {
   error: string
   onComplete?: (result: VideoPollResult) => unknown | Promise<unknown>
   onFail?: (error: string) => void
+  onRemove?: () => void
   autoSave?: boolean
   createdAt: string
 }

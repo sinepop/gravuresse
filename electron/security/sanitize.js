@@ -140,7 +140,15 @@ function sanitizeTask(task = {}) {
     startTime: Number.isFinite(Number(task.startTime)) ? Number(task.startTime) : undefined,
     batchTotal: Number.isFinite(Number(task.batchTotal)) ? Number(task.batchTotal) : undefined,
     batchDone: Number.isFinite(Number(task.batchDone)) ? Number(task.batchDone) : undefined,
-    error: cleanText(task.error, 2000) || undefined
+    error: cleanText(task.error, 2000) || undefined,
+    providerId: cleanOptionalId(task.providerId),
+    connectionId: cleanOptionalId(task.connectionId),
+    model: cleanText(task.model, 500),
+    baseUrl: sanitizeAssetUrl(task.baseUrl, 'image'),
+    accountId: cleanOptionalId(task.accountId),
+    submittedAt: cleanText(task.submittedAt, 100),
+    recoveredAt: cleanText(task.recoveredAt, 100),
+    recoveryStatus: ['resumable', 'unknown', 'not-resumable'].includes(task.recoveryStatus) ? task.recoveryStatus : undefined
   }
 }
 

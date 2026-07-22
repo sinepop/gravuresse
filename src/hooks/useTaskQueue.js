@@ -39,10 +39,12 @@ function errorMessage(error) {
 /** @param {unknown} canvas */
 export default function useTaskQueue(canvas) {
   const [tasks, setTasks] = useState(/** @type {VideoQueueTask[]} */ ([]))
+  const tasksRef = useRef(/** @type {VideoQueueTask[]} */ ([]))
   const pollingRef = useRef(/** @type {Record<string, ReturnType<typeof setTimeout>>} */ ({}))
   const cancelledRef = useRef(/** @type {Set<string>} */ (new Set()))
   const inFlightRef = useRef(/** @type {Set<string>} */ (new Set()))
   const runTokenRef = useRef(/** @type {Record<string, number>} */ ({}))
+  useEffect(() => { tasksRef.current = tasks }, [tasks])
 
   const clearPolling = useCallback(/** @param {string} id */ (id) => {
     if (pollingRef.current[id]) {
@@ -153,9 +155,16 @@ export default function useTaskQueue(canvas) {
     if (hadInFlight) cancelledRef.current.add(id)
     clearPolling(id)
     delete runTokenRef.current[id]
+    const task = tasksRef.current.find(t => t.id === id)
+    task?.onRemove?.()
     setTasks(prev => prev.filter(t => t.id !== id))
     if (!hadInFlight) cancelledRef.current.delete(id)
   }, [clearPolling, hasInFlight])
 
-  return { tasks, add, retry, remove }
+  const restorePolling = useCallback(/** @param {VideoQueueTask} task */ (task) => {
+    setTasks(prev => [task, ...prev])
+    startPolling(task)
+  }, [startPolling])
+
+  return { tasks, add, retry, remove, restorePolling }
 }

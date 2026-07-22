@@ -15,6 +15,7 @@ import useChat from './hooks/useChat'
 import useCanvas from './hooks/useCanvas'
 import useTaskQueue from './hooks/useTaskQueue'
 import { formatErrorAlert, getConversationTitle, normalizeConversationRecord, normalizeImportedConversations } from './utils/conversationImport'
+import { buildGenerationMeta } from './utils/generationTasks'
 import {
   addAssetToConversationRecord,
   appendMessageToConversation,
@@ -116,6 +117,7 @@ export default function App() {
   const saveEpoch = useRef(0)
   const ensuringConversationRef = useRef(/** @type {Promise<EnsureConversationResult> | null} */ (null))
   const didLoadConversationsRef = useRef(false)
+  const didScanResumableRef = useRef(false)
 
   useEffect(() => {
     activeConvIdRef.current = activeConvId
@@ -582,6 +584,73 @@ export default function App() {
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [])
+
+  // Scan for resumable video tasks once after conversations are loaded
+  useEffect(() => {
+    if (!didLoadConversationsRef.current) return
+    if (didScanResumableRef.current) return
+    if (conversations.length === 0) return
+    didScanResumableRef.current = true
+
+    const resumableStatuses = new Set(['pending', 'queued', 'running'])
+    for (const conv of conversations) {
+      for (const msg of (conv.messages || [])) {
+        const tasks = msg.tasks || (msg.task ? [msg.task] : [])
+        tasks.forEach((task, taskIndex) => {
+          if (task.type !== 'video') return
+          if (!resumableStatuses.has(task.status)) return
+          if (!task.taskId || !task.providerId) return
+          if (task.recoveryStatus !== 'resumable') return
+          const restoreProvider = {
+            id: task.providerId,
+            connectionId: task.connectionId,
+            model: task.model,
+            baseUrl: task.baseUrl,
+            accountId: task.accountId
+          }
+          const msgId = msg.id
+          const convId = conv.id
+          const capturedTask = task
+          taskQueue.restorePolling({
+            id: `restore_${convId}_${String(msgId)}_${taskIndex}`,
+            taskId: task.taskId,
+            prompt: task.prompt || '',
+            label: task.label || t('video', lang),
+            provider: restoreProvider,
+            status: 'pending', progress: 0, videoUrl: '', error: '',
+            autoSave: true,
+            createdAt: task.submittedAt || new Date().toISOString(),
+            onComplete: async (result) => {
+              const generation = buildGenerationMeta({
+                task: capturedTask, provider: restoreProvider, mode: 'video', taskId: capturedTask.taskId
+              })
+              const asset = conversationBridge.addAsset?.(convId, {
+                type: 'video', url: result.videoUrl,
+                prompt: capturedTask.prompt, label: capturedTask.label,
+                model: capturedTask.model, generation, duration: capturedTask.duration
+              })
+              if (asset) {
+                conversationBridge.updateTask?.(convId, msgId, taskIndex, {
+                  status: 'done', assetId: asset.id,
+                  recoveredAt: new Date().toISOString()
+                })
+              }
+              try {
+                await window.electronAPI?.saveAssetToDisk?.({ url: result.videoUrl, label: capturedTask.label, type: 'video' })
+              } catch {}
+              return asset
+            },
+            onFail: (error) => {
+              conversationBridge.updateTask?.(convId, msgId, taskIndex, { status: 'error', error })
+            },
+            onRemove: () => {
+              conversationBridge.updateTask?.(convId, msgId, taskIndex, { recoveryStatus: undefined })
+            }
+          })
+        })
+      }
+    }
+  }, [conversations, conversationBridge, taskQueue, lang])
 
   const handleAssetAction = useCallback(/** @param {string} action @param {Asset} asset */ async (action, asset) => {
     if (action === 'moveAsset') {

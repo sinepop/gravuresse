@@ -889,6 +889,25 @@ const legacyTaskMessage = mainSanitize._test.sanitizeMessage({
   tasks: [{ id: 't-legacy', type: 'image', status: 'pending', label: '旧任务', prompt: 'legacy english prompt' }]
 })
 assert.equal(legacyTaskMessage.tasks[0].prompt, 'legacy english prompt')
+const recoveryTaskMessage = mainSanitize._test.sanitizeMessage({
+  id: 'm-recovery',
+  role: 'assistant',
+  content: 'video task with recovery fields',
+  tasks: [{
+    id: 't-recovery', type: 'video', status: 'queued', label: '恢复测试', prompt: 'recovery prompt',
+    providerId: 'minimax', connectionId: 'conn_video_1', model: 'video-01', baseUrl: 'https://api.example.com/v1',
+    accountId: 'acct_123', submittedAt: '2026-07-22T01:00:00.000Z', recoveryStatus: 'resumable',
+    extraUnknown: 'should be dropped'
+  }]
+}).tasks[0]
+assert.equal(recoveryTaskMessage.providerId, 'minimax')
+assert.equal(recoveryTaskMessage.connectionId, 'conn_video_1')
+assert.equal(recoveryTaskMessage.model, 'video-01')
+assert.equal(recoveryTaskMessage.baseUrl, 'https://api.example.com/v1')
+assert.equal(recoveryTaskMessage.accountId, 'acct_123')
+assert.equal(recoveryTaskMessage.submittedAt, '2026-07-22T01:00:00.000Z')
+assert.equal(recoveryTaskMessage.recoveryStatus, 'resumable')
+assert.equal(recoveryTaskMessage.extraUnknown, undefined)
 const strippedImport = mainSanitize.sanitizeConversationImportPayload({
   app: 'Gravuresse',
   media: { inlined: 1, extra: 'drop' },

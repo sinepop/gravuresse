@@ -21,8 +21,9 @@ _netrc
 CLAUDE.md
 .claude/
 .codex/
-PRD.md
-SPEC-*.md
+# Prototype screenshots (regenerate via scripts/capture-*.cjs)
+docs/prototypes/screens/
+docs/prototypes/vision-screens/
 # Generated images and docs
 ChatGPT Image *.png
 图标.png

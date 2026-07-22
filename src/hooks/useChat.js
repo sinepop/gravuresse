@@ -706,7 +706,16 @@ ${modeRule}
         onFail: (error) => updateTask({ status: 'error', error })
       })
       const elapsed = Math.round((Date.now() - startTime) / 1000)
-      updateTask({ status, taskId: result.taskId, queueId: queuedTask?.id, elapsed })
+      updateTask({
+        status, taskId: result.taskId, queueId: queuedTask?.id, elapsed,
+        providerId: resolveProviderId('video', provider.id),
+        connectionId: canonicalVideo?.connection.id || '',
+        model: textValue(provider.model),
+        baseUrl: textValue(provider.baseUrl),
+        accountId: textValue(provider.accountId),
+        submittedAt: new Date().toISOString(),
+        recoveryStatus: 'resumable'
+      })
     }
   }, [config, canvas, onVideoTaskCreated, canWriteToConversation, canWriteToCurrentConversation, addAssetToConversation, updateAssetInConversation, patchTask, providerLists, getAssetFromConversation, activeSelections])
 
