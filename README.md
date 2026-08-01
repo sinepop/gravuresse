@@ -31,7 +31,7 @@
 
 ### 快速开始
 
-1. 下载 `gravuresse-Setup-2.4.0.exe` 并安装
+1. 下载 `gravuresse-Setup-2.4.1.exe` 并安装
 2. 打开程序，点击标题栏齿轮图标（或按 `Ctrl+,`）进入设置
 3. 在提供商设置 → API 密钥中输入 API Key，模型自动拉取
 4. 在聊天框输入需求，AI 先出提示词，确认后自动生成
@@ -55,7 +55,7 @@ npm run package
 
 发布包会在 `release/SHA256SUMS.txt` 生成 SHA256 校验和。正式发布时请同时上传安装包和校验和，便于用户核对下载文件。
 
-`npm run package` 会依次执行受保护清理、核心测试、类型检查、生产构建、运行时检查、Windows 打包、ASAR 检查、SHA-256、发布产物一致性验证、秘密审计、解包应用冒烟和 NSIS 安装程序冒烟。完成后 `release` 仅保留 2.4.0 安装包、blockmap、`latest.yml`、`SHA256SUMS.txt` 与 `win-unpacked`。
+`npm run package` 会依次执行受保护清理、核心测试、类型检查、生产构建、运行时检查、Windows 打包、ASAR 检查、SHA-256、发布产物一致性验证、秘密审计、解包应用冒烟和 NSIS 安装程序冒烟。完成后 `release` 仅保留当前版本安装包、blockmap、`latest.yml`、`SHA256SUMS.txt` 与 `win-unpacked`。
 
 ### 更新日志
 
@@ -98,7 +98,7 @@ Creative-generation models, providers, and APIs change quickly. Users often have
 
 ### Quick Start
 
-1. Download `gravuresse-Setup-2.4.0.exe` and install
+1. Download `gravuresse-Setup-2.4.1.exe` and install
 2. Open the app, click the gear icon in the title bar (or press `Ctrl+,`) to open Settings
 3. In Provider Settings → API Keys, enter your API key — models are fetched automatically
 4. Type your request in chat, review the prompt, and confirm to generate
@@ -122,7 +122,7 @@ npm run package
 
 Release builds should be signed when certificate environment variables are available. `npm run package` writes `release/SHA256SUMS.txt`; publish it with the installer so users can verify the download.
 
-`npm run package` runs protected cleanup, core tests, type checking, the production build, runtime checks, Windows packaging, ASAR verification, SHA-256 generation, release-artifact consistency verification, secret auditing, unpacked-app smoke, and an NSIS installer smoke. On completion, `release` contains only the 2.4.0 installer, blockmap, `latest.yml`, `SHA256SUMS.txt`, and `win-unpacked`.
+`npm run package` runs protected cleanup, core tests, type checking, the production build, runtime checks, Windows packaging, ASAR verification, SHA-256 generation, release-artifact consistency verification, secret auditing, unpacked-app smoke, and an NSIS installer smoke. On completion, `release` contains only the current-version installer, blockmap, `latest.yml`, `SHA256SUMS.txt`, and `win-unpacked`.
 
 ### Changelog
 

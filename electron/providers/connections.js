@@ -16,7 +16,7 @@ const COLLECTIONS = ['accounts', 'apiKeys', 'relays']
 const SECRET_FIELDS = ['apiKey', 'sessionToken', 'token', 'accessKey', 'secretKey', 'refreshToken', 'idToken', 'oauthToken']
 const OAUTH_ATTEMPT_TTL_MS = 10 * 60 * 1000
 const TERMINAL_ATTEMPT_RETENTION_MS = 5 * 60 * 1000
-const RELAY_PROBE_HEADERS = { Accept: 'application/json', 'User-Agent': 'Gravuresse/2.4.0' }
+const RELAY_PROBE_HEADERS = { Accept: 'application/json', 'User-Agent': 'Gravuresse/2.4.1' }
 const oauthAttempts = new Map()
 
 const ACCOUNT_CONNECTORS = [

@@ -4,7 +4,7 @@ import { basename, dirname, join, resolve } from 'node:path'
 const ROOT = resolve(process.cwd())
 const RELEASE_DIR = resolve(ROOT, 'release')
 const DIST_DIR = resolve(ROOT, 'dist')
-const version = process.env.npm_package_version || '2.4.0'
+const version = process.env.npm_package_version || '2.4.1'
 const prepare = process.argv.includes('--prepare')
 
 function assertProjectChild(target, expectedName) {
@@ -34,5 +34,5 @@ if (prepare) {
     rmSync(join(RELEASE_DIR, entry.name), { recursive: entry.isDirectory(), force: true })
     console.log(`Removed stale release artifact: release/${entry.name}`)
   }
-  console.log('Release directory finalized to the 2.4.0 artifact allowlist')
+  console.log(`Release directory finalized to the ${version} artifact allowlist`)
 }

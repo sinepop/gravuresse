@@ -31,7 +31,7 @@ test('relay detection verifies OpenAI protocol and preserves only explicit media
   assert.equal(calls[1].url, 'https://relay.example.com/v1/chat/completions')
   assert.equal(calls[0].options.headers.Authorization, 'Bearer secret')
   assert.equal(calls[0].options.headers.Accept, 'application/json')
-  assert.equal(calls[0].options.headers['User-Agent'], 'Gravuresse/2.4.0')
+  assert.equal(calls[0].options.headers['User-Agent'], 'Gravuresse/2.4.1')
   assert.equal(calls[1].body.messages[0].content, 'Reply only with OK')
   assert.equal(calls[1].body.max_tokens, 16)
   assert.equal(result.validation.evidence, 'assistant_output')
