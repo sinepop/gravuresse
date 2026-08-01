@@ -74,6 +74,27 @@ test('directory-only relay discovery accepts a pure OpenAI-compatible image inve
   assert.deepEqual(result.models.map(model => model.capability), ['image', 'image'])
 })
 
+test('directory-only relay discovery uses a custom grouped OpenAI model directory', async () => {
+  const calls = []
+  const result = await detectRelayProtocol({
+    baseUrl: 'https://image-relay.example.com/api',
+    apiKey: 'secret',
+    modelListPath: '/v1/models?group=image',
+    requireInference: false,
+    requestFn: async (url, options) => {
+      calls.push({ url: url.href, method: options.method })
+      return response({ data: [{ id: 'gpt-image-1', output_modalities: ['image'] }] })
+    }
+  })
+  assert.deepEqual(calls, [{ url: 'https://image-relay.example.com/api/v1/models?group=image', method: 'GET' }])
+  assert.equal(result.detectedProtocol, 'openai')
+  assert.deepEqual(result.detectedEndpoints, {
+    models: '/v1/models?group=image',
+    image: '/v1/images/generations'
+  })
+  assert.deepEqual(result.models.map(model => model.capability), ['image'])
+})
+
 test('directory-only relay discovery keeps video models without inventing an execution endpoint', async () => {
   const result = await detectRelayProtocol({
     baseUrl: 'https://video-relay.example.com/v1', apiKey: 'secret', requireInference: false,
@@ -307,4 +328,47 @@ test('relay protocol is committed from main-process detection, not renderer fiel
   assert.equal(runtime.providerId, 'anthropic')
   assert.equal(runtime.path, '/v1/messages')
   assert.equal(runtime.modelListPath, '/v1/models')
+})
+
+test('relay save passes and preserves a custom grouped model list path', async () => {
+  let state = { connections: { accounts: [], apiKeys: [], relays: [], defaults: {} } }
+  const config = {
+    REDACTED_API_KEY: '********',
+    load: () => structuredClone(state),
+    update: async mutator => { state = structuredClone(mutator(structuredClone(state))); return structuredClone(state) },
+    redactApiKeys: value => {
+      const copy = structuredClone(value)
+      for (const connection of copy.connections?.apiKeys || []) if (connection.apiKey) connection.apiKey = '********'
+      return copy
+    }
+  }
+  await ipcTest.saveDetectedRelay({
+    params: { connection: { id: 'relay-grouped', baseUrl: 'https://relay.example.com/api', apiKey: 'secret', modelListPath: '/v1/models?group=image' } },
+    config,
+    relayDetector: async ({ baseUrl, apiKey, modelListPath }) => {
+      assert.equal(baseUrl, 'https://relay.example.com/api')
+      assert.equal(apiKey, 'secret')
+      assert.equal(modelListPath, '/v1/models?group=image')
+      return {
+        detectedProtocol: 'openai',
+        detectedAt: '2026-07-11T00:00:00.000Z',
+        detectedEndpoints: { models: modelListPath, image: '/v1/images/generations' },
+        detectionRevision: 'grouped-revision',
+        authType: { type: 'bearer' },
+        models: [{ id: 'gpt-image-1', capability: 'image', source: 'remote' }],
+        validation: {
+          ok: true, status: 'directory_verified', level: 'model_directory',
+          checkedAt: '2026-07-11T00:00:00.000Z', latencyMs: 1,
+          endpointHost: 'relay.example.com', modelId: 'gpt-image-1', errorCode: '',
+          evidence: 'model_directory', message: 'directory'
+        }
+      }
+    }
+  })
+  assert.equal(state.connections.relays[0].modelsPath, '/v1/models?group=image')
+  assert.equal(state.connections.relays[0].modelListPath, '/v1/models?group=image')
+  assert.deepEqual(state.connections.relays[0].capabilities, ['image'])
+  const runtime = providerConfigFromConnection(state.connections.relays[0], 'image', 'gpt-image-1')
+  assert.equal(runtime.providerId, 'custom-image')
+  assert.equal(runtime.path, '/v1/images/generations')
 })

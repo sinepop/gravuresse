@@ -1,6 +1,7 @@
 const { getProvider } = require('./registry')
 const { validateGenerationRequest } = require('./validation')
 const { canUseStoredCredentials, resolveProviderIdByTrack, storedProviderForRequest } = require('./account-resolver')
+const { requestOptionsForAction } = require('./config-resolver')
 
 const REDACTED_API_KEY = '********'
 
@@ -28,11 +29,6 @@ function providerAuthType(providerDef = {}, current = {}, storedProvider = {}) {
 
 function providerRequiresCredential(providerDef = {}, current = {}, storedProvider = {}) {
   return providerAuthType(providerDef, current, storedProvider) !== 'none'
-}
-
-function requestOptionsFromConfig(stored = {}, providerConfig = {}, params = {}) {
-  const timeout = Number(params.timeout || providerConfig.timeout || stored.general?.apiTimeout)
-  return Number.isFinite(timeout) && timeout > 0 ? { timeout } : {}
 }
 
 function validationError(validation) {
@@ -87,7 +83,7 @@ function buildProviderImageTestPayload(params = {}, stored = {}) {
     ratio: params.ratio || '1:1',
     resolution: params.resolution || '1024',
     negative_prompt: params.negative_prompt || params.negativePrompt || '',
-    requestOptions: requestOptionsFromConfig(stored, storedProvider, params)
+    requestOptions: requestOptionsForAction(stored, storedProvider, 'generate', params)
   }
 
   for (const key of IMAGE_TEST_TEMPLATE_KEYS) {

@@ -24,6 +24,28 @@ test('local cache URLs are resolved before a provider receives them', () => {
   assert.deepEqual(calls, [{ url: input.sourceImageUrl, type: 'image' }])
 })
 
+test('local cache URLs in OpenAI-style vision messages are resolved before chat providers receive them', () => {
+  const input = {
+    messages: [{
+      role: 'user',
+      content: [
+        { type: 'text', text: 'describe this image' },
+        { type: 'image_url', image_url: { url: 'gravuresse-media://cache/ref.png' } }
+      ]
+    }]
+  }
+  const calls = []
+  const output = inlineProviderMediaPayload(input, (url, type) => {
+    calls.push({ url, type })
+    return 'data:image/png;base64,iVBORw0KGgo='
+  })
+
+  assert.notEqual(output, input)
+  assert.equal(input.messages[0].content[1].image_url.url, 'gravuresse-media://cache/ref.png', 'input is not mutated')
+  assert.equal(output.messages[0].content[1].image_url.url, 'data:image/png;base64,iVBORw0KGgo=')
+  assert.deepEqual(calls, [{ url: 'gravuresse-media://cache/ref.png', type: 'image' }])
+})
+
 test('ordinary HTTPS and data URLs pass through without allocation', () => {
   const input = {
     sourceImageUrl: 'https://cdn.example.com/source.png',

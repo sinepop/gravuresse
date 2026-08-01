@@ -250,10 +250,10 @@ if (findings.length) {
     const line = item.line ? `:${item.line}` : ''
     console.error(`- [${item.level}] ${item.scope} ${item.type} ${item.file}${line}`)
   }
-  process.exit(high.length ? 1 : 2)
+  process.exitCode = high.length ? 1 : 2
+} else {
+  console.log('Release secret audit passed')
+  console.log('- tracked and unignored source files scanned')
+  console.log(!SOURCE_ONLY && existsSync(RELEASE_DIR) ? '- release tree scanned' : '- release tree skipped')
+  console.log(!SOURCE_ONLY && existsSync(APP_ASAR) ? '- app.asar extracted and scanned' : '- app.asar skipped')
 }
-
-console.log('Release secret audit passed')
-console.log('- tracked and unignored source files scanned')
-console.log(!SOURCE_ONLY && existsSync(RELEASE_DIR) ? '- release tree scanned' : '- release tree skipped')
-console.log(!SOURCE_ONLY && existsSync(APP_ASAR) ? '- app.asar extracted and scanned' : '- app.asar skipped')

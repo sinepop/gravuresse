@@ -23,7 +23,7 @@ const { invalidateVideoPollSessions } = require('./video-poll-sessions')
 const { canUseStoredCredentials, resolveProviderIdByTrack, storedProviderForRequest } = require('./providers/account-resolver')
 const {
   realSecret, credentialsFromProvider, inferProviderTrack, defaultProviderBaseUrl: getDefaultBaseUrl,
-  requestOptionsFromConfig, hasTemplatePath, isTemplateConfigurableProvider: isTemplateConfigurable,
+  requestOptionsFromConfig, requestOptionsForAction, hasTemplatePath, isTemplateConfigurableProvider: isTemplateConfigurable,
   resolveRuntimeProviderConfig, resolveModelFetchConfig
 } = require('./providers/config-resolver')
 // Wire handler side-effects (registerHandler): must be required so the
@@ -365,18 +365,19 @@ async function executeProviderCall(params = {}) {
   const providerPayload = inlineProviderMediaPayload(safePayload, (url, type) => mediaCacheDataUrl(url, {
     cacheDir: MEDIA_CACHE_DIR, validateAssetBytes, type, maxBytes: MAX_ASSET_BYTES
   }))
+  const requestOptions = requestOptionsForAction(stored, providerConfig, action)
   const result = await providerPipeline.execute({
     ...providerPayload,
     credentials,
     baseUrl,
-    requestOptions: requestOptionsFromConfig(stored, providerConfig)
+    requestOptions
   })
   if (result.ok && track === 'video' && action === 'submit' && result.data?.taskId) {
     storeVideoPollSession(result.data.taskId, {
       providerId: canonicalProviderId,
       credentials,
       baseUrl,
-      requestOptions: requestOptionsFromConfig(stored, providerConfig),
+      requestOptions,
       connectionId: providerConfig.connectionId || params.connectionId || '',
       accountId: providerConfig.accountId || params.accountId || '',
       payload: pollSessionPayload(safePayload)

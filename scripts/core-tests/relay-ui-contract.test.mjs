@@ -8,6 +8,8 @@ const sharedSource = await readFile(new URL('../../src/components/settings/share
 const modelSelectorSource = await readFile(new URL('../../src/components/ModelSelector.jsx', import.meta.url), 'utf8')
 const defaultsSource = await readFile(new URL('../../src/components/settings/DefaultsPage.jsx', import.meta.url), 'utf8')
 const chatHookSource = await readFile(new URL('../../src/hooks/useChat.js', import.meta.url), 'utf8')
+const chatPanelSource = await readFile(new URL('../../src/components/ChatPanel.jsx', import.meta.url), 'utf8')
+const appSource = await readFile(new URL('../../src/App.jsx', import.meta.url), 'utf8')
 const settingsSource = await readFile(new URL('../../src/components/Settings.jsx', import.meta.url), 'utf8')
 const canvasSource = await readFile(new URL('../../src/components/CanvasPanel.jsx', import.meta.url), 'utf8')
 const i18nSource = await readFile(new URL('../../src/i18n.js', import.meta.url), 'utf8')
@@ -41,8 +43,10 @@ test('canvas uses product language for batch actions and source relationships', 
   assert.doesNotMatch(canvasSource, />[^<{]*\p{Script=Han}[^<{]*</u)
 })
 
-test('relay UI exposes only Base URL, API Key, discover and delete controls', () => {
+test('relay UI exposes only endpoint, grouped model directory, key, discover and delete controls', () => {
   assert.match(source, />Base URL\s*</)
+  assert.match(source, />Model list path\s*</)
+  assert.match(source, /\/v1\/models\?group=image/)
   assert.match(source, />API Key\s*</)
   assert.match(source, /连接并拉取模型/)
   assert.match(source, /删除/)
@@ -110,11 +114,16 @@ test('default model selectors only expose exact capability matches', () => {
 })
 
 test('relay save submits only renderer-owned intent fields', () => {
-  assert.match(source, /connection:\s*\{\s*id:\s*relay\.id,\s*baseUrl:\s*relay\.baseUrl\.trim\(\),\s*apiKey:\s*credential\s*\}/)
+  assert.match(source, /connection:\s*\{\s*id:\s*relay\.id,\s*baseUrl:\s*relay\.baseUrl\.trim\(\),\s*modelListPath:\s*relay\.modelListPath\.trim\(\),\s*apiKey:\s*credential\s*\}/)
   assert.doesNotMatch(source, /connection:\s*\{\s*\.\.\./)
   assert.doesNotMatch(source, /providerModels\?\.refresh|providerValidation\?\.run/)
   assert.doesNotMatch(source, /真实测试连接/)
   assert.match(source, /validationEvidenceLabel/)
+})
+
+test('relay directory-only validation is informational rather than a card error', () => {
+  assert.match(source, /const messageColor = validation\?\.ok === true \? 'var\(--text-muted\)' : 'var\(--danger\)'/)
+  assert.match(source, /status !== 'verified'[\s\S]*?color: messageColor/)
 })
 
 test('failed relay detection stays local and never refreshes canonical state', () => {
@@ -144,4 +153,24 @@ test('legacy relay normalization copies public summary metadata explicitly', () 
   for (const privateOrAdvancedField of ['compatibilityMode', 'authType', 'capabilities', 'modelsPath', 'pathPrefix', 'sessionToken', 'templateErrors']) {
     assert.doesNotMatch(source, new RegExp(privateOrAdvancedField), `renderer must not retain ${privateOrAdvancedField}`)
   }
+})
+
+test('local reference images expose ids and become provider source images', () => {
+  assert.match(chatHookSource, /ID: \$\{r\.id\}/)
+  assert.match(chatHookSource, /firstImageReferenceId = references\.find\(r => r\.type === 'image' && r\.id\)\?\.id/)
+  assert.match(chatHookSource, /sourceImageId = cleanId\(task\.source_image_id\) \|\| cleanId\(forcedSourceImageId\) \|\| cleanId\(fallbackReferenceSourceId\)/)
+  assert.match(chatHookSource, /sourceImageUrl: sanitizeAssetUrl\(task\.sourceImageUrl \|\| sourceAsset\?\.url \|\| '', 'image'\)/)
+  assert.match(chatHookSource, /function wantsReferenceVision/)
+  assert.match(chatHookSource, /chatProtocol === 'openai' && wantsReferenceVision\(text\)/)
+  assert.match(chatHookSource, /type: 'image_url', image_url: \{ url: ref\.url \}/)
+})
+
+test('chat composer imports dropped local images as references', () => {
+  assert.match(appSource, /onImportImages=\{handleImportImages\}/)
+  assert.match(chatPanelSource, /function hasSupportedImageTransfer/)
+  assert.match(chatPanelSource, /function imageFilesFromTransfer/)
+  assert.match(chatPanelSource, /const importReferenceFiles = useCallback/)
+  assert.match(chatPanelSource, /onDrop=\{event =>/)
+  assert.match(chatPanelSource, /onImportImages\(\{ files, position: null \}\)/)
+  assert.match(chatPanelSource, /松开以导入为参考图/)
 })

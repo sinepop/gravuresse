@@ -11,7 +11,7 @@
  * path.
  */
 import { resolveProviderId } from '../providers/aliases'
-import type { ProviderCallParams, ProviderCallResult, ProviderProfile } from '../types/domain'
+import type { ProviderCallParams, ProviderCallResult, ProviderChatContent, ProviderProfile } from '../types/domain'
 
 // Error codes that trigger legacy API fallback. These indicate the provider
 // pipeline could not resolve a handler (e.g. custom-image without native
@@ -21,10 +21,18 @@ const FALLBACK_CODES = new Set(['UNKNOWN_PROVIDER', 'UNSUPPORTED_ACTION', 'NO_HA
 type Fallback<T> = () => Promise<T>
 
 interface ChatFallbackParams {
-  history: Array<{ role: string; content: string }>
+  history: Array<{ role: string; content: ProviderChatContent }>
   system: string
   thinking: boolean
   provider: ProviderProfile
+}
+
+function legacyChatContent(content: ProviderChatContent): string {
+  if (typeof content === 'string') return content
+  return content
+    .map(part => typeof part.text === 'string' ? part.text : '')
+    .filter(Boolean)
+    .join('\n')
 }
 
 export async function callProvider<T>(params: ProviderCallParams, fallback: Fallback<T>): Promise<T> {
@@ -38,7 +46,11 @@ export async function callProvider<T>(params: ProviderCallParams, fallback: Fall
 }
 
 export function callChatProvider<T>(params: ProviderCallParams, { history, system, thinking, provider }: ChatFallbackParams): Promise<T> {
-  return callProvider<T>(params, () => window.electronAPI!.chat({ history, system, thinking }, provider) as Promise<T>)
+  return callProvider<T>(params, () => window.electronAPI!.chat({
+    history: history.map(message => ({ role: message.role, content: legacyChatContent(message.content) })),
+    system,
+    thinking
+  }, provider) as Promise<T>)
 }
 
 export function generateImageProvider(params: ProviderCallParams, imageParams: ProviderProfile & Record<string, unknown>): Promise<string> {

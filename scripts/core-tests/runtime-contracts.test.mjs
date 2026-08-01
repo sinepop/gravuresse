@@ -6,6 +6,7 @@ const require = createRequire(import.meta.url)
 const { classifyModel } = require('../../shared/modelCapabilities.cjs')
 const openAi = require('../../electron/providers/handlers/openai.js')._test
 const custom = require('../../electron/providers/handlers/custom.js')._test
+const { requestOptionsForAction, MIN_IMAGE_GENERATION_TIMEOUT_MS } = require('../../electron/providers/config-resolver.js')
 
 test('media model names are hints, not capability evidence', () => {
   assert.equal(classifyModel({ id: 'sora-2' }).capability, 'unknown')
@@ -25,6 +26,13 @@ test('OpenAI chat uses the stored validated relative endpoint', () => {
     openAi.chatCompletionsUrl('https://relay.example.com/v1').href,
     'https://relay.example.com/v1/chat/completions'
   )
+})
+
+test('image generation uses an extended timeout without slowing chat calls', () => {
+  const stored = { general: { apiTimeout: 60000 } }
+  assert.deepEqual(requestOptionsForAction(stored, {}, 'chat'), { timeout: 60000 })
+  assert.deepEqual(requestOptionsForAction(stored, {}, 'generate'), { timeout: MIN_IMAGE_GENERATION_TIMEOUT_MS })
+  assert.deepEqual(requestOptionsForAction(stored, { timeout: 420000 }, 'generate'), { timeout: 420000 })
 })
 
 test('relay UI template fields map to executor fields without overriding legacy fields', () => {

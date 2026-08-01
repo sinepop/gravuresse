@@ -156,7 +156,7 @@ export async function runProviderConnectionCoreTests(configModule) {
   assert.equal(compatibleRelay.compatibilityMode, 'openai')
   assert.deepEqual(compatibleRelay.authType, { type: 'bearer' })
   assert.deepEqual(compatibleRelay.capabilities, ['chat', 'image'])
-  assert.equal(compatibleRelay.modelsPath, '')
+  assert.equal(compatibleRelay.modelsPath, '/private/models')
   assert.equal(compatibleRelay.pathPrefix, '')
   assert.deepEqual(compatibleRelay.endpoints, {})
   assert.deepEqual(compatibleRelay.template, {})

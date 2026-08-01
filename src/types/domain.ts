@@ -4,6 +4,7 @@ export type AssetType = 'image' | 'video'
 export type MessageRole = 'user' | 'assistant'
 export type TaskStatus = 'pending' | 'generating' | 'queued' | 'running' | 'unknown' | 'done' | 'error' | 'partial'
 export type ModelCapability = 'image' | 'chat' | 'other' | 'unknown'
+export type ProviderChatContent = string | Array<Record<string, unknown>>
 
 export interface ModelRecord {
   id: string
@@ -468,7 +469,7 @@ export interface ProviderCallParams {
   action: ProviderAction
   providerId?: string
   connectionId?: string
-  messages?: Array<{ role: MessageRole | 'system'; content: string }>
+  messages?: Array<{ role: MessageRole | 'system'; content: ProviderChatContent }>
   system?: string
   thinking?: boolean
   prompt?: string

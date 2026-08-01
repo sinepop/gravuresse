@@ -970,7 +970,7 @@ export default function App() {
                   conversations={conversations} activeConvId={activeConvId}
                   onSwitchConv={handleSwitchConv} onNewConv={handleNewConv} onDeleteConv={handleDeleteConv}
                   onRenameConv={handleRenameConv} onExportConv={handleExportConv} onExportProject={handleExportProject} onImportConv={handleImportConv}
-                  onEnsureConversation={ensureActiveConversation} conversationBusy={conversationBusy} canvas={canvas}
+                  onEnsureConversation={ensureActiveConversation} onImportImages={handleImportImages} conversationBusy={conversationBusy} canvas={canvas}
                   referenceIntent={referenceIntent} onReferenceIntentConsumed={() => setReferenceIntent(null)}
                   composerIntent={composerIntent} onComposerIntentConsumed={() => setComposerIntent(null)} />
               {activeModule === 'video' && videoEnabled && (

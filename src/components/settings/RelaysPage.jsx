@@ -7,7 +7,7 @@ import { REDACTED_API_KEY, labelS, inputS, btnS, chipS, SectionHeading, localTex
 /** @typedef {import('../../types/domain').ProviderConnectionsConfig} ProviderConnectionsConfig */
 /** @typedef {import('../../types/domain').ProviderValidationStatus} ProviderValidationStatus */
 /** @typedef {Record<string, unknown>} UnknownRecord */
-/** @typedef {{ id: string, baseUrl: string, persistedBaseUrl: string, apiKey: string, hasCredential: boolean, detectedProtocol: string, detectedAt: string, detectedEndpoints: UnknownRecord | null, modelsCount: number, modelCounts: { chat: number, image: number, video: number }, validation: ProviderValidationStatus | null, cardError: string, diagnostic: string, diagnosticCopied: boolean }} RelayDraft */
+/** @typedef {{ id: string, baseUrl: string, persistedBaseUrl: string, modelListPath: string, apiKey: string, hasCredential: boolean, detectedProtocol: string, detectedAt: string, detectedEndpoints: UnknownRecord | null, modelsCount: number, modelCounts: { chat: number, image: number, video: number }, validation: ProviderValidationStatus | null, cardError: string, diagnostic: string, diagnosticCopied: boolean }} RelayDraft */
 
 /** @param {unknown} value @returns {value is UnknownRecord} */
 function isRecord(value) { return Boolean(value && typeof value === 'object' && !Array.isArray(value)) }
@@ -51,6 +51,7 @@ const EMPTY = () => ({
   id: `relay-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
   baseUrl: '',
   persistedBaseUrl: '',
+  modelListPath: '',
   apiKey: '',
   hasCredential: false,
   detectedProtocol: '',
@@ -80,6 +81,12 @@ function firstEndpointHost(endpoints) {
   return ''
 }
 
+/** @param {unknown} value @returns {string} */
+function safeEndpointPath(value) {
+  const path = String(value || '')
+  return /^\/[A-Za-z0-9._~!$&'()*+,;=:@{}/?%-]*$/.test(path) ? path : ''
+}
+
 // Deliberately copy only renderer-editable fields and public detection metadata.
 /** @param {unknown} item @returns {RelayDraft} */
 export function normalizeRelay(item) {
@@ -91,6 +98,7 @@ export function normalizeRelay(item) {
     id: String(input.id || EMPTY().id),
     baseUrl: String(input.baseUrl || ''),
     persistedBaseUrl: String(input.baseUrl || ''),
+    modelListPath: String(text(recordOf(input.detectedEndpoints).models) || text(input.modelListPath) || ''),
     apiKey: '',
     hasCredential: input.apiKey === REDACTED_API_KEY || Boolean(input.hasCredential),
     detectedProtocol: String(input.detectedProtocol || ''),
@@ -138,7 +146,7 @@ function relayFailureMessage(failure, lang) {
         ? localText(lang, '地址解析', 'URL normalization')
         : ''
   const status = Number.isInteger(input.statusCode) ? `HTTP ${input.statusCode}` : ''
-  const path = /^\/[A-Za-z0-9._~!$&'()*+,;=:@{}/-]*$/.test(String(input.endpointPath || '')) ? text(input.endpointPath) : ''
+  const path = safeEndpointPath(input.endpointPath)
   const message = text(input.message)
   return [protocol, stage, status, path, message].filter(Boolean).join(' · ')
 }
@@ -156,7 +164,7 @@ export function relayFailureDiagnostic(failure, relay, secret = '') {
     errorCode: redactDiagnosticText(input.errorCode || input.code || 'RELAY_CONNECTION_FAILED', secret),
     status: redactDiagnosticText(input.status || 'error', secret),
     endpointHost: safeHost || '',
-    endpointPath: /^\/[A-Za-z0-9._~!$&'()*+,;=:@{}/-]*$/.test(String(input.endpointPath || '')) ? text(input.endpointPath) : '',
+    endpointPath: safeEndpointPath(input.endpointPath),
     checkedAt: /^\d{4}-\d{2}-\d{2}T/.test(reportedTime) ? reportedTime : new Date().toISOString(),
     latencyMs: typeof input.latencyMs === 'number' && Number.isFinite(input.latencyMs) ? input.latencyMs : null,
     message: redactDiagnosticText(input.message || 'Relay connection failed', secret),
@@ -170,6 +178,7 @@ function RelaySummary({ relay, lang }) {
   const checkedAt = validation?.checkedAt || relay.detectedAt
   const message = validation?.message || validation?.error
   const showSummary = relay.detectedProtocol || relay.modelsCount || validation
+  const messageColor = validation?.ok === true ? 'var(--text-muted)' : 'var(--danger)'
   if (!showSummary) return null
 
   return <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 10, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)', background: 'var(--bg-surface)' }}>
@@ -187,7 +196,7 @@ function RelaySummary({ relay, lang }) {
       {host && <span style={chipS()}>{host}</span>}
       {checkedAt && <span style={chipS()}>{new Date(checkedAt).toLocaleString(lang === 'en' ? 'en-US' : 'zh-CN')}</span>}
     </div>
-    {message && validation?.status !== 'verified' && <div style={{ color: 'var(--danger)', fontSize: 12, lineHeight: 1.5 }}>{message}</div>}
+    {message && validation?.status !== 'verified' && <div style={{ color: messageColor, fontSize: 12, lineHeight: 1.5 }}>{message}</div>}
   </div>
 }
 
@@ -202,6 +211,9 @@ function RelayCard({ relay, onPatch, onSave, onRemove, busy, busyAction, lang })
     </div>
     <label style={labelS()}>Base URL
       <input value={relay.baseUrl} onChange={event => onPatch({ baseUrl: event.target.value, cardError: '', diagnostic: '', diagnosticCopied: false })} disabled={busy} placeholder="https://relay.example.com" autoComplete="url" spellCheck={false} style={inputS()} />
+    </label>
+    <label style={labelS()}>Model list path
+      <input value={relay.modelListPath} onChange={event => onPatch({ modelListPath: event.target.value, cardError: '', diagnostic: '', diagnosticCopied: false })} disabled={busy} placeholder="/v1/models or /v1/models?group=image" autoComplete="off" spellCheck={false} style={inputS()} />
     </label>
     <label style={labelS()}>API Key
       <input type="password" value={relay.apiKey} onChange={event => onPatch({ apiKey: event.target.value, cardError: '', diagnostic: '', diagnosticCopied: false })} disabled={busy} placeholder={relay.hasCredential ? REDACTED_API_KEY : localText(lang, '粘贴 API Key', 'Paste API Key')} autoComplete="off" spellCheck={false} style={inputS()} />
@@ -270,7 +282,7 @@ export default function RelaysPage({ lang, onCanonicalChange, onBusyChange }) {
     try {
       const result = await window.electronAPI?.providerConnection?.save({
         collection: 'relays',
-        connection: { id: relay.id, baseUrl: relay.baseUrl.trim(), apiKey: credential },
+        connection: { id: relay.id, baseUrl: relay.baseUrl.trim(), modelListPath: relay.modelListPath.trim(), apiKey: credential },
       })
       const outcome = result?.detectionResult || result?.modelsResult
       if (outcome?.ok !== true) {

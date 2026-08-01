@@ -78,12 +78,28 @@ function defaultProviderBaseUrl(providerId, getProvider) {
   return def?.defaults?.baseUrl || ''
 }
 
+const MIN_IMAGE_GENERATION_TIMEOUT_MS = 300000
+
 /**
  * Build request options (timeout) from stored config.
  */
-function requestOptionsFromConfig(stored = {}, providerConfig = {}) {
-  const timeout = Number(providerConfig.timeout || stored.general?.apiTimeout)
+function requestOptionsFromConfig(stored = {}, providerConfig = {}, overrides = {}) {
+  const timeout = Number(overrides.timeout || providerConfig.timeout || stored.general?.apiTimeout)
   return Number.isFinite(timeout) && timeout > 0 ? { timeout } : {}
+}
+
+/**
+ * Build request options for a specific provider action.
+ *
+ * Image generation can legitimately exceed the interactive chat timeout on
+ * relay gateways.  Keep text calls responsive, but give paid image requests a
+ * large enough deadline that slow synchronous relays can return their asset.
+ */
+function requestOptionsForAction(stored = {}, providerConfig = {}, action = '', overrides = {}) {
+  const options = requestOptionsFromConfig(stored, providerConfig, overrides)
+  if (action !== 'generate') return options
+  const timeout = Number(options.timeout || 0)
+  return { ...options, timeout: Math.max(Number.isFinite(timeout) ? timeout : 0, MIN_IMAGE_GENERATION_TIMEOUT_MS) }
 }
 
 function providerAuthType(providerDef = {}, current = {}, storedProvider = {}) {
@@ -389,6 +405,8 @@ module.exports = {
   inferProviderTrack,
   defaultProviderBaseUrl,
   requestOptionsFromConfig,
+  requestOptionsForAction,
+  MIN_IMAGE_GENERATION_TIMEOUT_MS,
   providerAuthType,
   providerRequiresCredential,
   hasTemplatePath,

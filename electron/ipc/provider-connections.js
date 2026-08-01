@@ -28,6 +28,22 @@ function isPlainObject(value) {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value))
 }
 
+function safeEndpointPath(value) {
+  const path = String(value || '')
+  return /^\/[A-Za-z0-9._~!$&'()*+,;=:@{}/?%-]*$/.test(path) ? path : ''
+}
+
+function modelListPathFromEndpointUrl(value) {
+  try {
+    const parsed = new URL(String(value || ''))
+    const path = parsed.pathname.replace(/\/+$/, '') || '/'
+    if (!/\/models$/i.test(path)) return ''
+    return `${path}${parsed.search}`
+  } catch {
+    return ''
+  }
+}
+
 async function mutateConfig(config, mutator) {
   if (typeof config.update === 'function') return config.update(mutator)
   const next = mutator(config.load())
@@ -136,6 +152,7 @@ async function saveDetectedRelay({ params, config, requestOptionsFromConfig, rel
   const current = config.load()
   const existing = (current.connections?.relays || []).find(item => item.id === id) || null
   const submittedKey = typeof input.apiKey === 'string' ? input.apiKey : ''
+  const submittedModelListPath = String(input.modelListPath || input.modelsPath || '').trim() || modelListPathFromEndpointUrl(baseUrl)
   const sameEndpoint = existing && sameRelayEndpoint(existing.baseUrl, baseUrl)
   const apiKey = submittedKey && submittedKey !== config.REDACTED_API_KEY
     ? submittedKey
@@ -143,10 +160,17 @@ async function saveDetectedRelay({ params, config, requestOptionsFromConfig, rel
   let candidate
   try {
     if (Buffer.byteLength(apiKey, 'utf8') > 16 * 1024) throw new Error('Relay API key is too large')
-    candidate = sanitizeConnection({ id, baseUrl: normalizeRelayBaseUrl(baseUrl), apiKey, compatibilityMode: 'openai' }, 'relays')
+    candidate = sanitizeConnection({
+      id,
+      baseUrl: normalizeRelayBaseUrl(baseUrl),
+      apiKey,
+      modelListPath: submittedModelListPath,
+      compatibilityMode: 'openai'
+    }, 'relays')
     const detected = await relayDetector({
       baseUrl: candidate.baseUrl,
       apiKey: candidate.apiKey,
+      modelListPath: candidate.modelsPath || candidate.modelListPath || '',
       requestOptions: requestOptionsFor(requestOptionsFromConfig, current, candidate),
       requireInference: false
     })
@@ -185,6 +209,7 @@ async function saveDetectedRelay({ params, config, requestOptionsFromConfig, rel
       detectedAt: detected.detectedAt,
       detectedEndpoints: detected.detectedEndpoints,
       detectionRevision: revision,
+      modelListPath: candidate.modelsPath || '',
       authType: detected.authType,
       capabilities,
       models: detected.models,
@@ -234,7 +259,7 @@ async function saveDetectedRelay({ params, config, requestOptionsFromConfig, rel
         stage: item?.stage === 'inference' ? 'inference' : 'directory',
         statusCode: Number.isInteger(item?.statusCode) ? item.statusCode : null,
         endpointHost: /^[a-z0-9.-]+(?::\d+)?$/i.test(String(item?.endpointHost || '')) ? item.endpointHost : '',
-        endpointPath: /^\/[A-Za-z0-9._~!$&'()*+,;=:@{}/-]*$/.test(String(item?.endpointPath || '')) ? item.endpointPath : '',
+        endpointPath: safeEndpointPath(item?.endpointPath),
         checkedAt: /^\d{4}-\d{2}-\d{2}T/.test(String(item?.checkedAt || '')) ? item.checkedAt : failure.checkedAt,
         errorCode: /^[A-Z0-9_]+$/.test(String(item?.errorCode || '')) ? item.errorCode : 'PROBE_FAILED',
         message: redactSecrets(String(item?.message || 'Probe failed').slice(0, 256), [apiKey])

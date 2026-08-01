@@ -90,6 +90,19 @@ function cleanRelativePath(value, label) {
   return cleanRelativeApiPath(value, label)
 }
 
+function endpointPathWithoutQuery(value) {
+  return String(value || '').split(/[?#]/, 1)[0].replace(/\/+$/, '') || '/'
+}
+
+function openAiSiblingPath(modelsPath, suffix) {
+  const pathOnly = endpointPathWithoutQuery(modelsPath)
+  if (/\/models$/i.test(pathOnly)) {
+    const root = pathOnly.slice(0, -'/models'.length) || ''
+    return `${root}${suffix}`
+  }
+  return suffix
+}
+
 function normalizeRelayCompatibilityMode(value) {
   return value === 'openai' ? 'openai' : 'custom'
 }
@@ -157,7 +170,7 @@ function sanitizeConnection(input, collection) {
     authType: normalizeAuthType(compatibilityMode === 'openai' ? 'bearer' : providerDef?.authType || input.authType || input.customAuth || 'bearer'),
     capabilities,
     ...(collection === 'relays' ? { compatibilityMode } : {}),
-    modelsPath: cleanRelativePath(providerDef ? fixedModelsPath : compatibilityMode === 'openai' ? '' : input.modelsPath || input.modelListPath, 'Model list path'),
+    modelsPath: cleanRelativePath(providerDef ? fixedModelsPath : input.modelsPath || input.modelListPath, 'Model list path'),
     pathPrefix: cleanRelativePath(providerDef || compatibilityMode === 'openai' ? '' : input.pathPrefix, 'API path prefix'),
     endpoints: {},
     template: !providerDef && compatibilityMode !== 'openai' ? sanitizeTemplates(input.template || input.customTemplate) : {},
@@ -250,15 +263,20 @@ function usableSecret(value) {
   return typeof value === 'string' && value && value !== '********' && !value.startsWith('__ENCRYPTED__') ? value : ''
 }
 
-function relayProbeDefinitions(baseUrl, apiKey) {
+function relayProbeDefinitions(baseUrl, apiKey, options = {}) {
+  const customOpenAiModelsPath = cleanRelativePath(options.modelListPath || options.modelsPath, 'Model list path')
+  const openAiModelsPath = customOpenAiModelsPath || '/v1/models'
+  const openAiChatPath = openAiSiblingPath(openAiModelsPath, '/chat/completions')
+  const openAiImagePath = openAiSiblingPath(openAiModelsPath, '/images/generations')
   return [
     {
       protocol: 'openai',
       authType: { type: 'bearer' },
-      modelsPath: '/v1/models',
-      chatPath: '/v1/chat/completions',
-      modelUrl: () => joinCompatibleApiUrl(baseUrl, '/v1/models'),
-      chatUrl: () => joinCompatibleApiUrl(baseUrl, '/v1/chat/completions'),
+      modelsPath: openAiModelsPath,
+      chatPath: openAiChatPath,
+      imagePath: openAiImagePath,
+      modelUrl: () => joinCompatibleApiUrl(baseUrl, openAiModelsPath),
+      chatUrl: () => joinCompatibleApiUrl(baseUrl, openAiChatPath),
       headers: { ...RELAY_PROBE_HEADERS, Authorization: `Bearer ${apiKey}` },
       body: model => buildMinimalInferenceBody('openai', model)
     },
@@ -346,12 +364,12 @@ class RelayDetectionError extends Error {
   }
 }
 
-async function detectRelayProtocol({ baseUrl, apiKey, requestOptions = {}, requestFn = request, requireInference = true }) {
+async function detectRelayProtocol({ baseUrl, apiKey, requestOptions = {}, requestFn = request, requireInference = true, modelListPath = '', modelsPath = '' }) {
   const started = Date.now()
   const safeBase = normalizeRelayBaseUrl(baseUrl)
   if (!usableSecret(apiKey)) throw new Error('Relay API key is required')
   const failures = []
-  for (const probe of relayProbeDefinitions(safeBase, apiKey)) {
+  for (const probe of relayProbeDefinitions(safeBase, apiKey, { modelListPath, modelsPath })) {
     let failureContext = { stage: 'directory', endpointHost: endpointHost(safeBase), endpointPath: probe.modelsPath }
     try {
       const directoryResponse = await requestFn(probe.modelUrl(), { method: 'GET', ...requestOptions, headers: probe.headers })
@@ -372,7 +390,7 @@ async function detectRelayProtocol({ baseUrl, apiKey, requestOptions = {}, reque
           detectedEndpoints: {
             models: probe.modelsPath,
             ...(hasChat ? { chat: probe.chatPath } : {}),
-            ...(hasImage && probe.protocol === 'openai' ? { image: '/v1/images/generations' } : {}),
+            ...(hasImage && probe.protocol === 'openai' ? { image: probe.imagePath || '/v1/images/generations' } : {}),
             ...(hasImage && probe.protocol === 'gemini' ? { image: '/v1beta/models/{model}:generateContent' } : {})
           },
           detectionRevision: crypto.randomUUID(),
@@ -414,10 +432,15 @@ async function detectRelayProtocol({ baseUrl, apiKey, requestOptions = {}, reque
         : model).sort(sortModelRecords('chat'))
       const revision = crypto.randomUUID()
       const checkedAt = new Date().toISOString()
+      const hasImage = models.some(model => model.capability === 'image')
       return {
         detectedProtocol: probe.protocol,
         detectedAt: checkedAt,
-        detectedEndpoints: { models: probe.modelsPath, chat: probe.chatPath },
+        detectedEndpoints: {
+          models: probe.modelsPath,
+          chat: probe.chatPath,
+          ...(hasImage && probe.protocol === 'openai' ? { image: probe.imagePath || '/v1/images/generations' } : {})
+        },
         detectionRevision: revision,
         authType: probe.authType,
         models,

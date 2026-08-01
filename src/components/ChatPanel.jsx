@@ -8,6 +8,7 @@ import Ic from './icons'
 import useSafeMediaUrl from '../hooks/useSafeMediaUrl'
 
 /** @typedef {import('../types/domain').Asset} Asset */
+/** @typedef {import('../types/domain').AssetType} AssetType */
 /** @typedef {import('../types/domain').CanvasController} CanvasController */
 /** @typedef {import('../types/domain').ChatController} ChatController */
 /** @typedef {import('../types/domain').ConfigPayload} ConfigPayload */
@@ -39,6 +40,31 @@ function recordOf(value) {
 /** @param {unknown} value @returns {string} */
 function text(value) {
   return typeof value === 'string' ? value : ''
+}
+
+/** @param {File | null | undefined} file @returns {file is File} */
+function isSupportedImageFile(file) {
+  return file instanceof File && (
+    ['image/png', 'image/jpeg', 'image/webp'].includes(String(file.type || '').toLowerCase()) ||
+    /\.(png|jpe?g|webp)$/i.test(file.name || '')
+  )
+}
+
+/** @param {DataTransfer | null | undefined} transfer */
+function hasSupportedImageTransfer(transfer) {
+  if (!transfer) return false
+  if (Array.from(transfer.files || []).some(isSupportedImageFile)) return true
+  return Array.from(transfer.items || []).some(item => item.kind === 'file' && /^image\/(?:png|jpe?g|webp)$/i.test(String(item.type || '')))
+}
+
+/** @param {DataTransfer | null | undefined} transfer @returns {File[]} */
+function imageFilesFromTransfer(transfer) {
+  if (!transfer) return []
+  const files = Array.from(transfer.files || []).filter(isSupportedImageFile)
+  if (files.length > 0) return files
+  return Array.from(transfer.items || [])
+    .map(item => item.kind === 'file' ? item.getAsFile() : null)
+    .filter(isSupportedImageFile)
 }
 
 /** @param {unknown} value @returns {string[]} */
@@ -238,6 +264,7 @@ const selectChipS = () => ({
  *   onExportProject?: () => unknown,
  *   onImportConv?: () => unknown,
  *   onEnsureConversation?: (options?: { forSend?: boolean }) => Promise<EnsureConversationResult>,
+ *   onImportImages?: (options?: { files?: File[], position?: { x: number, y: number } | null }) => Promise<{ canceled: boolean, imported: unknown[], rejected: unknown[] }>,
  *   conversationBusy?: boolean,
  *   canvas: CanvasController,
  *   referenceIntent?: ReferenceIntent | null,
@@ -246,13 +273,14 @@ const selectChipS = () => ({
  *   onComposerIntentConsumed?: (nonce: number) => void
  * }} props
  */
-export default function ChatPanel({ chat, config, providerLists, activeSelections = {}, onConnectionModelChange, lang, generationMode = 'image', conversations, activeConvId, onSwitchConv, onNewConv, onDeleteConv, onRenameConv, onExportConv, onExportProject, onImportConv, onEnsureConversation, conversationBusy = false, canvas, referenceIntent, onReferenceIntentConsumed, composerIntent, onComposerIntentConsumed }) {
+export default function ChatPanel({ chat, config, providerLists, activeSelections = {}, onConnectionModelChange, lang, generationMode = 'image', conversations, activeConvId, onSwitchConv, onNewConv, onDeleteConv, onRenameConv, onExportConv, onExportProject, onImportConv, onEnsureConversation, onImportImages, conversationBusy = false, canvas, referenceIntent, onReferenceIntentConsumed, composerIntent, onComposerIntentConsumed }) {
   const generalConfig = recordOf(config?.general)
   const [input, setInput] = useState('')
   const [showConvList, setShowConvList] = useState(false)
   const [showRefPicker, setShowRefPicker] = useState(false)
   const [showMaterialRefsOnly, setShowMaterialRefsOnly] = useState(false)
   const [references, setReferences] = useState(/** @type {Asset[]} */ ([]))
+  const [draggingReferenceFiles, setDraggingReferenceFiles] = useState(false)
   const [composerGenerationMeta, setComposerGenerationMeta] = useState(/** @type {GenerationSettings | null} */ (null))
   const [editingConvId, setEditingConvId] = useState(/** @type {string | null} */ (null))
   const [editTitle, setEditTitle] = useState('')
@@ -375,6 +403,31 @@ export default function ChatPanel({ chat, config, providerLists, activeSelection
     setShowRefPicker(false)
   }, [references])
 
+  const importReferenceFiles = useCallback(/** @param {File[]} files */ async (files) => {
+    if (!enableReference || typeof onImportImages !== 'function' || files.length === 0) return
+    const result = await onImportImages({ files, position: null })
+    const importedRefs = (Array.isArray(result?.imported) ? result.imported : [])
+      .map(recordOf)
+      .filter(asset => text(asset.id) && text(asset.url))
+      .map(asset => ({
+        id: text(asset.id),
+        url: text(asset.url),
+        type: /** @type {AssetType} */ (asset.type === 'video' ? 'video' : 'image'),
+        label: text(asset.label) || text(asset.name) || t('referenceImage', lang)
+      }))
+    if (importedRefs.length === 0) return
+    setReferences(prev => {
+      const seen = new Set(prev.map(ref => ref.id))
+      return [...prev, ...importedRefs.filter(ref => {
+        if (seen.has(ref.id)) return false
+        seen.add(ref.id)
+        return true
+      })]
+    })
+    setShowRefPicker(false)
+    textareaRef.current?.focus()
+  }, [enableReference, onImportImages, lang])
+
   useEffect(() => {
     const intent = referenceIntent
     const asset = intent?.asset
@@ -445,9 +498,46 @@ export default function ChatPanel({ chat, config, providerLists, activeSelection
   }
 
   const canSend = Boolean(input.trim()) && !chat.loading && !conversationBusy
+  const canDropReferenceFiles = enableReference && typeof onImportImages === 'function'
 
   return (
-    <div className="chat-panel" style={{ position: 'relative', display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+    <div
+      className="chat-panel"
+      onDragEnter={event => {
+        if (!canDropReferenceFiles || !hasSupportedImageTransfer(event.dataTransfer)) return
+        event.preventDefault()
+        setDraggingReferenceFiles(true)
+      }}
+      onDragOver={event => {
+        if (!canDropReferenceFiles || !hasSupportedImageTransfer(event.dataTransfer)) return
+        event.preventDefault()
+        event.dataTransfer.dropEffect = 'copy'
+      }}
+      onDragLeave={event => {
+        if (!(event.relatedTarget instanceof Node) || !event.currentTarget.contains(event.relatedTarget)) {
+          setDraggingReferenceFiles(false)
+        }
+      }}
+      onDrop={event => {
+        if (!canDropReferenceFiles) return
+        const files = imageFilesFromTransfer(event.dataTransfer)
+        setDraggingReferenceFiles(false)
+        if (files.length === 0) return
+        event.preventDefault()
+        importReferenceFiles(files).catch(() => {})
+      }}
+      style={{ position: 'relative', display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, outline: draggingReferenceFiles ? '2px solid var(--accent)' : 'none', outlineOffset: -3 }}
+    >
+      {draggingReferenceFiles && (
+        <div style={{
+          position: 'absolute', inset: 10, zIndex: 80, borderRadius: 'var(--radius-md)',
+          border: '1px dashed var(--border-accent)', background: 'var(--accent-soft)',
+          color: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: 13, fontWeight: 600, pointerEvents: 'none'
+        }}>
+          {lang === 'en' ? 'Drop to import as reference image' : '松开以导入为参考图'}
+        </div>
+      )}
       {/* Conversation bar */}
       <div className="chat-header" style={{
         display: 'flex', alignItems: 'center', gap: 6, padding: '12px 16px',

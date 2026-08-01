@@ -21,6 +21,7 @@ import { normalizeAuthType } from '../utils/authType'
 /** @typedef {import('../types/domain').Message} Message */
 /** @typedef {import('../types/domain').MessageTask} MessageTask */
 /** @typedef {import('../types/domain').ProviderProfile} ProviderProfile */
+/** @typedef {import('../types/domain').ProviderChatContent} ProviderChatContent */
 /** @typedef {import('../types/domain').ProviderConnection} ProviderConnection */
 /** @typedef {import('../types/domain').Track} Track */
 /** @typedef {import('../types/domain').VideoPollResult} VideoPollResult */
@@ -50,6 +51,11 @@ function textValue(value) {
 /** @param {unknown} error @returns {string} */
 function errorMessage(error) {
   return textValue(recordOf(error).message) || textValue(error) || 'Unknown error'
+}
+
+/** @param {unknown} text @returns {boolean} */
+function wantsReferenceVision(text) {
+  return /(?:识别|看图|读图|分析图片|分析这张|描述图片|描述这张|反推|提取.*提示词|生成.*提示词|image\s*to\s*prompt|prompt\s*from\s*image|caption|describe|analy[sz]e)/i.test(String(text || ''))
 }
 
 /** @param {unknown} config @param {Track} track @returns {UnknownRecord} */
@@ -420,7 +426,17 @@ export default function useChat(config, canvas, onVideoTaskCreated, activeConver
     const chatProviderDef = findProviderDef('chat', providerLists, provider.id)
 
     try {
+      /** @type {Array<{ role: Message['role'], content: ProviderChatContent }>} */
       const history = [...sourceMessages, userMsg].map(m => ({ role: m.role, content: m.content }))
+      const chatProtocol = textValue(provider.protocol) || textValue(recordOf(chatProviderDef?.chat).protocol) || textValue(chatProviderDef?.protocol)
+      const imageReferencesForVision = (references || []).filter(ref => ref.type === 'image' && ref.url).slice(0, 4)
+      if (chatProtocol === 'openai' && wantsReferenceVision(text) && imageReferencesForVision.length > 0) {
+        const latest = history[history.length - 1]
+        latest.content = [
+          { type: 'text', text: `${text}\n\n请根据随附参考图回答；如果要创建生成任务，也要把参考图 ID 写入 source_image_id。` },
+          ...imageReferencesForVision.map(ref => ({ type: 'image_url', image_url: { url: ref.url } }))
+        ]
+      }
 
       const storedImageContext = lastImageContext.current
       const latestImageAsset = sourceAssets.find(asset => asset.type === 'image' && asset.url)
@@ -444,8 +460,8 @@ export default function useChat(config, canvas, onVideoTaskCreated, activeConver
 
       const refHint = references?.length > 0
         ? `\n\n## 用户提供的参考素材
-${references.map((r, i) => `  [参考${i + 1}] ${r.type}: "${r.label}" | URL: ${r.url}`).join('\n')}
-用户提供了以上参考图片/视频，请结合这些参考素材来理解用户意图。如果是生成图片，参考其风格、构图、色彩。`
+${references.map((r, i) => `  [参考${i + 1}] ID: ${r.id} | ${r.type}: "${r.label}" | URL: ${r.url}`).join('\n')}
+如果用户要求基于参考图片生成或修改图片，必须把对应参考素材 ID 写入 source_image_id，由生图 provider 使用原图。用户明确要求看图/识图/反推提示词且当前聊天接口支持视觉输入时，参考图内容会随消息发送。`
         : ''
 
       const pendingTasks = sourceMessages
@@ -525,14 +541,18 @@ ${modeRule}
       const allowedTasks = (Array.isArray(parsed?.tasks) ? parsed.tasks.filter(isRecord) : []).filter(task => taskAllowedInMode(task, generationMode))
       if (allowedTasks.length > 0) {
         const referenceIds = references.map(r => r.id).filter(Boolean)
+        const firstImageReferenceId = references.find(r => r.type === 'image' && r.id)?.id || null
         const forcedSourceImageId = genSettings.sourceImageId || null
         /** @type {MessageTask[]} */
         const tasksData = allowedTasks.map(task => {
-          const sourceImageId = cleanId(task.source_image_id) || cleanId(forcedSourceImageId)
+          const type = task.type === 'video' ? 'video' : 'image'
+          const fallbackReferenceSourceId = firstImageReferenceId && (type === 'image' || cleanText(parsed?.intent, 100) === 'image_to_video')
+            ? firstImageReferenceId
+            : null
+          const sourceImageId = cleanId(task.source_image_id) || cleanId(forcedSourceImageId) || cleanId(fallbackReferenceSourceId)
           const sourceAsset = sourceImageId
             ? sourceAssets.find(asset => asset.id === sourceImageId) || references?.find(asset => asset.id === sourceImageId)
             : null
-          const type = task.type === 'video' ? 'video' : 'image'
           const selectedStyle = type === 'image' ? cleanText(defaultStyle, 120).trim() : ''
           const prompt = selectedStyle ? appendStyleToPrompt(task.prompt, selectedStyle) : cleanText(task.prompt)
           return {
