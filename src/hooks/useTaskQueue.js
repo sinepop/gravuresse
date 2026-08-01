@@ -31,6 +31,11 @@ function normalizePollResult(value) {
   }
 }
 
+/** @param {string} status */
+function isRemoteActiveStatus(status) {
+  return ['pending', 'queued', 'running', 'processing', 'submitted', 'in_progress'].includes(status)
+}
+
 /** @param {unknown} error */
 function errorMessage(error) {
   return isRecord(error) ? text(error.message) || 'Video task failed' : text(error) || 'Video task failed'
@@ -89,18 +94,22 @@ export default function useTaskQueue(canvas) {
       try {
         const result = normalizePollResult(await pollVideoTaskProvider(task))
         if (cancelledRef.current.has(task.id) || runTokenRef.current[task.id] !== runToken) return
+        const lastPolledAt = new Date().toISOString()
         const status = result.status
         const progressValue = result.progress
         const progress = progressValue > 0 && progressValue <= 1 ? Math.round(progressValue * 100) : progressValue
         const succeeded = status === 'succeeded'
         const hasVideoUrl = Boolean(result.videoUrl)
         const failed = status === 'failed'
+        const unknown = !failed && !(succeeded && hasVideoUrl) && !isRemoteActiveStatus(status)
+        task.onPollUpdate?.({ ...result, status: unknown ? 'unknown' : status, lastPolledAt })
         setTasks(prev => prev.map(t => t.id === task.id ? {
-          ...t, status: succeeded && hasVideoUrl ? 'completed' : failed ? 'failed' : 'running',
+          ...t, status: succeeded && hasVideoUrl ? 'completed' : failed ? 'failed' : unknown ? 'unknown' : 'running',
           progress, videoUrl: result.videoUrl || t.videoUrl, error: result.error || t.error
         } : t))
         if (succeeded && hasVideoUrl) {
-          const asset = await task.onComplete?.(result)
+          const completionResult = { ...result, lastPolledAt }
+          const asset = await task.onComplete?.(completionResult)
           if (asset && task.autoSave !== false) {
             try { await window.electronAPI?.saveAssetToDisk?.({ url: result.videoUrl, label: task.label, type: 'video' }) } catch {}
           }
@@ -117,9 +126,11 @@ export default function useTaskQueue(canvas) {
       } catch (e) {
         if (cancelledRef.current.has(task.id) || runTokenRef.current[task.id] !== runToken) return
         const message = errorMessage(e)
-        setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: 'failed', error: message } : t))
-        task.onFail?.(message)
-        cleanupTaskRefs(task.id)
+        const lastPolledAt = new Date().toISOString()
+        setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: 'unknown', error: message } : t))
+        task.onPollUpdate?.({ status: 'unknown', progress: task.progress || 0, videoUrl: task.videoUrl || '', error: message, lastPolledAt })
+        const interval = Number(task.provider?.pollInterval)
+        pollingRef.current[task.id] = setTimeout(poll, Number.isFinite(interval) && interval > 0 ? interval : 3000)
       } finally {
         inFlightRef.current.delete(inFlightKey)
         if (cancelledRef.current.has(task.id) && !hasInFlight(task.id)) cleanupTaskRefs(task.id)
@@ -135,7 +146,7 @@ export default function useTaskQueue(canvas) {
       id: `task_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       taskId: task.taskId, prompt: task.prompt || '', label: task.label || '视频生成',
       provider: task.provider, status: 'pending', progress: 0, videoUrl: '', error: '',
-      onComplete: task.onComplete, onFail: task.onFail, autoSave: task.autoSave,
+      onComplete: task.onComplete, onPollUpdate: task.onPollUpdate, onFail: task.onFail, onRemove: task.onRemove, autoSave: task.autoSave,
       createdAt: new Date().toISOString()
     }
     setTasks(prev => [item, ...prev])
@@ -146,8 +157,10 @@ export default function useTaskQueue(canvas) {
   const retry = useCallback(/** @param {VideoQueueTask} task */ (task) => {
     clearPolling(task.id)
     cancelledRef.current.delete(task.id)
-    setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: 'pending', progress: 0, error: '' } : t))
-    startPolling(task)
+    /** @type {VideoQueueTask} */
+    const nextTask = { ...task, status: 'pending', progress: 0, error: '' }
+    setTasks(prev => prev.map(t => t.id === task.id ? nextTask : t))
+    startPolling(nextTask)
   }, [clearPolling, startPolling])
 
   const remove = useCallback(/** @param {string} id */ (id) => {

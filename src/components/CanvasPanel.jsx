@@ -9,6 +9,7 @@ import Pill from './ui/Pill'
 
 /** @typedef {import('../types/domain').Asset} Asset */
 /** @typedef {import('../types/domain').CanvasController} CanvasController */
+/** @typedef {import('../types/domain').CanvasDrawingItem} CanvasDrawingItem */
 /** @typedef {Parameters<typeof Ic>[0]['n']} IconName */
 /** @typedef {'select' | 'move' | 'pencil' | 'rect' | 'circle' | 'line' | 'text'} ToolId */
 /** @typedef {{ x: number, y: number }} Point */
@@ -256,27 +257,45 @@ const zoomCtrlBtn = {
   transition: 'background 0.2s ease, color 0.2s ease'
 }
 
-/** @param {{ tool: ToolId, color: string, width: number, scale: number, canvasRef: React.RefObject<HTMLCanvasElement | null>, lang: string }} props */
-function DrawingOverlay({ tool, color, width: strokeWidth, scale, canvasRef, lang }) {
+/** @param {CanvasDrawingItem} item */
+function drawingStroke(item) {
+  return item.style?.strokeColor || item.style?.fillColor || '#E8A849'
+}
+
+/** @param {{ item: CanvasDrawingItem }} props */
+function DrawingItem({ item }) {
+  const stroke = drawingStroke(item)
+  const strokeWidth = item.style?.strokeWidth || 2
+  if (item.tool === 'pencil') {
+    const points = (item.points || []).map(point => `${point.x},${point.y}`).join(' ')
+    return <polyline points={points} fill="none" stroke={stroke} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
+  }
+  if (item.tool === 'rect') {
+    const x = item.width && item.width < 0 ? item.x + item.width : item.x
+    const y = item.height && item.height < 0 ? item.y + item.height : item.y
+    return <rect x={x} y={y} width={Math.abs(item.width || 0)} height={Math.abs(item.height || 0)} fill="none" stroke={stroke} strokeWidth={strokeWidth} rx="4" />
+  }
+  if (item.tool === 'circle') {
+    const width = item.width || 0
+    const height = item.height || 0
+    return <ellipse cx={item.x + width / 2} cy={item.y + height / 2} rx={Math.abs(width) / 2} ry={Math.abs(height) / 2} fill="none" stroke={stroke} strokeWidth={strokeWidth} />
+  }
+  if (item.tool === 'line') {
+    return <line x1={item.x} y1={item.y} x2={item.x + (item.width || 0)} y2={item.y + (item.height || 0)} stroke={stroke} strokeWidth={strokeWidth} strokeLinecap="round" />
+  }
+  if (item.tool === 'text') {
+    return <text x={item.x} y={item.y} fill={item.style?.fillColor || stroke} fontSize={item.style?.fontSize || 20} fontFamily="var(--font-body), sans-serif">{item.text}</text>
+  }
+  return null
+}
+
+/** @param {{ tool: ToolId, color: string, width: number, scale: number, items: CanvasDrawingItem[], onAddDrawing: (item: Partial<CanvasDrawingItem>) => void, lang: string }} props */
+function DrawingOverlay({ tool, color, width: strokeWidth, scale, items, onAddDrawing, lang }) {
   const drawing = useRef(false)
   const start = useRef({ x: 0, y: 0 })
-  const snapshot = useRef(/** @type {ImageData | null} */ (null))
+  const overlayRef = useRef(/** @type {SVGSVGElement | null} */ (null))
+  const [draft, setDraft] = useState(/** @type {CanvasDrawingItem | null} */ (null))
   const [spacePan, setSpacePan] = useState(false)
-
-  useEffect(() => {
-    const c = canvasRef.current
-    if (!c) return
-    const parent = c.parentElement
-    if (!parent) return
-    const resize = () => {
-      c.width = parent.clientWidth
-      c.height = parent.clientHeight
-    }
-    resize()
-    const obs = new ResizeObserver(resize)
-    obs.observe(parent)
-    return () => obs.disconnect()
-  }, [canvasRef])
 
   useEffect(() => {
     /** @param {KeyboardEvent} e */
@@ -291,96 +310,101 @@ function DrawingOverlay({ tool, color, width: strokeWidth, scale, canvasRef, lan
     }
   }, [])
 
-  /** @param {React.MouseEvent<HTMLCanvasElement>} e @returns {Point} */
+  /** @param {React.MouseEvent<SVGSVGElement>} e @returns {Point} */
   const getPos = (e) => {
-    const c = canvasRef.current
-    if (!c) return { x: 0, y: 0 }
-    const rect = c.getBoundingClientRect()
+    const overlay = overlayRef.current
+    if (!overlay) return { x: 0, y: 0 }
+    const rect = overlay.getBoundingClientRect()
     return {
       x: (e.clientX - rect.left) / scale,
       y: (e.clientY - rect.top) / scale
     }
   }
 
-  /** @param {React.MouseEvent<HTMLCanvasElement>} e */
+  /** @param {React.MouseEvent<SVGSVGElement>} e */
   const onMouseDown = (e) => {
     if (tool === 'select' || tool === 'move') return
     if (spacePan) return
     if (e.button !== 0) return
+    e.preventDefault()
+    e.stopPropagation()
     drawing.current = true
     const pos = getPos(e)
     start.current = pos
-    const canvas = canvasRef.current
-    const ctx = canvas?.getContext('2d')
-    if (!canvas || !ctx) return
-    snapshot.current = ctx.getImageData(0, 0, canvas.width, canvas.height)
-
-    if (tool === 'pencil') {
-      ctx.beginPath()
-      ctx.moveTo(pos.x, pos.y)
-      ctx.strokeStyle = color
-      ctx.lineWidth = strokeWidth
-      ctx.lineCap = 'round'
-      ctx.lineJoin = 'round'
-    }
     if (tool === 'text') {
       drawing.current = false
       const text = prompt(t('canvasTextPrompt', lang))
-      if (text) {
-        ctx.font = `${strokeWidth * 4 + 12}px sans-serif`
-        ctx.fillStyle = color
-        ctx.fillText(text, pos.x, pos.y)
+      if (text?.trim()) {
+        onAddDrawing({
+          kind: 'drawing',
+          tool: 'text',
+          x: pos.x,
+          y: pos.y,
+          text: text.trim(),
+          style: {
+            fillColor: color,
+            strokeColor: color,
+            strokeWidth,
+            fontSize: strokeWidth * 4 + 12
+          }
+        })
       }
+      return
     }
+    setDraft({
+      id: `draft_${Date.now()}`,
+      kind: 'drawing',
+      tool,
+      x: pos.x,
+      y: pos.y,
+      width: 0,
+      height: 0,
+      points: tool === 'pencil' ? [pos] : undefined,
+      style: {
+        strokeColor: color,
+        fillColor: color,
+        strokeWidth
+      }
+    })
   }
 
-  /** @param {React.MouseEvent<HTMLCanvasElement>} e */
+  /** @param {React.MouseEvent<SVGSVGElement>} e */
   const onMouseMove = (e) => {
     if (!drawing.current) return
-    const ctx = canvasRef.current?.getContext('2d')
-    if (!ctx) return
     const pos = getPos(e)
-
-    if (tool === 'pencil') {
-      ctx.lineTo(pos.x, pos.y)
-      ctx.stroke()
-    } else if (tool === 'rect' || tool === 'circle' || tool === 'line') {
-      if (!snapshot.current) return
-      ctx.putImageData(snapshot.current, 0, 0)
-      ctx.strokeStyle = color
-      ctx.lineWidth = strokeWidth
-      ctx.lineCap = 'round'
-      if (tool === 'rect') {
-        const w = pos.x - start.current.x
-        const h = pos.y - start.current.y
-        ctx.strokeRect(start.current.x, start.current.y, w, h)
-      } else if (tool === 'circle') {
-        const rx = Math.abs(pos.x - start.current.x) / 2
-        const ry = Math.abs(pos.y - start.current.y) / 2
-        const cx = start.current.x + (pos.x - start.current.x) / 2
-        const cy = start.current.y + (pos.y - start.current.y) / 2
-        ctx.beginPath()
-        ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2)
-        ctx.stroke()
-      } else if (tool === 'line') {
-        ctx.beginPath()
-        ctx.moveTo(start.current.x, start.current.y)
-        ctx.lineTo(pos.x, pos.y)
-        ctx.stroke()
+    setDraft(prev => {
+      if (!prev) return prev
+      if (prev.tool === 'pencil') {
+        const points = [...(prev.points || []), pos]
+        return { ...prev, points, x: points[0]?.x || prev.x, y: points[0]?.y || prev.y }
       }
-    }
+      return {
+        ...prev,
+        width: pos.x - start.current.x,
+        height: pos.y - start.current.y
+      }
+    })
   }
 
-  const onMouseUp = () => { drawing.current = false }
+  const onMouseUp = () => {
+    if (!drawing.current) return
+    drawing.current = false
+    if (draft) onAddDrawing(draft)
+    setDraft(null)
+  }
 
   const isDrawingTool = tool !== 'select' && tool !== 'move'
+  const renderedItems = draft ? [...items, draft] : items
 
   return (
-    <canvas ref={canvasRef} style={{
+    <svg ref={overlayRef} width="2000" height="1500" aria-hidden="true" style={{
       position: 'absolute', inset: 0, zIndex: 5,
       pointerEvents: isDrawingTool && !spacePan ? 'auto' : 'none',
-      cursor: isDrawingTool && !spacePan ? 'crosshair' : 'default'
-    }} onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp} onMouseLeave={onMouseUp} />
+      cursor: isDrawingTool && !spacePan ? 'crosshair' : 'default',
+      overflow: 'visible'
+    }} onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp} onMouseLeave={onMouseUp}>
+      {renderedItems.map(item => <DrawingItem key={item.id} item={item} />)}
+    </svg>
   )
 }
 
@@ -876,19 +900,23 @@ function isSupportedImageFile(file) {
 /** @typedef {{ name: string, reason: string }} RejectedImageImport */
 /** @param {{ canvas: CanvasController, lang: string, onContextMenu?: (event: React.MouseEvent, asset: Asset) => void, onAssetAction?: (action: string, asset: Asset) => void | Promise<void>, onImportImages?: (options: { files?: File[], position?: { x: number, y: number } | null }) => Promise<{ canceled: boolean, imported: unknown[], rejected: RejectedImageImport[] }>, generationMode?: 'image' | 'video', videoEnabled?: boolean, referenceEnabled?: boolean, workspaceMode?: 'canvas' | 'pipeline' }} props */
 export default function CanvasPanel({ canvas, lang, onContextMenu, onAssetAction, onImportImages, generationMode = 'image', videoEnabled = false, referenceEnabled = false, workspaceMode = 'canvas' }) {
-  const { selectedAsset, selectedId, setSelectedId, viewMode, setViewMode } = canvas
+  const { selectedAsset, selectedId, setSelectedId, viewMode, setViewMode, canvasDocument } = canvas
   const modeAssets = (canvas.assets || []).filter(asset => asset.type === generationMode)
   const materialCount = modeAssets.filter(asset => asset.isMaterial === true).length
   const [showMaterialsOnly, setShowMaterialsOnly] = useState(false)
   const assets = showMaterialsOnly ? modeAssets.filter(asset => asset.isMaterial === true) : modeAssets
   const visibleSelectedAsset = assets.some(asset => asset.id === selectedId) ? selectedAsset : null
-  const [activeTool, setActiveTool] = useState(/** @type {ToolId} */ ('select'))
-  const [drawColor, setDrawColor] = useState('#E8A849')
-  const [drawWidth, setDrawWidth] = useState(2)
-  const [scale, setScale] = useState(1)
-  const [offset, setOffset] = useState({ x: 0, y: 0 })
+  const [activeTool, setActiveToolState] = useState(/** @type {ToolId} */ (canvasDocument.toolState?.activeTool || 'select'))
+  const [drawColor, setDrawColorState] = useState(canvasDocument.toolState?.drawColor || '#E8A849')
+  const [drawWidth, setDrawWidthState] = useState(canvasDocument.toolState?.drawWidth || 2)
+  const initialZoom = canvasDocument.viewport?.zoom || 1
+  const [scale, setScale] = useState(initialZoom)
+  const [offset, setOffset] = useState({
+    x: -(canvasDocument.viewport?.x || 0) * initialZoom,
+    y: -(canvasDocument.viewport?.y || 0) * initialZoom
+  })
   const [draggedAsset, setDraggedAsset] = useState(/** @type {{ id: string, x: number, y: number } | null} */ (null))
-  const [showLineage, setShowLineage] = useState(false)
+  const [showLineage, setShowLineage] = useState(canvasDocument.overlays?.lineage === true)
   const [importingImages, setImportingImages] = useState(false)
   const [importMessage, setImportMessage] = useState('')
   const [draggingFiles, setDraggingFiles] = useState(false)
@@ -898,9 +926,60 @@ export default function CanvasPanel({ canvas, lang, onContextMenu, onAssetAction
     scaleRef.current = scale
   }, [scale])
 
-  const drawingCanvasRef = useRef(/** @type {HTMLCanvasElement | null} */ (null))
   const dragCleanupRef = useRef(/** @type {(() => void) | null} */ (null))
   const viewportRef = useRef(/** @type {HTMLDivElement | null} */ (null))
+  const drawingItems = useMemo(/** @returns {CanvasDrawingItem[]} */ (
+    () => (canvasDocument.items || []).filter((item) => item.kind === 'drawing')
+  ),
+    [canvasDocument.items]
+  )
+
+  useEffect(() => {
+    const toolState = canvasDocument.toolState || {}
+    setActiveToolState(/** @type {ToolId} */ (toolState.activeTool || 'select'))
+    setDrawColorState(toolState.drawColor || '#E8A849')
+    setDrawWidthState(toolState.drawWidth || 2)
+    setShowLineage(canvasDocument.overlays?.lineage === true)
+    const zoom = canvasDocument.viewport?.zoom || 1
+    setScale(zoom)
+    setOffset({
+      x: -(canvasDocument.viewport?.x || 0) * zoom,
+      y: -(canvasDocument.viewport?.y || 0) * zoom
+    })
+  }, [canvasDocument.id, canvasDocument.conversationId])
+
+  useEffect(() => {
+    if (viewMode !== 'free') return
+    if (!Number.isFinite(scale) || scale <= 0) return
+    canvas.setViewport({
+      x: -offset.x / scale,
+      y: -offset.y / scale,
+      zoom: scale
+    })
+  }, [viewMode, scale, offset.x, offset.y, canvas.setViewport])
+
+  const setActiveTool = useCallback(/** @param {ToolId} tool */ (tool) => {
+    setActiveToolState(tool)
+    canvas.setToolState({ activeTool: tool })
+  }, [canvas.setToolState])
+
+  const setDrawColor = useCallback(/** @param {string} color */ (color) => {
+    setDrawColorState(color)
+    canvas.setToolState({ drawColor: color })
+  }, [canvas.setToolState])
+
+  const setDrawWidth = useCallback(/** @param {number} width */ (width) => {
+    setDrawWidthState(width)
+    canvas.setToolState({ drawWidth: width })
+  }, [canvas.setToolState])
+
+  const toggleLineage = useCallback(() => {
+    setShowLineage(current => {
+      const next = !current
+      canvas.setLineageVisible(next)
+      return next
+    })
+  }, [canvas.setLineageVisible])
 
   const imageFiles = useCallback(/** @param {FileList | Array<File | null> | null | undefined} files @returns {File[]} */ files => Array.from(files || []).filter(isSupportedImageFile), [])
 
@@ -982,13 +1061,7 @@ export default function CanvasPanel({ canvas, lang, onContextMenu, onAssetAction
     }
   }, [])
 
-  const handleClearDrawings = () => {
-    const c = drawingCanvasRef.current
-    if (c) {
-      const ctx = c.getContext('2d')
-      ctx?.clearRect(0, 0, c.width, c.height)
-    }
-  }
+  const handleClearDrawings = () => canvas.clearDrawings()
 
   // Assign coordinate fields (x and y) to assets if they are missing in Free Mode
   useEffect(() => {
@@ -1161,7 +1234,7 @@ export default function CanvasPanel({ canvas, lang, onContextMenu, onAssetAction
             {t('materialsOnly', lang)}
           </button>
           <button
-            onClick={() => setShowLineage(prev => !prev)}
+            onClick={toggleLineage}
             disabled={viewMode !== 'free'}
             title={t('lineageLinesTooltip', lang)}
             aria-label={t('lineageLines', lang)}
@@ -1277,7 +1350,15 @@ export default function CanvasPanel({ canvas, lang, onContextMenu, onAssetAction
                       </div>
                     )
                   })}
-                  <DrawingOverlay tool={activeTool} color={drawColor} width={drawWidth} scale={scale} canvasRef={drawingCanvasRef} lang={lang} />
+                  <DrawingOverlay
+                    tool={activeTool}
+                    color={drawColor}
+                    width={drawWidth}
+                    scale={scale}
+                    items={drawingItems}
+                    onAddDrawing={canvas.addDrawing}
+                    lang={lang}
+                  />
                 </div>
               </InfiniteCanvas>
             </>

@@ -55,6 +55,34 @@ test('release audit accepts a safe tracked tree', () => {
   }
 })
 
+test('release audit scans safe project documents instead of rejecting their filenames', () => {
+  const cwd = createRepo()
+  try {
+    writeTracked(cwd, 'AGENTS.md', 'Repository instructions without credentials.\n')
+    writeTracked(cwd, 'docs/PRD.md', 'Product requirements without credentials.\n')
+    writeTracked(cwd, 'docs/SPEC-release.md', 'Release specification without credentials.\n')
+    const result = audit(cwd)
+    assert.equal(result.status, 0, result.stderr)
+  } finally {
+    rmSync(cwd, { recursive: true, force: true })
+  }
+})
+
+test('release audit still rejects secret content inside a project document', () => {
+  const cwd = createRepo()
+  try {
+    const token = ['gl', 'pat-', 'B'.repeat(24)].join('')
+    writeTracked(cwd, 'docs/PRD.md', `Private deployment credential: ${token}\n`)
+    const result = audit(cwd)
+    const output = `${result.stdout}${result.stderr}`
+    assert.equal(result.status, 1)
+    assert.match(output, /gitlab-token docs\/PRD\.md:1/)
+    assert.doesNotMatch(output, new RegExp(token))
+  } finally {
+    rmSync(cwd, { recursive: true, force: true })
+  }
+})
+
 test('release audit checks force-tracked agent files before reading content', () => {
   const cwd = createRepo()
   try {
@@ -65,6 +93,22 @@ test('release audit checks force-tracked agent files before reading content', ()
     const output = `${result.stdout}${result.stderr}`
     assert.equal(result.status, 1)
     assert.match(output, /forbidden-file \.codex\/agents\/config\.toml/)
+    assert.doesNotMatch(output, new RegExp(marker))
+  } finally {
+    rmSync(cwd, { recursive: true, force: true })
+  }
+})
+
+test('release audit rejects force-tracked audit work products before reading content', () => {
+  const cwd = createRepo()
+  try {
+    writeTracked(cwd, '.gitignore', '.audit/\n')
+    const marker = 'audit-runtime-state-must-remain-private'
+    writeTracked(cwd, '.audit/runtime-states.json', marker, { force: true })
+    const result = audit(cwd)
+    const output = `${result.stdout}${result.stderr}`
+    assert.equal(result.status, 1)
+    assert.match(output, /forbidden-file \.audit\/runtime-states\.json/)
     assert.doesNotMatch(output, new RegExp(marker))
   } finally {
     rmSync(cwd, { recursive: true, force: true })

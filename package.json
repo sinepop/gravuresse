@@ -12,7 +12,7 @@
   "scripts": {
     "dev": "electron-vite dev --config electron.vite.config.mjs",
     "build": "electron-vite build --config electron.vite.config.mjs",
-    "test:core": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-core-data.mjs && node --test scripts/test-auth-invariants.mjs scripts/core-tests/inference-evidence.test.mjs scripts/core-tests/runtime-contracts.test.mjs scripts/core-tests/relay-protocol-detection.test.mjs scripts/core-tests/relay-ui-contract.test.mjs scripts/core-tests/provider-validation-strategies.test.mjs scripts/core-tests/release-secret-audit.test.mjs && node scripts/check-entrypoint-globals.mjs",
+    "test:core": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-core-data.mjs && node --test scripts/test-auth-invariants.mjs scripts/core-tests/inference-evidence.test.mjs scripts/core-tests/runtime-contracts.test.mjs scripts/core-tests/relay-protocol-detection.test.mjs scripts/core-tests/relay-ui-contract.test.mjs scripts/core-tests/provider-validation-strategies.test.mjs scripts/core-tests/persistence-integrity.test.mjs scripts/core-tests/provider-media.test.mjs scripts/core-tests/single-instance.test.mjs scripts/core-tests/ui-accessibility-contract.test.mjs scripts/core-tests/workflow-integrity.test.mjs scripts/core-tests/release-integrity.test.mjs scripts/core-tests/release-secret-audit.test.mjs && node scripts/check-entrypoint-globals.mjs",
     "check:runtime": "node scripts/check-runtime-packaging.mjs --dist",
     "check:asar": "node scripts/check-runtime-packaging.mjs --asar",
     "smoke:packaged": "node scripts/smoke-packaged-win.mjs",
@@ -25,7 +25,8 @@
     "release:checksums": "node scripts/release-checksums.mjs",
     "security:audit": "node scripts/audit-release-secrets.mjs --source-only",
     "release:audit": "node scripts/audit-release-secrets.mjs",
-    "package": "npm run release:prepare && npm run test:core && npm run typecheck && npm run typecheck:legacy && npm run build && npm run check:runtime && electron-builder --win && npm run release:clean && npm run check:asar && npm run release:checksums && npm run release:audit && npm run smoke:packaged && npm run smoke:installer",
+    "release:verify": "node scripts/verify-release-artifacts.mjs",
+    "package": "npm run release:prepare && npm run test:core && npm run typecheck && npm run typecheck:legacy && npm run build && npm run check:runtime && electron-builder --win && npm run release:clean && npm run check:asar && npm run release:checksums && npm run release:verify && npm run release:audit && npm run smoke:packaged && npm run smoke:installer",
     "package:dir": "npm run release:prepare && npm run test:core && npm run typecheck && npm run typecheck:legacy && npm run build && npm run check:runtime && electron-builder --win dir --publish=never && npm run release:clean && npm run check:asar && npm run release:audit && npm run smoke:packaged"
   },
   "dependencies": {

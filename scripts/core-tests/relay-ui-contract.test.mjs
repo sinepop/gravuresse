@@ -25,7 +25,8 @@ test('settings keeps General separate from the four provider pages', () => {
 
 test('settings closes only from an idle explicit backdrop or close action', () => {
   assert.match(settingsSource, /event\.target === event\.currentTarget && !busy/)
-  assert.match(settingsSource, /e\.key === 'Escape' && !saving && !pageBusy/)
+  assert.match(settingsSource, /event\.key === 'Escape'[\s\S]*?if \(!saving && !pageBusy\) onClose\(\)/)
+  assert.match(settingsSource, /event\.key !== 'Tab'/)
   assert.match(settingsSource, /const busy = saving \|\| pageBusy/)
   for (const page of ['AccountsPage', 'ApiKeysPage', 'RelaysPage', 'DefaultsPage']) {
     assert.match(settingsSource, new RegExp(`<${page}[^>]+onBusyChange=\\{setPageBusy\\}`))
@@ -93,7 +94,10 @@ test('composer model selector uses current canonical remote inventories without 
   assert.doesNotMatch(modelSelectorSource, /profiles\[0\]\?\.model/)
   assert.match(chatHookSource, /function canonicalModelSelection/)
   assert.match(chatHookSource, /item\.capability === track/)
-  assert.match(chatHookSource, /activeSelection \|\| connections\.defaults\?\.\[track\]/)
+  assert.match(chatHookSource, /const candidates = \[activeSelections\[track\], connections\.defaults\?\.\[track\]\]/)
+  assert.match(chatHookSource, /validation\.inventoryRevision === connection\?\.inventoryRevision/)
+  assert.match(chatHookSource, /if \(!currentInventory \|\| !connection \|\| !model[^\n]+\) continue/)
+  assert.doesNotMatch(modelSelectorSource, /const first = profiles\[0\]/)
   assert.doesNotMatch(chatHookSource, /canonical(?:Chat|Image|Video)\?\.provider \|\| config\?\.providers/)
   assert.doesNotMatch(chatHookSource, /function hasProviderCredential/)
   assert.match(chatHookSource, /connectionId: canonicalChat\?\.connection\.id/)

@@ -31,9 +31,13 @@ export default function AssetCard({ asset, selected, onClick, onContextMenu, lan
   const statusLabel = isGenerating ? '...' : undefined
 
   return (
-    <div onClick={() => onClick(asset.id)}
+    <button
+      type="button"
+      onClick={() => onClick(asset.id)}
       onContextMenu={(e) => { e.preventDefault(); onContextMenu?.(e, asset) }}
       className={`asset-card ${selected ? 'selected' : ''}`}
+      aria-pressed={selected}
+      title={asset.label}
     >
       <div className="asset-card-media">
         {src && !mediaError ? (
@@ -84,6 +88,6 @@ export default function AssetCard({ asset, selected, onClick, onContextMenu, lan
           {statusLabel && <span style={{ color: statusColor, marginLeft: 4 }}>{statusLabel}</span>}
         </div>
       </div>
-    </div>
+    </button>
   )
 }

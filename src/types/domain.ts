@@ -2,7 +2,7 @@ export type Track = 'chat' | 'image' | 'video'
 export type ProviderAction = 'chat' | 'generate' | 'submit' | 'poll'
 export type AssetType = 'image' | 'video'
 export type MessageRole = 'user' | 'assistant'
-export type TaskStatus = 'pending' | 'generating' | 'queued' | 'running' | 'done' | 'error' | 'partial'
+export type TaskStatus = 'pending' | 'generating' | 'queued' | 'running' | 'unknown' | 'done' | 'error' | 'partial'
 export type ModelCapability = 'image' | 'chat' | 'other' | 'unknown'
 
 export interface ModelRecord {
@@ -75,9 +75,11 @@ export interface MessageTask {
   providerId?: string
   connectionId?: string
   model?: string
+  /** Legacy-only provider fields retained for old imports; new tasks use connectionId */
   baseUrl?: string
   accountId?: string
   submittedAt?: string
+  lastPolledAt?: string
   recoveredAt?: string
   recoveryStatus?: 'resumable' | 'unknown' | 'not-resumable'
   [key: string]: unknown
@@ -100,6 +102,7 @@ export interface Conversation {
   title: string
   messages: Message[]
   assets: Asset[]
+  canvasDocument?: CanvasDocument
   active?: boolean
   createdAt?: string
   updatedAt?: string
@@ -194,13 +197,14 @@ export interface StoredConversation extends Conversation {
   id: string
 }
 
-export type QueueTaskStatus = 'pending' | 'running' | 'completed' | 'failed'
+export type QueueTaskStatus = 'pending' | 'running' | 'unknown' | 'completed' | 'failed'
 
 export interface VideoPollResult {
   status: string
   progress: number
   videoUrl: string
   error: string
+  lastPolledAt?: string
   [key: string]: unknown
 }
 
@@ -215,6 +219,7 @@ export interface VideoQueueTask {
   videoUrl: string
   error: string
   onComplete?: (result: VideoPollResult) => unknown | Promise<unknown>
+  onPollUpdate?: (result: VideoPollResult & { lastPolledAt?: string }) => void
   onFail?: (error: string) => void
   onRemove?: () => void
   autoSave?: boolean
@@ -227,26 +232,98 @@ export interface VideoQueueTaskInput {
   label?: string
   provider?: ProviderProfile
   onComplete?: VideoQueueTask['onComplete']
+  onPollUpdate?: VideoQueueTask['onPollUpdate']
   onFail?: VideoQueueTask['onFail']
+  onRemove?: VideoQueueTask['onRemove']
   autoSave?: boolean
 }
 
 export type CanvasViewMode = 'grid' | 'free'
+export type CanvasToolId = 'select' | 'move' | 'pencil' | 'rect' | 'circle' | 'line' | 'text'
+export type CanvasDrawingToolId = 'pencil' | 'rect' | 'circle' | 'line' | 'text'
+
+export interface CanvasPoint {
+  x: number
+  y: number
+}
+
+export interface CanvasViewport extends CanvasPoint {
+  zoom: number
+}
+
+export interface CanvasToolState {
+  activeTool: CanvasToolId
+  drawColor: string
+  drawWidth: number
+}
+
+export interface CanvasAssetItem {
+  id: string
+  kind: 'asset'
+  entityId: string
+  x: number
+  y: number
+  width?: number
+  height?: number
+  zIndex?: number
+}
+
+export interface CanvasDrawingItem {
+  id: string
+  kind: 'drawing'
+  tool: CanvasDrawingToolId
+  x: number
+  y: number
+  width?: number
+  height?: number
+  points?: CanvasPoint[]
+  text?: string
+  style: {
+    strokeColor?: string
+    fillColor?: string
+    strokeWidth?: number
+    fontSize?: number
+  }
+  zIndex?: number
+}
+
+export type CanvasDocumentItem = CanvasAssetItem | CanvasDrawingItem
+
+export interface CanvasDocument {
+  schemaVersion: 1
+  id: string
+  conversationId: string
+  viewMode: CanvasViewMode
+  viewport: CanvasViewport
+  overlays: { lineage: boolean }
+  toolState: CanvasToolState
+  items: CanvasDocumentItem[]
+  updatedAt: string
+}
+
 export interface AssetMutationOptions { history?: boolean }
 
 export interface CanvasController {
   assets: Asset[]
   allAssets: Asset[]
+  canvasDocument: CanvasDocument
   selectedAsset: Asset | null
   selectedId: string | null
   setSelectedId(id: string | null): void
   viewMode: CanvasViewMode
   setViewMode(mode: CanvasViewMode): void
+  setViewport(viewport: Partial<CanvasViewport>): void
+  setLineageVisible(visible: boolean): void
+  setToolState(toolState: Partial<CanvasToolState>): void
+  moveAsset(id: string, x: number, y: number, options?: AssetMutationOptions): void
+  addDrawing(item: Partial<CanvasDrawingItem>): void
+  clearDrawings(): void
   addAsset(asset: unknown, options?: AssetMutationOptions): Asset
   addAssets(assets: unknown[], options?: AssetMutationOptions): Asset[]
   addPlaceholder(label: string, asset?: unknown, options?: AssetMutationOptions): string
   removeAsset(id: string, options?: AssetMutationOptions): void
   replaceAssets(assets: unknown): Asset[]
+  replaceSnapshot(snapshot: { conversationId: string, assets: unknown, canvasDocument?: unknown }): Asset[]
   updateAsset(id: string, patch: unknown, options?: AssetMutationOptions): void
   updateAssets(patches: unknown, options?: AssetMutationOptions): void
   getAssetById(id: string): Asset | undefined
@@ -260,11 +337,13 @@ export interface CanvasController {
 export interface ConversationSnapshot {
   messages: Message[]
   assets: Asset[]
+  canvasDocument?: CanvasDocument
 }
 
 export interface ConversationBridge {
   canWrite?(conversationId: string): boolean
   appendMessage?(conversationId: string, message: Message): Conversation | boolean | null | void
+  appendTask?(conversationId: string, messageId: string | number, task: MessageTask): number | null
   updateTask?(conversationId: string, messageId: string | number, taskIndex: number, patch: Partial<MessageTask>): Conversation | boolean | null | void
   addAsset?(conversationId: string, asset: unknown): Asset | null
   updateAsset?(conversationId: string, assetId: string, patch: unknown): Conversation | boolean | null | void

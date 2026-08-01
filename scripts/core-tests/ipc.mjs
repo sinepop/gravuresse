@@ -7,6 +7,7 @@ import { createRequire } from 'node:module'
 
 const require = createRequire(import.meta.url)
 const providerConnections = require('../../electron/providers/connections.js')
+const { invalidateVideoPollSessions } = require('../../electron/video-poll-sessions.js')
 
 function createIpcMain() {
   const handlers = new Map()
@@ -44,6 +45,16 @@ export async function runIpcCoreTests() {
     }
   }
   const { provider, configIpc, conversation, assets } = loadIpcModulesWithElectronMock(electronMock)
+  const pollSessions = new Map([
+    ['task-connection-a', { connectionId: 'connection-a', accountId: 'account-a' }],
+    ['task-account-a', { accountId: 'account-a' }],
+    ['task-connection-b', { connectionId: 'connection-b', accountId: 'account-b' }]
+  ])
+  assert.equal(invalidateVideoPollSessions(pollSessions, {
+    connectionIds: ['connection-a'], accountIds: ['account-a']
+  }), 2)
+  assert.deepEqual([...pollSessions.keys()], ['task-connection-b'], 'disconnecting one connection cannot invalidate another connection\'s task')
+
 
   const configIpcMain = createIpcMain()
   let publicConfigState = {
@@ -82,6 +93,7 @@ export async function runIpcCoreTests() {
   let validationResponse = { status: 200, data: '{"choices":[{"message":{"content":"OK"},"finish_reason":"stop"}],"usage":{"completion_tokens":1}}' }
   let lastValidationRequest = null
   let detectionRevision = 0
+  const invalidatedProviderIdentities = []
   const configMock = {
     REDACTED_API_KEY: '********',
     load: () => structuredClone(providerConfigState),
@@ -104,6 +116,7 @@ export async function runIpcCoreTests() {
   provider.registerProviderIpc({
     ipcMain: providerIpc,
     config: configMock,
+    invalidateVideoPollSessions: identities => invalidatedProviderIdentities.push(structuredClone(identities)),
     modelsApi: { fetch: providerConfig => modelsFetch(providerConfig) },
     providerValidationRequest: async (url, options, body) => {
       lastValidationRequest = { url, options, body }
@@ -269,6 +282,14 @@ export async function runIpcCoreTests() {
   })
   assert.equal(savedDeepSeek.modelsResult.ok, true)
   assert.equal(savedDeepSeek.connection.models.some(model => model.id === 'remote-chat'), true)
+  providerConfigState.connections.apiKeys.push({
+    id: 'remove-target', accountId: 'legacy-remove-account', providerId: 'openai', capabilities: ['video']
+  })
+  await providerIpc.handlers.get('providerConnection:remove')(null, { collection: 'apiKeys', id: 'remove-target' })
+  assert.equal(providerConfigState.connections.apiKeys.some(item => item.id === 'remove-target'), false)
+  assert.deepEqual(invalidatedProviderIdentities.at(-1), {
+    connectionIds: ['remove-target'], accountIds: ['legacy-remove-account']
+  }, 'ordinary connection removal invalidates only sessions bound to the removed identity')
   await assert.rejects(() => providerIpc.handlers.get('providerConnection:save')(null, {
     collection: 'apiKeys', connection: { id: 'relay-one', providerId: 'openai', apiKey: 'x', capabilities: ['chat'] }
   }), /unique across all collections/)
@@ -331,7 +352,7 @@ export async function runIpcCoreTests() {
   configMock.update = regularUpdate
 
   providerConfigState.connections.accounts.push({
-    id: 'account_codex', connectorId: 'codex', providerId: 'openai', runtimeProviderId: 'openai',
+    id: 'account_codex', accountId: 'oauth-account-codex', connectorId: 'codex', providerId: 'openai', runtimeProviderId: 'openai',
     status: 'connected_unverified', capabilities: ['chat'], sessionToken: 'stored-oauth-token',
     validation: { ok: false, status: 'connected_unverified', level: 'oauth_token_exchange_only', message: 'Needs provider validation' }
   })
@@ -358,6 +379,9 @@ export async function runIpcCoreTests() {
   assert.equal(providerConfigState.connections.defaults.chat, null)
   assert.equal(providerConfigState.providers.chat.connectionId, undefined)
   assert.equal(providerConnections.publicAttempt(disconnectedAttempt).status, 'cancelled', 'disconnect cancels every in-flight attempt for the connector')
+  assert.deepEqual(invalidatedProviderIdentities.at(-1), {
+    connectionIds: ['account_codex'], accountIds: ['oauth-account-codex']
+  }, 'OAuth disconnect invalidates sessions bound to the removed account immediately')
 
   const cancellingAttempt = providerConnections.createOAuthAttempt('codex')
   cancellingAttempt.status = 'exchanging'
@@ -543,7 +567,7 @@ export async function runIpcCoreTests() {
     remoteExportAssetCount: () => 2,
     remoteExportConversationAssetCount: () => 0,
     writeTextAtomic: (text) => { exportedText = text },
-    maxProjectExportBytes: 100 * 1024 * 1024
+    maxProjectExportBytes: 1024
   })
   for (const channel of ['history:get', 'history:save', 'conv:loadAll', 'conv:save', 'conv:delete', 'conv:setActive', 'conv:export', 'conv:exportProject', 'conv:import']) {
     assert.equal(typeof conversationIpc.handlers.get(channel), 'function', `${channel} should be registered`)
@@ -551,6 +575,36 @@ export async function runIpcCoreTests() {
   const exportResult = await conversationIpc.handlers.get('conv:export')(null, { title: 'x', messages: [], assets: [] })
   assert.deepEqual(exportResult.media, { inlined: 1, skipped: 2, fallback: false })
   assert.ok(exportedText.includes('"media"'))
+
+  const conversationImportDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gravuresse-conversation-import-'))
+  const safeConversationImport = path.join(conversationImportDir, 'safe.gravuresse.json')
+  fs.writeFileSync(safeConversationImport, JSON.stringify({ conversation: { title: 'safe', messages: [], assets: [] } }))
+  electronMock.dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [safeConversationImport] })
+  const safeImportResult = await conversationIpc.handlers.get('conv:import')()
+  assert.equal(safeImportResult.canceled, false)
+  assert.equal(safeImportResult.data.conversation.title, 'safe')
+
+  const growingConversationImport = path.join(conversationImportDir, 'growing.gravuresse.json')
+  fs.writeFileSync(growingConversationImport, Buffer.alloc(2048, 0x20))
+  const originalStatSync = fs.statSync
+  fs.statSync = filePath => {
+    if (path.resolve(filePath) === path.resolve(growingConversationImport)) {
+      return { isFile: () => true, size: 1 }
+    }
+    return originalStatSync(filePath)
+  }
+  electronMock.dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [growingConversationImport] })
+  try {
+    await assert.rejects(
+      () => conversationIpc.handlers.get('conv:import')(),
+      /import is too large/,
+      'the bytes actually read must be checked after the pre-read stat'
+    )
+  } finally {
+    fs.statSync = originalStatSync
+    fs.rmSync(conversationImportDir, { recursive: true, force: true })
+    electronMock.dialog.showOpenDialog = async () => ({ canceled: true })
+  }
 
   const assetIpc = createIpcMain()
   assets.registerAssetIpc({

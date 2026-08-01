@@ -19,7 +19,9 @@ This file keeps only the current release and unreleased highlights. See [GitHub 
 - 加固秘密审计：强制检查被跟踪的 Agent/凭据文件、扩大令牌与文件名规则、停止输出任何命中值片段。
 - 删除 README 中不必要的个人画像，新增无个人联系方式的安全披露说明。
 - 精简打包依赖并排除 source map，阻止桌面应用被误发布到 npm。
-- 视频任务重启恢复：`MessageTask` 新增 `providerId`/`connectionId`/`model`/`baseUrl`/`accountId`/`submittedAt`/`recoveryStatus` 持久化字段，启动时自动扫描并恢复轮询。
+- 会话新增 `CanvasDocumentV1` 子文档，保存 grid/free 视图、自由画布视口、lineage、绘图工具状态、素材位置和向量标注；旧 `Asset.x/y` 仅作为兼容影子字段。
+- 视频任务重启恢复改用 `taskId` + `connectionId` + `providerId` + `model` 恢复键；轮询异常/未知状态不再落终态失败，新增 `lastPolledAt`，新任务不再持久化 `baseUrl/accountId`。
+- Settings General 区补齐自动保存图片和自动保存视频开关；release 审计阻止强制跟踪 `.audit/` 工作产物。
 
 ### English
 
@@ -34,7 +36,9 @@ This file keeps only the current release and unreleased highlights. See [GitHub 
 - Hardened secret auditing for tracked agent/credential files, additional token and filename classes, and zero-value output.
 - Removed unnecessary personal-profile details from the README and added security reporting guidance without personal contact details.
 - Reduced packaged runtime dependencies, excluded source maps, and blocked accidental npm publication.
-- Video task restart recovery: `MessageTask` now persists `providerId`/`connectionId`/`model`/`baseUrl`/`accountId`/`submittedAt`/`recoveryStatus`; auto-scans and resumes polling on startup.
+- Conversations now include a `CanvasDocumentV1` child document for grid/free view, free-canvas viewport, lineage, tool state, asset positions, and vector annotations; legacy `Asset.x/y` remains only as a compatibility shadow.
+- Video task restart recovery now uses the `taskId` + `connectionId` + `providerId` + `model` recovery key; poll exceptions/unknown remote states are non-terminal, `lastPolledAt` is persisted, and new tasks no longer persist `baseUrl/accountId`.
+- Settings General now exposes image/video auto-save toggles; release auditing blocks force-tracked `.audit/` work products.
 
 ## v2.4.0 — 2026-07-11
 

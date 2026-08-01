@@ -252,7 +252,19 @@ async function saveDetectedRelay({ params, config, requestOptionsFromConfig, rel
   }
 }
 
-function registerProviderConnectionsIpc({ ipcMain, config, modelsApi, requestOptionsFromConfig, relayDetector = detectRelayProtocol, validationRequest }) {
+function removedConnectionIdentities(connections = [], fallbackConnectionIds = []) {
+  const connectionIds = [...new Set([
+    ...fallbackConnectionIds,
+    ...connections.map(connection => connection?.id)
+  ].map(value => String(value || '')).filter(Boolean))]
+  const accountIds = [...new Set(connections
+    .map(connection => connection?.accountId)
+    .map(value => String(value || ''))
+    .filter(Boolean))]
+  return { connectionIds, accountIds }
+}
+
+function registerProviderConnectionsIpc({ ipcMain, config, modelsApi, requestOptionsFromConfig, relayDetector = detectRelayProtocol, validationRequest, invalidateVideoPollSessions = () => 0 }) {
   const runExclusive = createExclusiveRunner()
   ipcMain.handle('providerConnection:list', () => {
     const stored = config.load()
@@ -356,12 +368,16 @@ function registerProviderConnectionsIpc({ ipcMain, config, modelsApi, requestOpt
     const collection = params.collection
     const id = String(params.id || '')
     if (!COLLECTIONS.includes(collection) || !id) throw new Error('Connection collection and id are required')
+    let removedConnections = []
     await mutateConfig(config, current => {
       const next = JSON.parse(JSON.stringify(current))
-      next.connections[collection] = (next.connections?.[collection] || []).filter(item => item.id !== id)
+      const currentConnections = next.connections?.[collection] || []
+      removedConnections = currentConnections.filter(item => item.id === id)
+      next.connections[collection] = currentConnections.filter(item => item.id !== id)
       removeConnectionReferences(next, id)
       return next
     })
+    invalidateVideoPollSessions(removedConnectionIdentities(removedConnections))
     return { ok: true }
   })
 
@@ -653,13 +669,20 @@ function registerProviderConnectionsIpc({ ipcMain, config, modelsApi, requestOpt
       errorCode: 'OAUTH_DISCONNECTED',
       message: 'OAuth attempt cancelled because the account was disconnected'
     })
+    let removedConnections = []
     await mutateConfig(config, current => {
       const next = JSON.parse(JSON.stringify(current))
-      const removedIds = (next.connections?.accounts || []).filter(item => item.connectorId === connectorId || item.id === params.connectionId).map(item => item.id)
-      next.connections.accounts = (next.connections?.accounts || []).filter(item => !removedIds.includes(item.id))
+      const accounts = next.connections?.accounts || []
+      const requestedConnectionId = String(params.connectionId || '')
+      removedConnections = accounts.filter(item =>
+        item.connectorId === connectorId && (!requestedConnectionId || item.id === requestedConnectionId)
+      )
+      const removedIds = removedConnections.map(item => item.id)
+      next.connections.accounts = accounts.filter(item => !removedIds.includes(item.id))
       for (const id of removedIds) removeConnectionReferences(next, id)
       return next
     })
+    invalidateVideoPollSessions(removedConnectionIdentities(removedConnections))
     return { ok: true, status: 'disconnected' }
   })
 }

@@ -197,6 +197,8 @@ general: {
   fontSize: 'medium',
   workspaceMode: 'canvas',
   autoSave: true,
+  autoSaveImage: false,
+  autoSaveVideo: false,
   enableVideo: false,
   enableReference: false
 }
@@ -381,7 +383,38 @@ type ConversationStorePayload = {
 
 P0 不新增顶层 `projects` 数组，不改变 `conversations.json` 根结构。
 
-### 5.2 Asset.generation 是最小来源记录
+### 5.2 Conversation.canvasDocument 是画布来源记录
+
+`conversations.json` 根 `schemaVersion` 仍为 `1`。每个 `Conversation` 可带一个 additive 子文档：
+
+```ts
+type CanvasDocumentV1 = {
+  schemaVersion: 1
+  id: string
+  conversationId: string
+  viewMode: 'grid' | 'free'
+  viewport: { x: number, y: number, zoom: number }
+  overlays: { lineage: boolean }
+  toolState: {
+    activeTool: 'select' | 'move' | 'pencil' | 'rect' | 'circle' | 'line' | 'text'
+    drawColor: string
+    drawWidth: number
+  }
+  items: Array<CanvasAssetItem | CanvasDrawingItem>
+  updatedAt: string
+}
+```
+
+要求：
+
+- `CanvasAssetItem` 的 `entityId` 指向 `Asset.id`，其 `x/y` 是自由画布位置真值；
+- `Asset.x/y` 仅作为旧数据兼容和外部导出影子字段，加载时从 canvas item 回填；
+- 铅笔、矩形、圆形、直线和文字标注保存为 `CanvasDrawingItem`，不保存 DOM canvas 像素；
+- `viewMode` 属于 `canvasDocument`；全局工作区形态仍属于 `config.general.workspaceMode`；
+- 不保存 `selectedId`、素材筛选、undo/redo stack；
+- 导入、导出、store sanitizer 必须保留并约束 `canvasDocument`。
+
+### 5.3 Asset.generation 是最小来源记录
 
 继续使用现有 `Generation`：
 
@@ -411,7 +444,7 @@ P0 要求：
 - 视频任务完成后生成的 video Asset 写入远程 `taskId`；
 - 不持久化 API key、token、cookie、Authorization header。
 
-### 5.3 MessageTask 补强异步恢复字段
+### 5.4 MessageTask 补强异步恢复字段
 
 P0 允许 additive 字段：
 
@@ -470,8 +503,8 @@ Conversation.workspaceMode
 3. 通过 `connectionId` 重新解析 Provider；无法解析则标 `not-resumable`。
 4. 可以解析则创建新的运行态 `VideoQueueTask`，但不依赖旧 callback。
 5. 轮询成功后创建 video Asset，更新 MessageTask 为 `done`。
-6. 轮询失败后更新 MessageTask 为 `error`，保留 taskId 和错误。
-7. 状态不确定时设 `recoveryStatus: 'unknown'`，提示用户检查连接或手动重试。
+6. 只有远端明确返回 `failed` 后更新 MessageTask 为 `error`，保留 taskId 和错误。
+7. 轮询异常或远端未知状态设 `status/recoveryStatus: 'unknown'` 并继续轮询；不伪造成成功或失败。
 
 ### 6.2 重试规则
 

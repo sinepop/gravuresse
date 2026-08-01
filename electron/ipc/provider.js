@@ -109,7 +109,8 @@ function registerProviderIpc({
   requestOptionsFromConfig,
   getModelFetchProvider,
   relayDetector,
-  providerValidationRequest
+  providerValidationRequest,
+  invalidateVideoPollSessions
 }) {
   require('./provider-connections').registerProviderConnectionsIpc({
     ipcMain,
@@ -117,7 +118,8 @@ function registerProviderIpc({
     modelsApi,
     requestOptionsFromConfig,
     relayDetector,
-    validationRequest: providerValidationRequest
+    validationRequest: providerValidationRequest,
+    invalidateVideoPollSessions
   })
   // ──────────────────────────────────────────────────────────────────────────────
   // New provider API — canonical entry points for all provider operations.
@@ -389,7 +391,8 @@ function registerProviderIpc({
     const result = await executeProviderCall({
       action: 'submit',
       providerId: params?.id,
-      prompt: params?.prompt, ratio: params?.ratio, duration: params?.duration,
+      prompt: params?.prompt, ratio: params?.ratio, resolution: params?.resolution,
+      negative_prompt: params?.negative_prompt, duration: params?.duration,
       sourceImageUrl: params?.sourceImageUrl,
       model: params?.model,
       baseUrl: params?.baseUrl,

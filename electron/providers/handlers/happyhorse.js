@@ -46,9 +46,10 @@ async function handlePoll(taskId, params) {
     ...(params.requestOptions || {})
   })
   const json = JSON.parse(res.data)
-  if (json.error) throw new Error(json.error.message)
+  const status = normalizeStatus(json.status)
+  if (json.error && status !== 'failed') throw new Error(json.error.message)
   return {
-    status: normalizeStatus(json.status),
+    status,
     progress: normalizeProgress(json.progress),
     videoUrl: json.video_url || json.output?.video_url || '',
     error: json.error?.message

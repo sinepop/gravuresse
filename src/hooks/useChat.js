@@ -30,7 +30,7 @@ import { normalizeAuthType } from '../utils/authType'
 /** @typedef {{ connectionId?: string, providerId?: string, modelId?: string, model?: string }} ActiveSelection */
 /** @typedef {Partial<Record<Track, ActiveSelection>>} ActiveSelections */
 /** @typedef {ProviderProfile & { id: string, prompt: string, ratio: string, resolution: string, negative_prompt: string, sourceImageUrl: string }} ImageFallbackParams */
-/** @typedef {ProviderProfile & { prompt: string, ratio: string, duration: number, sourceImageUrl: string }} VideoFallbackParams */
+/** @typedef {ProviderProfile & { prompt: string, ratio: string, resolution: string, negative_prompt: string, duration: number, sourceImageUrl: string }} VideoFallbackParams */
 
 /** @param {unknown} value @returns {value is UnknownRecord} */
 function isRecord(value) {
@@ -175,12 +175,23 @@ function canonicalModelSelection(config, activeSelections, track) {
     ...(connections?.apiKeys || []),
     ...(connections?.relays || [])
   ]
-  const activeSelection = activeSelections[track]
-  const selection = activeSelection || connections.defaults?.[track]
-  if (selection) {
+  const candidates = [activeSelections[track], connections.defaults?.[track]]
+  const seen = new Set()
+  for (const selection of candidates) {
+    if (!selection) continue
+    const key = `${selection.connectionId || ''}\0${selection.modelId || ''}`
+    if (seen.has(key)) continue
+    seen.add(key)
     const connection = all.find(item => item.id === selection.connectionId)
+    const validation = connection?.validations?.[track]
+    const currentInventory = validation?.ok === true &&
+      ['verified', 'directory_verified'].includes(validation?.status) &&
+      validation.track === track &&
+      validation.inventoryRevision &&
+      validation.inventoryRevision === connection?.inventoryRevision &&
+      validation.inventoryRevision === connection?.revision
     const model = connection?.models?.find(item => item.id === selection.modelId && item.source === 'remote' && item.capability === track)
-    if (!connection || !model || !connection.capabilities?.includes(track)) return null
+    if (!currentInventory || !connection || !model || !connection.capabilities?.includes(track)) continue
     /** @type {ProviderProfile} */
     const provider = {
       id: canonicalProviderId(connection, track),
@@ -194,11 +205,7 @@ function canonicalModelSelection(config, activeSelections, track) {
       defaultNegPrompt: textValue(connection.defaultNegPrompt),
       customSystemPrompt: textValue(connection.customSystemPrompt)
     }
-    return {
-      connection,
-      selection,
-      provider
-    }
+    return { connection, selection, provider }
   }
   return null
 }
@@ -249,17 +256,31 @@ export default function useChat(config, canvas, onVideoTaskCreated, activeConver
   const [thinking, setThinking] = useState(false)
   const lastImageContext = useRef(/** @type {LastImageContext | null} */ (null))
   const loadingRef = useRef(false)
+  const inFlightConversationsRef = useRef(new Set(/** @type {string[]} */ ([])))
   const messagesRef = useRef(/** @type {Message[]} */ ([]))
   const mountedRef = useRef(true)
   const activeConversationIdRef = useRef(/** @type {string | null} */ (activeConversationId))
 
-  // Keep ref in sync with state
-  useEffect(() => { loadingRef.current = loading }, [loading])
+  // Keep renderer state scoped to the active conversation while requests may
+  // continue in background conversations.
   useEffect(() => { messagesRef.current = messages }, [messages])
-  useEffect(() => { activeConversationIdRef.current = activeConversationId }, [activeConversationId])
+  useEffect(() => {
+    activeConversationIdRef.current = activeConversationId
+    const activeLoading = Boolean(activeConversationId && inFlightConversationsRef.current.has(activeConversationId))
+    loadingRef.current = activeLoading
+    setLoading(activeLoading)
+  }, [activeConversationId])
   useEffect(() => {
     mountedRef.current = true
     return () => { mountedRef.current = false }
+  }, [])
+
+  const setConversationLoading = useCallback(/** @param {string} conversationId @param {boolean} value */ (conversationId, value) => {
+    if (value) inFlightConversationsRef.current.add(conversationId)
+    else inFlightConversationsRef.current.delete(conversationId)
+    if (activeConversationIdRef.current !== conversationId) return
+    loadingRef.current = value
+    if (mountedRef.current) setLoading(value)
   }, [])
 
   const canWriteToCurrentConversation = useCallback(/** @param {string | null | undefined} conversationId */ (conversationId) => {
@@ -294,6 +315,25 @@ export default function useChat(config, canvas, onVideoTaskCreated, activeConver
       return true
     }
     return Boolean(conversationBridge?.updateTask?.(conversationId, msgId, idx, patch))
+  }, [canWriteToCurrentConversation, conversationBridge])
+
+  const appendTask = useCallback(/** @param {string} conversationId @param {string | number} msgId @param {MessageTask} task */ (conversationId, msgId, task) => {
+    /** @type {number | null} */
+    let taskIndex = null
+    if (canWriteToCurrentConversation(conversationId)) {
+      const currentMessage = messagesRef.current.find(message => message.id === msgId)
+      const currentTasks = currentMessage ? [...(currentMessage.tasks || (currentMessage.task ? [currentMessage.task] : []))] : []
+      taskIndex = currentMessage ? currentTasks.length : null
+      setMessages(prev => prev.map(m => {
+        if (m.id !== msgId) return m
+        const tasks = [...(m.tasks || (m.task ? [m.task] : []))]
+        tasks.push(task)
+        return { ...m, tasks }
+      }))
+      const bridgeIndex = conversationBridge?.appendTask?.(conversationId, msgId, task)
+      return taskIndex ?? bridgeIndex ?? null
+    }
+    return conversationBridge?.appendTask?.(conversationId, msgId, task) ?? null
   }, [canWriteToCurrentConversation, conversationBridge])
 
   const addAssetToConversation = useCallback(/** @param {string} conversationId @param {unknown} asset */ (conversationId, asset) => {
@@ -354,9 +394,9 @@ export default function useChat(config, canvas, onVideoTaskCreated, activeConver
   }, [canvas, canWriteToCurrentConversation, conversationBridge])
 
   const send = useCallback(/** @param {string} text @param {Asset[]} references @param {GenerationSettings} genSettings */ async (text, references = [], genSettings = {}) => {
-    if (!text.trim() || loadingRef.current) return false
+    if (!text.trim()) return false
     const originConversationId = genSettings?.conversationId || activeConversationIdRef.current
-    if (!originConversationId) return false
+    if (!originConversationId || inFlightConversationsRef.current.has(originConversationId)) return false
     const snapshot = genSettings.conversationSnapshot
     const sourceMessages = Array.isArray(snapshot?.messages) ? snapshot.messages : messagesRef.current
     const sourceAssets = Array.isArray(snapshot?.assets) ? snapshot.assets : canvas?.allAssets || []
@@ -367,15 +407,13 @@ export default function useChat(config, canvas, onVideoTaskCreated, activeConver
       setMessages([...sourceMessages, userMsg])
     }
     appendMessage(originConversationId, userMsg)
-    setLoading(true)
-    loadingRef.current = true
+    setConversationLoading(originConversationId, true)
 
     const canonicalChat = canonicalModelSelection(config, activeSelections, 'chat')
     const lang = textValue(config?.general?.language) || 'zh'
     if (!canonicalChat) {
       appendMessage(originConversationId, { role: 'assistant', content: t('configApiFirst', lang), id: nextId() })
-      setLoading(false)
-      loadingRef.current = false
+      setConversationLoading(originConversationId, false)
       return true
     }
     const provider = canonicalChat.provider
@@ -537,15 +575,15 @@ ${modeRule}
     } catch (err) {
       appendMessage(originConversationId, { role: 'assistant', content: `Error: ${errorMessage(err)}`, id: nextId(), error: true })
     } finally {
-      loadingRef.current = false
-      if (mountedRef.current) setLoading(false)
+      setConversationLoading(originConversationId, false)
     }
     return true
-  }, [config, canvas, appendMessage, canWriteToCurrentConversation, thinking, providerLists, activeSelections])
+  }, [config, canvas, appendMessage, canWriteToCurrentConversation, thinking, providerLists, activeSelections, setConversationLoading])
 
-  const doGenerate = useCallback(/** @param {string | number} msgId @param {MessageTask} task @param {string} lang @param {string | null | undefined} placeholderId @param {number | undefined} taskIndex @param {string} originConversationId */ async (msgId, task, lang, placeholderId, taskIndex, originConversationId) => {
+  const doGenerate = useCallback(/** @param {string | number} msgId @param {MessageTask} task @param {string} lang @param {string | null | undefined} placeholderId @param {number | undefined} taskIndex @param {string} originConversationId @param {{ finalizeTask?: boolean }} [options] */ async (msgId, task, lang, placeholderId, taskIndex, originConversationId, options = {}) => {
     const startTime = Date.now()
     const idx = taskIndex ?? 0
+    const finalizeTask = options.finalizeTask !== false
     const updateTask = (/** @type {Partial<MessageTask>} */ patch) => patchTask(originConversationId, msgId, idx, patch)
 
     if (task.type === 'image') {
@@ -629,7 +667,8 @@ ${modeRule}
           assetId
         }
       }
-      updateTask({ status: 'done', assetId: assetId || undefined, elapsed, ratio: textValue(safeTask.ratio), resolution: textValue(safeTask.resolution) })
+      const completionPatch = { assetId: assetId || undefined, elapsed, ratio: textValue(safeTask.ratio), resolution: textValue(safeTask.resolution) }
+      updateTask(finalizeTask ? { ...completionPatch, status: 'done' } : completionPatch)
       if (generalConfig(config).autoSaveImage === true) {
         try { await window.electronAPI?.saveAssetToDisk?.({ url, label: task.label, type: 'image' }) } catch {}
       }
@@ -650,7 +689,8 @@ ${modeRule}
       /** @type {VideoFallbackParams} */
       const videoParams = {
         ...provider,
-        prompt: textValue(task.prompt), ratio: textValue(task.ratio) || '1:1', duration,
+        prompt: textValue(task.prompt), ratio: textValue(task.ratio) || '1:1',
+        resolution: textValue(task.resolution), negative_prompt: textValue(task.negative_prompt), duration,
         sourceImageUrl: textValue(sourceImageUrl)
       }
       const result = normalizeVideoSubmitResult(await submitVideoProvider({
@@ -659,6 +699,8 @@ ${modeRule}
         connectionId: canonicalVideo?.connection.id,
         prompt: videoParams.prompt,
         ratio: videoParams.ratio,
+        resolution: videoParams.resolution,
+        negative_prompt: videoParams.negative_prompt,
         duration: videoParams.duration,
         sourceImageUrl: videoParams.sourceImageUrl,
         model: textValue(videoParams.model),
@@ -681,7 +723,12 @@ ${modeRule}
         prompt: textValue(task.prompt),
         label: textValue(task.label),
         provider,
-        autoSave: general.autoSave !== false,
+        autoSave: general.autoSaveVideo === true,
+        onPollUpdate: (result) => updateTask({
+          lastPolledAt: result.lastPolledAt || new Date().toISOString(),
+          ...(result.status === 'unknown' ? { status: 'unknown', recoveryStatus: 'unknown', error: result.error || undefined } : {}),
+          ...(result.status && result.status !== 'unknown' && result.status !== 'failed' ? { recoveryStatus: 'resumable', error: undefined } : {})
+        }),
         onComplete: (result) => {
           if (!canWriteToConversation(originConversationId)) return null
           const generation = buildGenerationMeta({
@@ -700,10 +747,14 @@ ${modeRule}
             duration,
             generation
           })
-          if (asset) updateTask({ status: 'done', assetId: asset.id })
+          if (asset) updateTask({ status: 'done', assetId: asset.id, lastPolledAt: result.lastPolledAt || new Date().toISOString() })
           return asset
         },
-        onFail: (error) => updateTask({ status: 'error', error })
+        onFail: (error) => updateTask({ status: 'error', error, lastPolledAt: new Date().toISOString() }),
+        onRemove: () => updateTask({
+          status: 'error', recoveryStatus: 'not-resumable', queueId: undefined,
+          error: t('videoPollingStopped', lang)
+        })
       })
       const elapsed = Math.round((Date.now() - startTime) / 1000)
       updateTask({
@@ -711,8 +762,6 @@ ${modeRule}
         providerId: resolveProviderId('video', provider.id),
         connectionId: canonicalVideo?.connection.id || '',
         model: textValue(provider.model),
-        baseUrl: textValue(provider.baseUrl),
-        accountId: textValue(provider.accountId),
         submittedAt: new Date().toISOString(),
         recoveryStatus: 'resumable'
       })
@@ -891,10 +940,10 @@ ${modeRule}
         // than duplicating provider lookup / callProvider / autosave here. The
         // per-item task clone just adjusts the asset label to "#N".
         const itemTask = count > 1 ? { ...task, label: `${task.label} #${i + 1}` } : task
-        await doGenerate(msgId, itemTask, lang, placeholderIds[i], idx, originConversationId)
+        await doGenerate(msgId, itemTask, lang, placeholderIds[i], idx, originConversationId, { finalizeTask: false })
         done++
         if (!canWriteToConversation(originConversationId)) return
-        patchTask(originConversationId, msgId, idx, { batchDone: done })
+        patchTask(originConversationId, msgId, idx, { status: 'generating', batchDone: done })
       } catch (e) {
         console.error(`Batch item ${i + 1} failed:`, e)
         hasFailure = true
@@ -908,13 +957,31 @@ ${modeRule}
     patchTask(originConversationId, msgId, idx, { status: done > 0 && !hasFailure ? 'done' : done > 0 ? 'partial' : 'error', batchDone: done, error: done === 0 ? 'All batch items failed' : hasFailure ? `${count - done} of ${count} failed` : undefined })
   }, [config, addPlaceholderToConversation, doGenerate, canWriteToConversation, removeAssetFromConversation, patchTask])
 
-  const retryErroredTask = useCallback(/** @param {string | number} msgId @param {MessageTask} task @param {number | undefined} taskIndex @param {string} lang */ async (msgId, task, taskIndex, lang) => {
-    const idx = taskIndex ?? 0
-    const conversationId = activeConversationIdRef.current
-    if (!conversationId) return
-    patchTask(conversationId, msgId, idx, { status: 'pending', error: undefined })
-    await doGenerate(msgId, { ...task, status: 'pending', error: undefined }, lang, undefined, idx, conversationId)
-  }, [patchTask, doGenerate])
+  const retryErroredTask = useCallback(/** @param {string | number} msgId @param {MessageTask} task @param {number | undefined} taskIndex */ async (msgId, task, taskIndex) => {
+    const originConversationId = activeConversationIdRef.current
+    if (!originConversationId) return
+    /** @type {MessageTask} */
+    const retryTask = {
+      ...task,
+      id: `${task.id || 'task'}_retry_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      status: 'pending',
+      error: undefined,
+      taskId: undefined,
+      assetId: undefined,
+      queueId: undefined,
+      startTime: undefined,
+      elapsed: undefined,
+      submittedAt: undefined,
+      lastPolledAt: undefined,
+      recoveredAt: undefined,
+      recoveryStatus: task.type === 'video' ? 'unknown' : undefined,
+      baseUrl: undefined,
+      accountId: undefined
+    }
+    const nextTaskIndex = appendTask(originConversationId, msgId, retryTask)
+    if (nextTaskIndex === null) return
+    await confirmGenerate(msgId, retryTask, nextTaskIndex)
+  }, [appendTask, confirmGenerate])
 
   const setMessagesDirectly = useCallback(/** @param {Message[] | ((messages: Message[]) => Message[])} update */ (update) => {
     // No side effects inside the updater (CLAUDE.md red line) — the messagesRef

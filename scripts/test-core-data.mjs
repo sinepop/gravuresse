@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import crypto from 'node:crypto'
 import fs from 'node:fs/promises'
 import Module from 'node:module'
 import os from 'node:os'
@@ -12,6 +13,7 @@ import { createAsset, createGeneration, mergeAsset } from '../src/utils/assetFac
 import { sanitizeAssetUrl } from '../src/utils/mediaSecurity.js'
 import { normalizePreviewUrl } from '../src/hooks/useSafeMediaUrl.js'
 import { formatErrorAlert, getConversationTitle, normalizeConversationRecord, normalizeImportedConversations } from '../src/utils/conversationImport.js'
+import { createCanvasDocument, hydrateAssetsFromCanvasDocument, normalizeCanvasDocument } from '../src/utils/canvasDocument.js'
 import {
   buildGenerationMeta,
   getTaskPromptReferenceIds,
@@ -30,6 +32,7 @@ import {
 } from '../src/utils/settingsProviderHelpers.js'
 import {
   addAssetToConversationRecord,
+  appendTaskToConversation,
   appendMessageToConversation,
   removeConversationAsset,
   updateConversationAsset,
@@ -856,6 +859,54 @@ assert.equal(mainSanitizedImport.conversation.assets[0].generation.parentAssetId
 assert.deepEqual(mainSanitizedImport.conversation.assets[0].generation.sourceAssetIds, ['source-a'])
 assert.deepEqual(mainSanitizedImport.conversation.assets[0].generation.promptReferenceAssetIds, ['prompt-ref-a'])
 assert.equal(mainSanitizedImport.conversation.assets[0].generation.taskId, 'task-a')
+const sanitizedBadDurationAsset = mainSanitize._test.sanitizeAssetForStorage({
+  type: 'video',
+  duration: { bad: true },
+  generation: { duration: { bad: true } }
+})
+assert.equal(sanitizedBadDurationAsset.duration, null)
+assert.equal(sanitizedBadDurationAsset.generation.duration, null)
+const sanitizedStringDurationAsset = mainSanitize._test.sanitizeAssetForStorage({
+  type: 'video',
+  duration: '5'
+})
+assert.equal(sanitizedStringDurationAsset.duration, '5')
+const {
+  MAX_ASSETS_PER_CONVERSATION,
+  MAX_CONVERSATIONS_PER_IMPORT,
+  MAX_ASSETS_PER_IMPORT
+} = mainSanitize._test
+assert.ok(Number.isSafeInteger(MAX_ASSETS_PER_CONVERSATION) && MAX_ASSETS_PER_CONVERSATION > 0)
+assert.ok(Number.isSafeInteger(MAX_CONVERSATIONS_PER_IMPORT) && MAX_CONVERSATIONS_PER_IMPORT > 0)
+assert.ok(Number.isSafeInteger(MAX_ASSETS_PER_IMPORT) && MAX_ASSETS_PER_IMPORT > 0)
+assert.throws(
+  () => mainSanitize.sanitizeConversationImportPayload({
+    conversations: Array.from({ length: MAX_CONVERSATIONS_PER_IMPORT + 1 }, (_, index) => ({
+      id: `overflow-conversation-${index}`,
+      title: 'overflow'
+    }))
+  }),
+  /too many conversations/i,
+  'valid-size imports must reject before mapping an unbounded conversation array'
+)
+const aggregateAssetOverflow = []
+let remainingOverflowAssets = MAX_ASSETS_PER_IMPORT + 1
+while (remainingOverflowAssets > 0) {
+  const count = Math.min(MAX_ASSETS_PER_CONVERSATION, remainingOverflowAssets)
+  aggregateAssetOverflow.push({
+    title: `assets-${aggregateAssetOverflow.length}`,
+    assets: Array.from({ length: count }, () => ({}))
+  })
+  remainingOverflowAssets -= count
+}
+assert.ok(aggregateAssetOverflow.every(conversation => conversation.assets.length <= MAX_ASSETS_PER_CONVERSATION))
+assert.throws(
+  () => mainSanitize.sanitizeConversationImportPayload({
+    conversations: aggregateAssetOverflow
+  }),
+  /too many assets/i,
+  'the project-wide asset limit must apply across otherwise-valid conversations'
+)
 const sanitizedReviewMessage = mainSanitize._test.sanitizeMessage({
   id: 'm-review',
   role: 'assistant',
@@ -896,16 +947,17 @@ const recoveryTaskMessage = mainSanitize._test.sanitizeMessage({
   tasks: [{
     id: 't-recovery', type: 'video', status: 'queued', label: '恢复测试', prompt: 'recovery prompt',
     providerId: 'minimax', connectionId: 'conn_video_1', model: 'video-01', baseUrl: 'https://api.example.com/v1',
-    accountId: 'acct_123', submittedAt: '2026-07-22T01:00:00.000Z', recoveryStatus: 'resumable',
+    accountId: 'acct_123', submittedAt: '2026-07-22T01:00:00.000Z', lastPolledAt: '2026-07-22T01:01:00.000Z', recoveryStatus: 'resumable',
     extraUnknown: 'should be dropped'
   }]
 }).tasks[0]
 assert.equal(recoveryTaskMessage.providerId, 'minimax')
 assert.equal(recoveryTaskMessage.connectionId, 'conn_video_1')
 assert.equal(recoveryTaskMessage.model, 'video-01')
-assert.equal(recoveryTaskMessage.baseUrl, 'https://api.example.com/v1')
-assert.equal(recoveryTaskMessage.accountId, 'acct_123')
+assert.equal(recoveryTaskMessage.baseUrl, undefined)
+assert.equal(recoveryTaskMessage.accountId, undefined)
 assert.equal(recoveryTaskMessage.submittedAt, '2026-07-22T01:00:00.000Z')
+assert.equal(recoveryTaskMessage.lastPolledAt, '2026-07-22T01:01:00.000Z')
 assert.equal(recoveryTaskMessage.recoveryStatus, 'resumable')
 assert.equal(recoveryTaskMessage.extraUnknown, undefined)
 const strippedImport = mainSanitize.sanitizeConversationImportPayload({
@@ -941,6 +993,45 @@ const strippedStore = mainSanitize.sanitizeStorePayload({
 })
 assert.equal(strippedStore.unknown, undefined)
 assert.equal(strippedStore.conversations[0].unknown, undefined)
+const sanitizedCanvasConversation = mainSanitize._test.sanitizeConversationForStorage({
+  id: 'conv-canvas',
+  title: 'canvas',
+  messages: [],
+  assets: [{ id: 'asset-canvas', label: 'Canvas asset', x: 12, y: 34 }],
+  canvasDocument: {
+    schemaVersion: 1,
+    id: 'canvas-c',
+    conversationId: 'wrong-conv',
+    viewMode: 'free',
+    viewport: { x: 100, y: -50, zoom: 2 },
+    overlays: { lineage: true },
+    toolState: { activeTool: 'pencil', drawColor: '#5ABF8A', drawWidth: 4 },
+    items: [
+      { id: 'asset-item', kind: 'asset', entityId: 'asset-canvas', x: 22, y: 44 },
+      { id: 'bad-asset', kind: 'asset', entityId: 'missing', x: 1, y: 2 },
+      { id: 'draw-1', kind: 'drawing', tool: 'line', x: 1, y: 2, width: 30, height: 40, style: { strokeColor: '#E8A849', strokeWidth: 2 } },
+      { id: 'bad-draw', kind: 'drawing', tool: 'pencil', x: 0, y: 0, points: [{ x: 1, y: 1 }], style: {} }
+    ],
+    updatedAt: '2026-07-22T01:02:00.000Z'
+  }
+})
+assert.equal(sanitizedCanvasConversation.canvasDocument.conversationId, 'conv-canvas')
+assert.equal(sanitizedCanvasConversation.canvasDocument.viewMode, 'free')
+assert.equal(sanitizedCanvasConversation.canvasDocument.viewport.zoom, 2)
+assert.equal(sanitizedCanvasConversation.canvasDocument.overlays.lineage, true)
+assert.equal(sanitizedCanvasConversation.canvasDocument.toolState.activeTool, 'pencil')
+assert.equal(sanitizedCanvasConversation.canvasDocument.items.length, 2)
+assert.equal(sanitizedCanvasConversation.canvasDocument.items[0].entityId, 'asset-canvas')
+assert.equal(sanitizedCanvasConversation.canvasDocument.items[0].x, 22)
+assert.equal(sanitizedCanvasConversation.canvasDocument.items[1].kind, 'drawing')
+const synthesizedCanvasConversation = mainSanitize._test.sanitizeConversationForStorage({
+  id: 'conv-legacy-canvas',
+  messages: [],
+  assets: [{ id: 'legacy-position', x: 77, y: 88 }]
+})
+assert.equal(synthesizedCanvasConversation.canvasDocument.items[0].entityId, 'legacy-position')
+assert.equal(synthesizedCanvasConversation.canvasDocument.items[0].x, 77)
+assert.equal(synthesizedCanvasConversation.canvasDocument.items[0].y, 88)
 
 const stabilityProvider = providerRegistry.getProvider('stability')
 assert.deepEqual(normalizeProviderList(null, [null, 'bad']), [])
@@ -1475,6 +1566,139 @@ assert.throws(
   /Invalid media cache file name/
 )
 
+const strictPngValidator = (bytes, type, declaredMime = '') => {
+  assert.equal(type, 'image')
+  assert.ok(Buffer.isBuffer(bytes) && bytes[0] === 0x89 && bytes[1] === 0x50)
+  if (declaredMime && declaredMime !== 'image/png') throw new Error('Asset MIME does not match content')
+  return 'image/png'
+}
+const cachedLocalDataUrl = mediaCache.mediaCacheDataUrl(cachedLocalImage.url, {
+  cacheDir: mediaCacheDir,
+  validateAssetBytes: strictPngValidator,
+  type: 'image',
+  maxBytes: localPngBytes.length
+})
+assert.equal(cachedLocalDataUrl, `data:image/png;base64,${localPngBytes.toString('base64')}`)
+assert.throws(
+  () => mediaCache.mediaCacheDataUrl(cachedLocalImage.url, {
+    cacheDir: mediaCacheDir,
+    validateAssetBytes: strictPngValidator,
+    type: 'image',
+    maxBytes: localPngBytes.length - 1
+  }),
+  /too large/i
+)
+const forgedJpegName = `${'b'.repeat(64)}.jpg`
+await fs.writeFile(path.join(mediaCacheDir, forgedJpegName), localPngBytes)
+assert.throws(
+  () => mediaCache.mediaCacheDataUrl(mediaCache.mediaCacheUrlForFileName(forgedJpegName), {
+    cacheDir: mediaCacheDir,
+    validateAssetBytes: strictPngValidator,
+    type: 'image'
+  }),
+  /MIME does not match content/
+)
+
+const concurrentCacheDir = await fs.mkdtemp(path.join(os.tmpdir(), 'gravuresse-media-concurrency-'))
+let activeCacheDownloads = 0
+let peakCacheDownloads = 0
+const concurrencyResults = await Promise.all(Array.from({ length: 5 }, (_, index) => (
+  mediaCache.cacheAssetPreview(
+    { url: `https://cdn.example.com/concurrent-${index}.png`, type: 'image' },
+    {
+      cacheDir: concurrentCacheDir,
+      downloadToFile: async (_url, filePath) => {
+        activeCacheDownloads++
+        peakCacheDownloads = Math.max(peakCacheDownloads, activeCacheDownloads)
+        try {
+          await new Promise(resolve => setTimeout(resolve, 20))
+          await fs.writeFile(filePath, Buffer.alloc(8, index))
+        } finally {
+          activeCacheDownloads--
+        }
+      },
+      validateAssetBytes: () => 'image/png',
+      maxConcurrentDownloads: 2,
+      maxCacheBytes: 64,
+      maxDownloadBytes: 8
+    }
+  )
+)))
+assert.equal(concurrencyResults.length, 5)
+assert.equal(peakCacheDownloads, 2, 'preview downloads must obey the configured concurrency ceiling')
+
+const quotaCacheDir = await fs.mkdtemp(path.join(os.tmpdir(), 'gravuresse-media-quota-'))
+const quotaOptions = {
+  cacheDir: quotaCacheDir,
+  downloadToFile: async (url, filePath) => {
+    await fs.writeFile(filePath, Buffer.alloc(8, new URL(url).pathname.charCodeAt(1)))
+  },
+  validateAssetBytes: () => 'image/png',
+  maxConcurrentDownloads: 2,
+  maxCacheBytes: 16,
+  maxDownloadBytes: 8
+}
+const quotaA = await mediaCache.cacheAssetPreview({ url: 'https://cdn.example.com/a.png', type: 'image' }, quotaOptions)
+const quotaB = await mediaCache.cacheAssetPreview({ url: 'https://cdn.example.com/b.png', type: 'image' }, quotaOptions)
+const quotaAPath = mediaCache.parseMediaCacheUrl(quotaA, quotaCacheDir)
+const quotaBPath = mediaCache.parseMediaCacheUrl(quotaB, quotaCacheDir)
+const oldTime = new Date(Date.now() - 2000)
+const newerTime = new Date(Date.now() - 1000)
+await fs.utimes(quotaAPath, oldTime, oldTime)
+await fs.utimes(quotaBPath, newerTime, newerTime)
+await mediaCache.cacheAssetPreview({ url: 'https://cdn.example.com/a.png', type: 'image' }, quotaOptions)
+const quotaC = await mediaCache.cacheAssetPreview({ url: 'https://cdn.example.com/c.png', type: 'image' }, quotaOptions)
+const quotaCPath = mediaCache.parseMediaCacheUrl(quotaC, quotaCacheDir)
+await fs.access(quotaAPath)
+await fs.access(quotaCPath)
+await assert.rejects(() => fs.access(quotaBPath), /ENOENT/, 'least-recently-used cache entry should be recycled')
+const quotaFiles = (await fs.readdir(quotaCacheDir)).filter(file => /^[a-f0-9]{64}\.(png|jpg|webp|mp4)$/.test(file))
+const quotaBytes = (await Promise.all(quotaFiles.map(file => fs.stat(path.join(quotaCacheDir, file)))))
+  .reduce((total, stat) => total + stat.size, 0)
+assert.ok(quotaBytes <= quotaOptions.maxCacheBytes, 'committed cache files must remain within the total quota')
+
+const legacyQuotaDir = await fs.mkdtemp(path.join(os.tmpdir(), 'gravuresse-media-legacy-quota-'))
+const legacyHitUrl = 'https://cdn.example.com/legacy-hit.png'
+const legacyHitHash = crypto.createHash('sha256').update(`image\0${legacyHitUrl}`).digest('hex')
+const legacyHitPath = path.join(legacyQuotaDir, `${legacyHitHash}.png`)
+await fs.writeFile(legacyHitPath, Buffer.alloc(8, 0xaa))
+await fs.writeFile(path.join(legacyQuotaDir, `${'d'.repeat(64)}.png`), Buffer.alloc(8, 0xdd))
+await fs.writeFile(path.join(legacyQuotaDir, `${'e'.repeat(64)}.png`), Buffer.alloc(8, 0xee))
+await fs.utimes(legacyHitPath, newerTime, newerTime)
+await mediaCache.cacheAssetPreview(
+  { url: legacyHitUrl, type: 'image' },
+  {
+    ...quotaOptions,
+    cacheDir: legacyQuotaDir,
+    downloadToFile: async () => { throw new Error('legacy cache hit should not redownload') }
+  }
+)
+const legacyQuotaFiles = (await fs.readdir(legacyQuotaDir)).filter(file => /^[a-f0-9]{64}\.(png|jpg|webp|mp4)$/.test(file))
+const prunedQuotaBytes = (await Promise.all(legacyQuotaFiles.map(file => fs.stat(path.join(legacyQuotaDir, file)))))
+  .reduce((total, stat) => total + stat.size, 0)
+assert.ok(
+  prunedQuotaBytes <= quotaOptions.maxCacheBytes,
+  'the first cache hit must prune files left over from an older unbounded cache'
+)
+
+const failedCacheDir = await fs.mkdtemp(path.join(os.tmpdir(), 'gravuresse-media-failure-'))
+await assert.rejects(
+  () => mediaCache.cacheAssetPreview(
+    { url: 'https://cdn.example.com/fail.png', type: 'image' },
+    {
+      ...quotaOptions,
+      cacheDir: failedCacheDir,
+      downloadToFile: async (_url, filePath) => {
+        await fs.writeFile(filePath, Buffer.from('partial'))
+        await fs.writeFile(`${filePath}.tmp-orphan`, Buffer.from('nested partial'))
+        throw new Error('simulated download failure')
+      }
+    }
+  ),
+  /simulated download failure/
+)
+assert.deepEqual(await fs.readdir(failedCacheDir), [], 'failed downloads must not leave cache pollution')
+
 const dirtyMessageImport = normalizeImportedConversations({
   conversation: {
     title: 'dirty messages',
@@ -1482,7 +1706,7 @@ const dirtyMessageImport = normalizeImportedConversations({
       null,
       'bad',
       { id: 1, role: 'user', content: 123 },
-      { id: '1', role: 'assistant', content: 'running task', task: { status: 'generating', type: 'audio', label: '', prompt: 7, error: {} } },
+      { id: '1', role: 'assistant', content: 'running task', task: { status: 'generating', type: 'video', label: '', prompt: 7, error: {}, providerId: 'wan', connectionId: 'conn-video', model: 'wan-video', taskId: 'remote-task', lastPolledAt: '2026-07-22T01:03:00.000Z' } },
       { id: 'm3', role: 'assistant', content: 'done task', unknown: 'drop', tasks: ['bad', { status: 'done', type: 'video', review_text: '视频中文说明', prompt: 'video prompt', sourceImageUrl: 'https://cdn.example.com/source.png', resolution: '2048', intent: 'generate_video', createdFrom: 'chat', styleDirection: 'cinematic', sourceAssetIds: 'source-video', unknown: 'drop' }] }
     ]
   }
@@ -1492,10 +1716,15 @@ assert.equal(dirtyMessageImport[0].messages[0].id, '1')
 assert.equal(dirtyMessageImport[0].messages[0].content, '')
 assert.notEqual(dirtyMessageImport[0].messages[1].id, '1')
 assert.equal(dirtyMessageImport[0].messages[1].task, undefined)
-assert.equal(dirtyMessageImport[0].messages[1].tasks[0].status, 'error')
-assert.equal(dirtyMessageImport[0].messages[1].tasks[0].type, 'image')
+assert.equal(dirtyMessageImport[0].messages[1].tasks[0].status, 'generating')
+assert.equal(dirtyMessageImport[0].messages[1].tasks[0].type, 'video')
 assert.equal(dirtyMessageImport[0].messages[1].tasks[0].prompt, '')
-assert.equal(typeof dirtyMessageImport[0].messages[1].tasks[0].error, 'string')
+assert.equal(dirtyMessageImport[0].messages[1].tasks[0].providerId, 'wan')
+assert.equal(dirtyMessageImport[0].messages[1].tasks[0].connectionId, 'conn-video')
+assert.equal(dirtyMessageImport[0].messages[1].tasks[0].model, 'wan-video')
+assert.equal(dirtyMessageImport[0].messages[1].tasks[0].taskId, 'remote-task')
+assert.equal(dirtyMessageImport[0].messages[1].tasks[0].lastPolledAt, '2026-07-22T01:03:00.000Z')
+assert.equal(dirtyMessageImport[0].messages[1].tasks[0].recoveryStatus, 'unknown')
 assert.equal(dirtyMessageImport[0].messages[2].tasks.length, 1)
 assert.equal(dirtyMessageImport[0].messages[2].tasks[0].type, 'video')
 assert.equal(dirtyMessageImport[0].messages[2].tasks[0].review_text, '视频中文说明')
@@ -1521,6 +1750,8 @@ assert.equal(normalizedStoredConversation.messages[0].id, '1')
 assert.equal(normalizedStoredConversation.assets.length, 1)
 assert.equal(normalizedStoredConversation.assets[0].id, '2')
 assert.equal(normalizedStoredConversation.assets[0].generation.parentAssetId, '3')
+assert.equal(normalizedStoredConversation.canvasDocument.conversationId, '99')
+assert.equal(normalizedStoredConversation.canvasDocument.items[0].entityId, '2')
 assert.equal(normalizedStoredConversation.unknown, undefined)
 
 const single = normalizeImportedConversations({
@@ -1552,12 +1783,24 @@ const duplicateAssetImport = normalizeImportedConversations({
     assets: [
       { id: 'dup', label: 'first' },
       { id: 'dup', label: 'second' }
+    ],
+    canvasDocument: {
+      viewMode: 'free',
+      items: [
+        { id: 'old-dup', kind: 'asset', entityId: 'dup', x: 10, y: 20 }
+      ]
+    },
+    messages: [
+      { id: 'm-dup', role: 'assistant', content: 'task', tasks: [{ id: 't-dup', type: 'image', status: 'done', label: 'task', prompt: 'prompt', assetId: 'dup', sourceAssetIds: ['dup'] }] }
     ]
   }
 })
 assert.equal(duplicateAssetImport[0].assets[0].id, 'dup')
 assert.notEqual(duplicateAssetImport[0].assets[1].id, 'dup')
 assert.notEqual(duplicateAssetImport[0].assets[0].id, duplicateAssetImport[0].assets[1].id)
+assert.equal(duplicateAssetImport[0].canvasDocument.items[0].entityId, 'dup')
+assert.equal(duplicateAssetImport[0].canvasDocument.items[0].x, 10)
+assert.equal(duplicateAssetImport[0].messages[0].tasks[0].assetId, 'dup')
 
 const dirtyAssetImport = normalizeImportedConversations({
   conversation: {
@@ -1597,14 +1840,27 @@ const withTask = updateConversationTask(
 assert.equal(withTask.messages[0].tasks[0].status, 'done')
 assert.equal(withTask.messages[0].tasks[0].assetId, 'asset-done')
 
+const appendedTask = appendTaskToConversation(
+  { messages: [{ id: 'assistant-append', tasks: [{ id: 'old-task', status: 'error', label: 'old' }] }] },
+  'assistant-append',
+  { id: 'new-task', type: 'image', status: 'pending', label: 'new', prompt: 'new prompt' }
+)
+assert.equal(appendedTask.taskIndex, 1)
+assert.equal(appendedTask.conversation.messages[0].tasks[0].id, 'old-task')
+assert.equal(appendedTask.conversation.messages[0].tasks[1].id, 'new-task')
+
 const added = addAssetToConversationRecord({ assets: 'bad assets' }, { id: 'asset-ledger', label: 'Ledger' })
 assert.equal(added.asset.id, 'asset-ledger')
 assert.equal(added.conversation.assets[0].id, 'asset-ledger')
+assert.equal(added.conversation.canvasDocument.items[0].kind, 'asset')
+assert.equal(added.conversation.canvasDocument.items[0].entityId, 'asset-ledger')
 
 const updatedAssetConversation = updateConversationAsset(added.conversation, 'asset-ledger', { isMaterial: true, x: 42, y: 24 })
 assert.equal(updatedAssetConversation.assets[0].isMaterial, true)
 assert.equal(updatedAssetConversation.assets[0].x, 42)
 assert.equal(updatedAssetConversation.assets[0].y, 24)
+assert.equal(updatedAssetConversation.canvasDocument.items.find(item => item.kind === 'asset' && item.entityId === 'asset-ledger').x, 42)
+assert.equal(updatedAssetConversation.canvasDocument.items.find(item => item.kind === 'asset' && item.entityId === 'asset-ledger').y, 24)
 
 const normalizedUpdatedAssetConversation = updateConversationAsset(updatedAssetConversation, 'asset-ledger', {
   generation: {
@@ -1642,5 +1898,25 @@ assert.equal(mergedLedgerConversation.assets[0].generation.resolution, '2048')
 
 const removedAssetConversation = removeConversationAsset(updatedAssetConversation, 'asset-ledger')
 assert.equal(removedAssetConversation.assets.length, 0)
+assert.equal(removedAssetConversation.canvasDocument.items.some(item => item.kind === 'asset' && item.entityId === 'asset-ledger'), false)
+
+const baseCanvasDoc = createCanvasDocument('conv-helper', [{ id: 'asset-helper', x: 3, y: 4 }])
+assert.equal(baseCanvasDoc.items[0].entityId, 'asset-helper')
+const normalizedCanvasDoc = normalizeCanvasDocument({
+  ...baseCanvasDoc,
+  conversationId: 'wrong',
+  viewMode: 'free',
+  viewport: { x: 4, y: 5, zoom: 99 },
+  items: [
+    { id: 'asset-helper-item', kind: 'asset', entityId: 'asset-helper', x: 30, y: 40 },
+    { id: 'pencil-helper', kind: 'drawing', tool: 'pencil', x: 1, y: 1, points: [{ x: 1, y: 1 }, { x: 2, y: 2 }], style: { strokeColor: '#E8A849', strokeWidth: 2 } }
+  ]
+}, { conversationId: 'conv-helper', assets: [{ id: 'asset-helper' }] })
+assert.equal(normalizedCanvasDoc.conversationId, 'conv-helper')
+assert.equal(normalizedCanvasDoc.viewport.zoom, 5)
+assert.equal(normalizedCanvasDoc.items.length, 2)
+const hydratedCanvasAssets = hydrateAssetsFromCanvasDocument([{ id: 'asset-helper' }], normalizedCanvasDoc)
+assert.equal(hydratedCanvasAssets[0].x, 30)
+assert.equal(hydratedCanvasAssets[0].y, 40)
 
 console.log('core data tests passed')

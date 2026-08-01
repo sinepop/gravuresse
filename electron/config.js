@@ -1,6 +1,7 @@
 const { app, safeStorage } = require('electron')
 const fs = require('fs')
 const path = require('path')
+const { persistenceError, writeJsonAtomic } = require('./persistence')
 
 const CONFIG_DIR = path.join(app.getPath('userData'), 'Gravuresse')
 const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json')
@@ -42,7 +43,7 @@ const DEFAULT_CONFIG = {
   },
   general: {
     theme: 'light', language: 'zh', fontSize: 'medium',
-    autoSave: true, exportPath: '', apiTimeout: 60000, autoSaveImage: false,
+    autoSave: true, exportPath: '', apiTimeout: 60000, autoSaveImage: false, autoSaveVideo: false,
     enableVideo: false, enableReference: false, defaultRatio: '1:1',
     defaultStyle: '', defaultResolution: '1024', defaultDuration: 5,
     workspaceMode: 'canvas'
@@ -52,6 +53,10 @@ const DEFAULT_CONFIG = {
 
 function ensureDir() {
   if (!fs.existsSync(CONFIG_DIR)) fs.mkdirSync(CONFIG_DIR, { recursive: true })
+}
+
+function defaultConfig() {
+  return JSON.parse(JSON.stringify(DEFAULT_CONFIG))
 }
 
 function isPlainObject(value) {
@@ -243,9 +248,15 @@ function decryptApiKeys(cfg) {
       const b64 = val.slice('__ENCRYPTED__'.length)
       try {
         setNestedValue(result, [...keyPath], safeStorage.decryptString(Buffer.from(b64, 'base64')))
-      } catch {
-        // OS key/profile changes can make safeStorage data unreadable.
-        setNestedValue(result, [...keyPath], '')
+      } catch (cause) {
+        // Replacing an unreadable credential with an empty string would make a
+        // later, unrelated settings update irreversibly erase the ciphertext.
+        throw persistenceError(
+          'CONFIG_DECRYPT_FAILED',
+          `Failed to decrypt saved credential at ${keyPath.join('.')}`,
+          CONFIG_FILE,
+          cause
+        )
       }
     }
   }
@@ -539,24 +550,44 @@ function mergeRedactedApiKeys(nextCfg, currentCfg) {
 }
 
 function load() {
-  ensureDir()
   try {
+    ensureDir()
     const raw = fs.readFileSync(CONFIG_FILE, 'utf-8')
     const parsed = sanitizeObjectShape(JSON.parse(raw))
+    if (!isPlainObject(parsed)) {
+      throw new TypeError('Configuration root must be an object')
+    }
     const merged = deepMerge(DEFAULT_CONFIG, migrateConnections(migrateOldProviderFormat(parsed)))
     return decryptApiKeys(merged)
-  } catch { return JSON.parse(JSON.stringify(DEFAULT_CONFIG)) }
+  } catch (cause) {
+    if (cause?.code === 'ENOENT') return defaultConfig()
+    if (cause?.code === 'CONFIG_READ_FAILED') throw cause
+    throw persistenceError(
+      'CONFIG_READ_FAILED',
+      'Failed to read the saved configuration; the file was not replaced',
+      CONFIG_FILE,
+      cause
+    )
+  }
+}
+
+function writeConfig(canonical) {
+  assertSecretsCanBePersisted(canonical)
+  const encrypted = encryptApiKeys(canonical)
+  writeJsonAtomic(CONFIG_FILE, encrypted, {
+    errorCode: 'CONFIG_WRITE_FAILED',
+    label: 'configuration'
+  })
 }
 
 function save(cfg) {
   return enqueueWrite(() => {
     ensureDir()
+    // A full save must not replace an existing file that this process cannot
+    // parse or decrypt. Recovery of that source has to be explicit.
+    if (fs.existsSync(CONFIG_FILE)) load()
     const canonical = migrateConnections(migrateOldProviderFormat(sanitizeObjectShape(cfg)))
-    assertSecretsCanBePersisted(canonical)
-    const encrypted = encryptApiKeys(canonical)
-    const tmpFile = CONFIG_FILE + '.tmp'
-    fs.writeFileSync(tmpFile, JSON.stringify(encrypted, null, 2), 'utf-8')
-    fs.renameSync(tmpFile, CONFIG_FILE)
+    writeConfig(canonical)
   })
 }
 
@@ -565,11 +596,7 @@ function update(mutator) {
     ensureDir()
     const current = load()
     const next = migrateConnections(migrateOldProviderFormat(sanitizeObjectShape(mutator(current))))
-    assertSecretsCanBePersisted(next)
-    const encrypted = encryptApiKeys(next)
-    const tmpFile = CONFIG_FILE + '.tmp'
-    fs.writeFileSync(tmpFile, JSON.stringify(encrypted, null, 2), 'utf-8')
-    fs.renameSync(tmpFile, CONFIG_FILE)
+    writeConfig(next)
     return next
   })
 }

@@ -338,7 +338,7 @@ function promptWithNegative(prompt, negativePrompt, label) {
   return `${prompt}\n\n${label}: ${negativePrompt}`
 }
 
-async function requestJson(url, method, headers, requestOptions, body) {
+async function requestJson(url, method, headers, requestOptions, body, behavior = {}) {
   const res = await request(url, {
     method,
     headers,
@@ -350,7 +350,7 @@ async function requestJson(url, method, headers, requestOptions, body) {
   } catch {
     throw new Error('Provider returned invalid JSON')
   }
-  if (json.error) {
+  if (json.error && behavior.allowErrorPayload !== true) {
     const error = json.error
     throw new Error(typeof error === 'string' ? error : error.message || 'Provider error')
   }
@@ -714,7 +714,7 @@ async function handleVideoPoll(params) {
   const json = await requestJson(url, template.pollMethod || 'GET', {
     ...auth.headers,
     ...(body ? { 'Content-Type': 'application/json' } : {})
-  }, params.requestOptions, body)
+  }, params.requestOptions, body, { allowErrorPayload: true })
   return {
     status: normalizeStatus(readPath(json, template.statusPath) || json.status),
     progress: normalizeProgress(readPath(json, template.progressPath) || json.progress),

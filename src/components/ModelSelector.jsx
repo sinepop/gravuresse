@@ -29,6 +29,13 @@ function sameProfile(current = {}, profile = {}) {
     (current.modelId || '') === (profile.modelId || profile.model || '')
 }
 
+/** @param {ProviderProfile[]} profiles @param {ActiveSelection} preferred @param {ActiveSelection} fallback */
+function validCurrentSelection(profiles, preferred = {}, fallback = {}) {
+  if (profiles.some(profile => sameProfile(preferred, profile))) return preferred
+  if (profiles.some(profile => sameProfile(fallback, profile))) return fallback
+  return {}
+}
+
 /** @param {{ track: Track, current?: ActiveSelection, profiles: ProviderProfile[], providerLists: ProviderLists, onConnectionSelect?: (track: Track, selection: ActiveSelection) => void, lang: string }} props */
 function ModelPicker({ track, current, profiles, providerLists, onConnectionSelect, lang }) {
   const [open, setOpen] = useState(false)
@@ -148,7 +155,11 @@ export default function ModelSelector({ config, providerLists, activeModule = 'i
   const tracks = ['chat', mediaTrack]
   const items = tracks.map(track => {
     const profiles = canonicalProfiles(config, track)
-    const current = activeSelections?.[track] || config?.connections?.defaults?.[track] || {}
+    const current = validCurrentSelection(
+      profiles,
+      activeSelections?.[track] || {},
+      config?.connections?.defaults?.[track] || {}
+    )
     return profiles.length ? { track, current, profiles } : null
   }).filter((item) => item !== null)
 

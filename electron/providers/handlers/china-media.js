@@ -35,7 +35,8 @@ function readPath(obj, path) {
 function normalizeStatus(status) {
   const value = String(status || 'pending').toLowerCase()
   if (['succeeded', 'success', 'completed', 'complete', 'done'].includes(value)) return 'succeeded'
-  if (['failed', 'failure', 'error', 'cancelled', 'canceled', 'unknown'].includes(value)) return 'failed'
+  if (['failed', 'failure', 'error', 'cancelled', 'canceled'].includes(value)) return 'failed'
+  if (value === 'unknown') return 'unknown'
   if (value === 'created') return 'pending'
   if (value === 'queueing') return 'queued'
   if (['pending', 'queued', 'running', 'processing', 'in_progress'].includes(value)) return value
@@ -62,7 +63,7 @@ function httpsResourceUrl(url) {
   return value
 }
 
-async function requestJson(url, method, headers, requestOptions, body) {
+async function requestJson(url, method, headers, requestOptions, body, behavior = {}) {
   const res = await request(url, {
     method,
     headers,
@@ -75,7 +76,8 @@ async function requestJson(url, method, headers, requestOptions, body) {
     throw new Error('Provider returned invalid JSON')
   }
   const message = json.error?.message || json.message || json.output?.message || json.output?.error_message
-  if (json.error || json.code || json.output?.task_status === 'FAILED' || json.status === 'failed') {
+  const taskFailed = normalizeStatus(json.output?.task_status || json.status) === 'failed'
+  if (json.error || json.code || (taskFailed && behavior.allowTaskFailure !== true)) {
     throw new Error(message || 'Provider error')
   }
   return json
@@ -163,7 +165,7 @@ async function wanVideoPoll(params) {
   const taskId = params.taskId || params.task_id
   if (!taskId) throw new Error('Missing video task id')
   const url = joinApiUrl(params.baseUrl, `/tasks/${encodeURIComponent(taskId)}`)
-  const json = await requestJson(url, 'GET', params.auth.headers, params.requestOptions)
+  const json = await requestJson(url, 'GET', params.auth.headers, params.requestOptions, undefined, { allowTaskFailure: true })
   const output = json.output || {}
   return {
     status: normalizeStatus(output.task_status),
@@ -225,7 +227,7 @@ async function qianfanVideoPoll(params) {
   if (!taskId) throw new Error('Missing video task id')
   const url = joinApiUrl(params.baseUrl, '/video/generations')
   url.searchParams.set('task_id', String(taskId))
-  const json = await requestJson(url, 'GET', params.auth.headers, params.requestOptions)
+  const json = await requestJson(url, 'GET', params.auth.headers, params.requestOptions, undefined, { allowTaskFailure: true })
   return {
     status: normalizeStatus(json.status),
     progress: normalizeProgress(json.progress),
@@ -272,7 +274,7 @@ async function tencentTokenhubVideoPoll(params) {
   const json = await requestJson(url, 'POST', {
     ...params.auth.headers,
     'Content-Type': 'application/json'
-  }, params.requestOptions, body)
+  }, params.requestOptions, body, { allowTaskFailure: true })
   return {
     status: normalizeStatus(json.status),
     progress: normalizeProgress(json.progress),

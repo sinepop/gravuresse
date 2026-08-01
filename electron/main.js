@@ -5,6 +5,7 @@ const fs = require('fs')
 const crypto = require('crypto')
 const { fileURLToPath } = require('url')
 const { electronApp, optimizer, is } = require('@electron-toolkit/utils')
+const { acquireSingleInstanceLock } = require('./single-instance')
 const config = require('./config')
 const store = require('./store')
 const modelsApi = require('./api/models')
@@ -16,7 +17,9 @@ const { registerConfigIpc } = require('./ipc/config')
 const { registerConversationIpc } = require('./ipc/conversation')
 const { registerAssetIpc } = require('./ipc/assets')
 const { registerProviderIpc } = require('./ipc/provider')
-const { MEDIA_CACHE_SCHEME, cacheAssetBytes, cacheAssetPreview, mediaCacheMime, parseMediaCacheUrl } = require('./media-cache')
+const { MEDIA_CACHE_SCHEME, cacheAssetBytes, cacheAssetPreview, mediaCacheDataUrl, mediaCacheMime, parseMediaCacheUrl } = require('./media-cache')
+const { inlineProviderMediaPayload, pollSessionPayload } = require('./provider-media')
+const { invalidateVideoPollSessions } = require('./video-poll-sessions')
 const { canUseStoredCredentials, resolveProviderIdByTrack, storedProviderForRequest } = require('./providers/account-resolver')
 const {
   realSecret, credentialsFromProvider, inferProviderTrack, defaultProviderBaseUrl: getDefaultBaseUrl,
@@ -32,6 +35,8 @@ const { validateGenerationRequest } = require('./providers/validation')
 
 let mainWindow = null
 let crashCount = 0
+
+const singleInstanceLockAcquired = acquireSingleInstanceLock(app, () => mainWindow)
 
 app.commandLine.appendSwitch('proxy-bypass-list', '<-loopback>')
 
@@ -153,6 +158,12 @@ function writeDataUrl(url, filePath, type) {
 }
 
 async function writeAssetUrl(url, filePath, type) {
+  if (url.startsWith(`${MEDIA_CACHE_SCHEME}:`)) {
+    const dataUrl = mediaCacheDataUrl(url, {
+      cacheDir: MEDIA_CACHE_DIR, validateAssetBytes, type, maxBytes: MAX_ASSET_BYTES
+    })
+    return writeDataUrl(dataUrl, filePath, type)
+  }
   if (url.startsWith('data:')) {
     return writeDataUrl(url, filePath, type)
   }
@@ -174,6 +185,19 @@ async function writeAssetUrl(url, filePath, type) {
 async function inlineExportAsset(asset = {}) {
   if (!asset.url || !ASSET_TYPE_MIMES[asset.type]) return { asset, inlined: false }
   if (asset.url.startsWith('data:')) return { asset, inlined: true }
+  if (asset.url.startsWith(`${MEDIA_CACHE_SCHEME}:`)) {
+    try {
+      const url = mediaCacheDataUrl(asset.url, {
+        cacheDir: MEDIA_CACHE_DIR, validateAssetBytes, type: asset.type, maxBytes: MAX_ASSET_BYTES
+      })
+      return {
+        asset: { ...asset, url, originalUrl: asset.originalUrl || asset.url },
+        inlined: true
+      }
+    } catch {
+      return { asset, inlined: false }
+    }
+  }
   if (!asset.url.startsWith('https://')) return { asset, inlined: false }
 
   const downloadPath = path.join(app.getPath('temp'), `gravuresse-export-${crypto.randomUUID()}`)
@@ -196,6 +220,10 @@ async function inlineExportAsset(asset = {}) {
   }
 }
 
+function isExportMediaSource(url) {
+  return typeof url === 'string' && (url.startsWith('https://') || url.startsWith(`${MEDIA_CACHE_SCHEME}:`))
+}
+
 async function inlineExportAssets(assets = []) {
   const results = []
   let inlined = 0
@@ -204,13 +232,13 @@ async function inlineExportAssets(assets = []) {
     const result = await inlineExportAsset(asset)
     results.push(result.asset)
     if (result.inlined) inlined++
-    else if (asset?.url?.startsWith('https://')) skipped++
+    else if (isExportMediaSource(asset?.url)) skipped++
   }
   return { assets: results, inlined, skipped }
 }
 
 function remoteExportAssetCount(assets = []) {
-  return assets.filter(asset => asset?.url?.startsWith('https://')).length
+  return assets.filter(asset => isExportMediaSource(asset?.url)).length
 }
 
 async function inlineExportConversations(conversations = []) {
@@ -222,7 +250,8 @@ async function inlineExportConversations(conversations = []) {
     results.push({
       title: conversation.title || '',
       messages: Array.isArray(conversation.messages) ? conversation.messages : [],
-      assets: media.assets
+      assets: media.assets,
+      canvasDocument: conversation.canvasDocument
     })
     inlined += media.inlined
     skipped += media.skipped
@@ -333,8 +362,11 @@ async function executeProviderCall(params = {}) {
     }
     Object.assign(safePayload, validation.options)
   }
+  const providerPayload = inlineProviderMediaPayload(safePayload, (url, type) => mediaCacheDataUrl(url, {
+    cacheDir: MEDIA_CACHE_DIR, validateAssetBytes, type, maxBytes: MAX_ASSET_BYTES
+  }))
   const result = await providerPipeline.execute({
-    ...safePayload,
+    ...providerPayload,
     credentials,
     baseUrl,
     requestOptions: requestOptionsFromConfig(stored, providerConfig)
@@ -345,7 +377,9 @@ async function executeProviderCall(params = {}) {
       credentials,
       baseUrl,
       requestOptions: requestOptionsFromConfig(stored, providerConfig),
-      payload: safePayload
+      connectionId: providerConfig.connectionId || params.connectionId || '',
+      accountId: providerConfig.accountId || params.accountId || '',
+      payload: pollSessionPayload(safePayload)
     })
   }
   return result
@@ -372,7 +406,8 @@ registerProviderIpc({
   credentialsFromProvider,
   applyQueryParams,
   requestOptionsFromConfig,
-  getModelFetchProvider
+  getModelFetchProvider,
+  invalidateVideoPollSessions: identities => invalidateVideoPollSessions(videoPollSessions, identities)
 })
 
 function cleanupVideoPollSessions() {
@@ -539,18 +574,20 @@ function createWindow() {
 }
 
 
-app.whenReady().then(() => {
-  electronApp.setAppUserModelId('com.gravuresse')
-  app.on('browser-window-created', (_, window) => optimizer.watchWindowShortcuts(window))
-  registerMediaCacheProtocol()
-  createWindow()
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+if (singleInstanceLockAcquired) {
+  app.whenReady().then(() => {
+    electronApp.setAppUserModelId('com.gravuresse')
+    app.on('browser-window-created', (_, window) => optimizer.watchWindowShortcuts(window))
+    registerMediaCacheProtocol()
+    createWindow()
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    })
   })
-})
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit()
-})
+  app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') app.quit()
+  })
 
-app.on('will-quit', () => {})
+  app.on('will-quit', () => {})
+}

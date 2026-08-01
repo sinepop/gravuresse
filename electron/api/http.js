@@ -233,24 +233,74 @@ async function downloadToFile(url, filePath, options = {}, depth = 0) {
   })
 }
 
-async function httpRequest(url, options = {}, body = null, depth = 0) {
+function normalizeTimeout(value, fallback) {
+  const timeout = Number(value)
+  return Number.isFinite(timeout) && timeout > 0 ? timeout : fallback
+}
+
+function requestTimeoutError(timeout) {
+  return new Error(`Request timed out after ${timeout}ms`)
+}
+
+function awaitBeforeDeadline(promise, deadlineAt, timeout) {
+  const remaining = deadlineAt - Date.now()
+  if (remaining <= 0) return Promise.reject(requestTimeoutError(timeout))
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(requestTimeoutError(timeout)), remaining)
+    Promise.resolve(promise).then(
+      value => {
+        clearTimeout(timer)
+        resolve(value)
+      },
+      error => {
+        clearTimeout(timer)
+        reject(error)
+      }
+    )
+  })
+}
+
+async function httpRequest(url, options = {}, body = null, depth = 0, deadlineAt = null, timeoutBudget = null) {
   if (depth > MAX_REDIRECTS) throw new Error('Too many redirects')
-  const timeout = options.timeout || DEFAULT_TIMEOUT
+  const timeout = timeoutBudget || normalizeTimeout(options.timeout, DEFAULT_TIMEOUT)
+  const absoluteDeadline = deadlineAt || (Date.now() + timeout)
   const maxResponseBytes = options.maxResponseBytes || DEFAULT_MAX_RESPONSE_BYTES
-  const target = await resolveSafeHttpsTarget(url)
+  const target = await awaitBeforeDeadline(resolveSafeHttpsTarget(url), absoluteDeadline, timeout)
   const parsedUrl = target.url
+  const remaining = absoluteDeadline - Date.now()
+  if (remaining <= 0) throw requestTimeoutError(timeout)
   const requestOptions = {
     method: options.method,
     headers: options.headers,
-    timeout,
+    timeout: remaining,
     lookup: target.lookup
   }
   return new Promise((resolve, reject) => {
+    let settled = false
+    let deadlineTimer = null
+    const clearDeadline = () => {
+      if (deadlineTimer) clearTimeout(deadlineTimer)
+      deadlineTimer = null
+    }
+    const succeed = value => {
+      if (settled) return
+      settled = true
+      clearDeadline()
+      resolve(value)
+    }
+    const fail = error => {
+      if (settled) return
+      settled = true
+      clearDeadline()
+      reject(error)
+    }
+
     const req = https.request(parsedUrl, requestOptions, (res) => {
       const collectResponse = () => {
         let data = ''
         let bytes = 0
         res.on('data', chunk => {
+          if (settled) return
           bytes += chunk.length
           if (bytes > maxResponseBytes) {
             req.destroy(new Error('Response is too large'))
@@ -258,7 +308,9 @@ async function httpRequest(url, options = {}, body = null, depth = 0) {
           }
           data += chunk
         })
-        res.on('end', () => resolve({ status: res.statusCode, data, headers: res.headers }))
+        res.on('end', () => succeed({ status: res.statusCode, data, headers: res.headers }))
+        res.on('error', fail)
+        res.on('aborted', () => fail(new Error('Response aborted')))
       }
 
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
@@ -268,24 +320,36 @@ async function httpRequest(url, options = {}, body = null, depth = 0) {
           assertSameOriginRedirect(parsedUrl, nextUrl)
         } catch {
           res.resume()
-          reject(nextUrl ? new Error('Redirects to a different origin are not allowed') : new Error('Invalid URL'))
+          fail(nextUrl ? new Error('Redirects to a different origin are not allowed') : new Error('Invalid URL'))
           return
         }
         res.resume()
-        httpRequest(nextUrl, options, body, depth + 1).then(resolve, reject)
+        if (settled) return
+        settled = true
+        clearDeadline()
+        httpRequest(nextUrl, options, body, depth + 1, absoluteDeadline, timeout).then(resolve, reject)
         return
       }
 
       collectResponse()
     })
-    req.on('error', reject)
-    req.on('timeout', () => {
-      req.destroy(new Error(`Request timed out after ${timeout}ms`))
-    })
-    if (body != null) {
-      req.write(typeof body === 'string' ? body : JSON.stringify(body))
+    req.on('error', fail)
+    const abortForTimeout = () => {
+      const error = requestTimeoutError(timeout)
+      try { req.destroy(error) } catch {}
+      fail(error)
     }
-    req.end()
+    req.on('timeout', abortForTimeout)
+    deadlineTimer = setTimeout(abortForTimeout, remaining)
+    try {
+      if (body != null) {
+        req.write(typeof body === 'string' ? body : JSON.stringify(body))
+      }
+      req.end()
+    } catch (error) {
+      req.destroy()
+      fail(error)
+    }
   })
 }
 

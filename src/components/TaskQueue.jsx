@@ -8,6 +8,7 @@ import { t } from '../i18n'
 const STATUS_MAP = {
   pending: { color: 'var(--text-muted)' },
   running: { color: 'var(--accent)' },
+  unknown: { color: 'var(--warning)' },
   completed: { color: 'var(--success)' },
   failed: { color: 'var(--danger)' }
 }
@@ -37,7 +38,7 @@ export default function TaskQueue({ tasks, onRetry, onRemove, lang }) {
           <div key={task.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px', borderBottom: '1px solid var(--border-subtle)', fontSize: 11 }}>
             <span style={{ color: st.color, fontSize: 10, minWidth: 48 }}>{t(task.status, lang)}</span>
             <span style={{ flex: 1, color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{task.label}</span>
-            {task.status === 'running' && (
+            {(task.status === 'running' || task.status === 'unknown') && (
               <div style={{ width: 60, height: 4, background: 'var(--bg-primary)', borderRadius: 2, overflow: 'hidden' }}>
                 <div style={{ width: `${task.progress}%`, height: '100%', background: 'var(--accent)', borderRadius: 2, transition: 'width 0.3s' }} />
               </div>

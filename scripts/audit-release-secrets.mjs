@@ -42,10 +42,9 @@ const FORBIDDEN_FILE_PATTERNS = [
   /\.(?:kdbx|har)$/i,
   /\.(?:sqlite|sqlite3|db)$/i,
   /(?:\.bak|\.backup|\.old|\.orig|~)$/i,
-  /(^|[/\\])(?:CLAUDE|AGENTS|PRD)\.md$/i,
-  /(^|[/\\])SPEC-[^/\\]+\.md$/i,
   /(^|[/\\])\.codex([/\\]|$)/i,
   /(^|[/\\])\.claude([/\\]|$)/i,
+  /(^|[/\\])\.audit([/\\]|$)/i,
   /(^|[/\\])\.hermes([/\\]|$)/i
 ]
 

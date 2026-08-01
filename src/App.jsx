@@ -15,9 +15,12 @@ import useChat from './hooks/useChat'
 import useCanvas from './hooks/useCanvas'
 import useTaskQueue from './hooks/useTaskQueue'
 import { formatErrorAlert, getConversationTitle, normalizeConversationRecord, normalizeImportedConversations } from './utils/conversationImport'
+import { shouldAutoSaveHistory, titleForConversationSave } from './utils/conversationPersistence'
 import { buildGenerationMeta } from './utils/generationTasks'
+import { createCanvasDocument, remapCanvasDocument } from './utils/canvasDocument'
 import {
   addAssetToConversationRecord,
+  appendTaskToConversation,
   appendMessageToConversation,
   removeConversationAsset,
   updateConversationAsset,
@@ -28,16 +31,19 @@ import { t } from './i18n'
 import './styles/global.css'
 
 /** @typedef {import('./types/domain').Asset} Asset */
+/** @typedef {import('./types/domain').CanvasDocument} CanvasDocument */
 /** @typedef {import('./types/domain').Conversation} Conversation */
 /** @typedef {import('./types/domain').ConversationBridge} ConversationBridge */
 /** @typedef {import('./types/domain').Message} Message */
+/** @typedef {import('./types/domain').MessageTask} MessageTask */
+/** @typedef {import('./types/domain').ProviderConnection} ProviderConnection */
 /** @typedef {import('./types/domain').ProviderConnectionsConfig} ProviderConnectionsConfig */
 /** @typedef {import('./types/domain').StoredConversation} StoredConversation */
 /** @typedef {import('./types/domain').Track} Track */
 /** @typedef {Record<string, unknown>} UnknownRecord */
 /** @typedef {'image' | 'video'} WorkspaceModule */
 /** @typedef {{ id: WorkspaceModule, icon: 'image' | 'film', labels: Record<string, string> }} WorkspaceModuleDefinition */
-/** @typedef {{ id: string, messages: Message[], assets: Asset[] }} LoadingSnapshot */
+/** @typedef {{ id: string, messages: Message[], assets: Asset[], canvasDocument: CanvasDocument }} LoadingSnapshot */
 /** @typedef {{ id: string, conversation: StoredConversation }} EnsureConversationResult */
 /** @typedef {{ flushCurrent?: boolean, applyToView?: boolean }} CreateConversationOptions */
 /** @typedef {{ forSend?: boolean }} EnsureConversationOptions */
@@ -61,6 +67,30 @@ function textOr(value, fallback) {
   return typeof value === 'string' && value ? value : fallback
 }
 
+/** @param {unknown} config @returns {ProviderConnection[]} */
+function configuredConnections(config) {
+  const connections = recordOf(recordOf(config).connections)
+  const all = [
+    ...(Array.isArray(connections.accounts) ? connections.accounts : []),
+    ...(Array.isArray(connections.apiKeys) ? connections.apiKeys : []),
+    ...(Array.isArray(connections.relays) ? connections.relays : [])
+  ].filter(isRecord)
+  return /** @type {ProviderConnection[]} */ (all)
+}
+
+/** @param {MessageTask} task @param {unknown} config @returns {{ ok: boolean, connection?: ProviderConnection, reason?: string }} */
+function classifyVideoRecovery(task, config) {
+  if (!task.taskId || !task.connectionId || !task.providerId || !task.model) {
+    return { ok: false, reason: 'missing-recovery-key' }
+  }
+  const connection = configuredConnections(config).find(item => item.id === task.connectionId)
+  if (!connection) return { ok: false, reason: 'missing-connection' }
+  if (Array.isArray(connection.capabilities) && !connection.capabilities.includes('video')) {
+    return { ok: false, reason: 'connection-not-video-capable' }
+  }
+  return { ok: true, connection }
+}
+
 /** @param {StoredConversation[]} conversations @returns {StoredConversation[]} */
 function sortConversations(conversations) {
   return conversations.sort((a, b) => new Date(b.updatedAt || '').getTime() - new Date(a.updatedAt || '').getTime())
@@ -68,13 +98,16 @@ function sortConversations(conversations) {
 
 /** @returns {StoredConversation} */
 function createEmptyConversation() {
+  const id = `conv_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
+  const now = new Date().toISOString()
   return {
-    id: `conv_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+    id,
     title: '',
     messages: [],
     assets: [],
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString()
+    canvasDocument: createCanvasDocument(id, []),
+    createdAt: now,
+    updatedAt: now
   }
 }
 
@@ -102,6 +135,7 @@ export default function App() {
   const [composerIntent, setComposerIntent] = useState(/** @type {ComposerIntent | null} */ (null))
   const generalConfig = recordOf(runtimeConfig?.general)
   const lang = textOr(generalConfig.language, 'zh')
+  const autoSaveHistory = shouldAutoSaveHistory(runtimeConfig)
 
   // Conversation management
   const [conversations, setConversations] = useState(/** @type {StoredConversation[]} */ ([]))
@@ -148,14 +182,27 @@ export default function App() {
     setConversations(next)
     const messages = updated.messages || []
     const assets = updated.assets || []
-    const title = updated.title || getConversationTitle(messages)
-    window.electronAPI?.saveConversation(id, { messages, assets, title }).catch(e => console.error('Failed to save conversation:', e))
+    const canvasDocument = updated.canvasDocument
+    const title = titleForConversationSave(updated, messages)
+    if (autoSaveHistory) {
+      window.electronAPI?.saveConversation(id, { messages, assets, canvasDocument, title }).catch(e => console.error('Failed to save conversation:', e))
+    }
     return updated
-  }, [])
+  }, [autoSaveHistory])
 
   const conversationBridge = useMemo(/** @returns {ConversationBridge} */ () => ({
     canWrite: (id) => Boolean(id && !deletedConvIds.current.has(id) && conversationsRef.current.some(c => c.id === id)),
     appendMessage: (id, message) => patchStoredConversation(id, conv => appendMessageToConversation(conv, message)),
+    appendTask: (id, msgId, task) => {
+      /** @type {number | null} */
+      let index = null
+      const updated = patchStoredConversation(id, conv => {
+        const result = appendTaskToConversation(conv, msgId, task)
+        index = result.taskIndex >= 0 ? result.taskIndex : null
+        return result.conversation
+      })
+      return updated ? index : null
+    },
     updateTask: (id, msgId, taskIndex, patch) => patchStoredConversation(id, conv => updateConversationTask(conv, msgId, taskIndex, patch)),
     addAsset: (id, asset) => {
       /** @type {Asset | null} */
@@ -178,18 +225,41 @@ export default function App() {
   const chat = useChat(runtimeConfig, canvas, taskQueue.add, activeConvId, isActiveConversation, conversationBridge, providerLists, activeSelections)
 
   const setChatMessages = chat.setMessages
-  const replaceCanvasAssets = canvas.replaceAssets
+  const replaceCanvasSnapshot = canvas.replaceSnapshot
+
+  const updateRecoveredTask = useCallback(/** @param {string} convId @param {string | number} msgId @param {number} taskIndex @param {Partial<MessageTask>} patch */ (convId, msgId, taskIndex, patch) => {
+    const idx = taskIndex ?? 0
+    if (convId === activeConvIdRef.current) {
+      setChatMessages(prev => prev.map(message => {
+        if (message.id !== msgId) return message
+        const tasks = [...(message.tasks || (message.task ? [message.task] : []))]
+        tasks[idx] = { ...tasks[idx], ...patch }
+        return { ...message, tasks }
+      }))
+    }
+    conversationBridge.updateTask?.(convId, msgId, idx, patch)
+  }, [conversationBridge, setChatMessages])
+
+  const addRecoveredAsset = useCallback(/** @param {string} convId @param {unknown} asset */ (convId, asset) => {
+    if (convId === activeConvIdRef.current) {
+      const item = canvas.addAsset(asset)
+      conversationBridge.addAsset?.(convId, item)
+      return item
+    }
+    return conversationBridge.addAsset?.(convId, asset) || null
+  }, [canvas, conversationBridge])
 
   const applyConversation = useCallback(/** @param {unknown} conv @param {string} id */ (conv, id) => {
-    const normalized = normalizeConversationRecord(conv) || { messages: [], assets: [] }
-    const messages = normalized.messages || []
-    const assets = normalized.assets || []
+    const normalized = normalizeConversationRecord(conv)
+    const messages = normalized?.messages || []
+    const assets = normalized?.assets || []
+    const canvasDocument = normalized?.canvasDocument || createCanvasDocument(id, assets)
     switchLoading.current = true
     skipSave.current = true
     setChatMessages(() => messages)
-    const normalizedAssets = replaceCanvasAssets(assets)
-    loadingSnapshot.current = { id, messages, assets: normalizedAssets }
-  }, [setChatMessages, replaceCanvasAssets])
+    const normalizedAssets = replaceCanvasSnapshot({ conversationId: id, assets, canvasDocument })
+    loadingSnapshot.current = { id, messages, assets: normalizedAssets, canvasDocument }
+  }, [setChatMessages, replaceCanvasSnapshot])
 
   // Reload messages + canvas when active conversation changes
   useEffect(() => {
@@ -220,54 +290,62 @@ export default function App() {
       const idx = prev.findIndex(c => c.id === activeConvId)
       if (idx < 0) return prev
       const cur = prev[idx]
-      if (cur.messages === chat.messages && cur.assets === canvas.allAssets) return prev
+      if (cur.messages === chat.messages && cur.assets === canvas.allAssets && cur.canvasDocument === canvas.canvasDocument) return prev
       const next = [...prev]
-      next[idx] = { ...cur, messages: chat.messages, assets: canvas.allAssets, updatedAt: new Date().toISOString() }
-      return sortConversations(next)
+      next[idx] = { ...cur, messages: chat.messages, assets: canvas.allAssets, canvasDocument: canvas.canvasDocument, updatedAt: new Date().toISOString() }
+      const sorted = sortConversations(next)
+      conversationsRef.current = sorted
+      return sorted
     })
-  }, [chat.messages, canvas.allAssets, activeConvId])
+  }, [chat.messages, canvas.allAssets, canvas.canvasDocument, activeConvId])
 
   // Debounced disk save
   useEffect(() => {
     if (loadingSnapshot.current) return
-    if (skipSave.current || !activeConvId) return
+    if (!autoSaveHistory || skipSave.current || !activeConvId) return
     const convId = activeConvId
     const epoch = saveEpoch.current
     const timer = setTimeout(() => {
       if (saveEpoch.current !== epoch || deletedConvIds.current.has(convId) || activeConvIdRef.current !== convId) return
-      const title = getConversationTitle(chat.messages)
+      const conversation = conversationsRef.current.find(item => item.id === convId)
+      const title = titleForConversationSave(conversation, chat.messages)
       window.electronAPI?.saveConversation(convId, {
         messages: chat.messages,
         assets: canvas.allAssets,
+        canvasDocument: canvas.canvasDocument,
         title
       }).catch(e => console.error('Failed to save conversation:', e))
     }, 1000)
     return () => clearTimeout(timer)
-  }, [chat.messages, canvas.allAssets, activeConvId])
+  }, [chat.messages, canvas.allAssets, canvas.canvasDocument, activeConvId, autoSaveHistory])
 
   const flushActiveConversation = useCallback(async () => {
     if (!activeConvId) return
     const messages = chat.messages
     const assets = canvas.allAssets
-    const title = getConversationTitle(messages)
+    const canvasDocument = canvas.canvasDocument
+    const current = conversationsRef.current.find(item => item.id === activeConvId)
+    const title = titleForConversationSave(current, messages)
     setConversations(prev => {
       const idx = prev.findIndex(c => c.id === activeConvId)
       if (idx < 0) return prev
       const next = [...prev]
-      next[idx] = { ...next[idx], messages, assets, updatedAt: new Date().toISOString() }
+      next[idx] = { ...next[idx], messages, assets, canvasDocument, updatedAt: new Date().toISOString() }
       const sorted = sortConversations(next)
       conversationsRef.current = sorted
       return sorted
     })
-    await window.electronAPI?.saveConversation(activeConvId, { messages, assets, title })
-  }, [activeConvId, chat.messages, canvas.allAssets])
+    if (autoSaveHistory) {
+      await window.electronAPI?.saveConversation(activeConvId, { messages, assets, canvasDocument, title })
+    }
+  }, [activeConvId, chat.messages, canvas.allAssets, canvas.canvasDocument, autoSaveHistory])
 
   const createConversation = useCallback(/** @param {CreateConversationOptions} [options] @returns {Promise<EnsureConversationResult>} */ async ({ flushCurrent = true, applyToView = true } = {}) => {
     const conv = createEmptyConversation()
     const id = conv.id
     saveEpoch.current++
     if (flushCurrent) await flushActiveConversation()
-    await window.electronAPI?.saveConversation(id, { messages: [], assets: [], title: '' })
+    await window.electronAPI?.saveConversation(id, { messages: [], assets: [], canvasDocument: conv.canvasDocument, title: '' })
     await window.electronAPI?.setActiveConversation(id)
     const next = [conv, ...conversationsRef.current.filter(c => c.id !== id)]
     conversationsRef.current = next
@@ -280,10 +358,10 @@ export default function App() {
       skipSave.current = false
       switchLoading.current = false
       prevConvIdRef.current = id
-      replaceCanvasAssets(conv.assets)
+      replaceCanvasSnapshot({ conversationId: id, assets: conv.assets, canvasDocument: conv.canvasDocument })
     }
     return { id, conversation: conv }
-  }, [applyConversation, flushActiveConversation, replaceCanvasAssets])
+  }, [applyConversation, flushActiveConversation, replaceCanvasSnapshot])
 
   const ensureActiveConversation = useCallback(/** @param {EnsureConversationOptions} [options] @returns {Promise<EnsureConversationResult>} */ async ({ forSend = false } = {}) => {
     const currentId = activeConvIdRef.current
@@ -294,7 +372,11 @@ export default function App() {
           id: currentId,
           messages: chat.messages,
           assets: canvas.allAssets,
-          title: getConversationTitle(chat.messages)
+          canvasDocument: canvas.canvasDocument,
+          title: titleForConversationSave(
+            conversationsRef.current.find(item => item.id === currentId),
+            chat.messages
+          )
         }
       }
     }
@@ -308,7 +390,7 @@ export default function App() {
           applyConversation(existing, existing.id)
         } else {
           prevConvIdRef.current = existing.id
-          replaceCanvasAssets(existing.assets || [])
+          replaceCanvasSnapshot({ conversationId: existing.id, assets: existing.assets || [], canvasDocument: existing.canvasDocument })
         }
         return { id: existing.id, conversation: existing }
       }
@@ -327,7 +409,7 @@ export default function App() {
           applyConversation(conv, activeId)
         } else if (forSend) {
           prevConvIdRef.current = activeId
-          replaceCanvasAssets(conv.assets || [])
+          replaceCanvasSnapshot({ conversationId: activeId, assets: conv.assets || [], canvasDocument: conv.canvasDocument })
         }
         return { id: activeId, conversation: conv }
       }
@@ -336,7 +418,7 @@ export default function App() {
       ensuringConversationRef.current = null
     })
     return ensuringConversationRef.current
-  }, [applyConversation, createConversation, chat.messages, canvas.allAssets])
+  }, [applyConversation, createConversation, chat.messages, canvas.allAssets, canvas.canvasDocument, replaceCanvasSnapshot])
 
   // Load conversations on startup. A fresh install still gets an active empty
   // conversation so the first send never disappears into a missing active id.
@@ -414,9 +496,10 @@ export default function App() {
         return
       }
       const newId = `conv_${Date.now()}`
+      const now = new Date().toISOString()
       /** @type {StoredConversation} */
-      const conv = { id: newId, title: '', messages: [], assets: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
-      await window.electronAPI?.saveConversation(newId, { messages: [], assets: [], title: '' })
+      const conv = { id: newId, title: '', messages: [], assets: [], canvasDocument: createCanvasDocument(newId, []), createdAt: now, updatedAt: now }
+      await window.electronAPI?.saveConversation(newId, { messages: [], assets: [], canvasDocument: conv.canvasDocument, title: '' })
       await window.electronAPI?.setActiveConversation(newId)
       setConversations(prev => [conv, ...prev.filter(c => c.id !== id)])
       setActiveConvId(newId)
@@ -434,6 +517,7 @@ export default function App() {
       if (idx < 0) return prev
       const next = [...prev]
       next[idx] = { ...next[idx], title: newTitle }
+      conversationsRef.current = next
       return next
     })
     window.electronAPI?.saveConversation(id, { title: newTitle }).catch(e => console.error('Failed to rename conversation:', e))
@@ -449,7 +533,8 @@ export default function App() {
       const result = await window.electronAPI?.exportConversation?.({
         title,
         messages: chat.messages,
-        assets: canvas.allAssets
+        assets: canvas.allAssets,
+        canvasDocument: canvas.canvasDocument
       })
       if (result && !result.canceled) {
         const media = result.media || {}
@@ -501,14 +586,21 @@ export default function App() {
         title: item.title,
         messages: item.messages,
         assets: item.assets,
+        canvasDocument: item.canvasDocument,
         createdAt: now,
         updatedAt: now
+      })).map(conv => ({
+        ...conv,
+        canvasDocument: remapCanvasDocument(conv.canvasDocument || createCanvasDocument(conv.id, conv.assets), {
+          conversationId: conv.id,
+          assets: conv.assets
+        })
       }))
 
       saveEpoch.current++
       await flushActiveConversation()
       for (const conv of importedConvs) {
-        await window.electronAPI?.saveConversation(conv.id, { messages: conv.messages, assets: conv.assets, title: conv.title })
+        await window.electronAPI?.saveConversation(conv.id, { messages: conv.messages, assets: conv.assets, canvasDocument: conv.canvasDocument, title: conv.title })
       }
       const activeImported = importedConvs[0]
       await window.electronAPI?.setActiveConversation(activeImported.id)
@@ -588,69 +680,85 @@ export default function App() {
   // Scan for resumable video tasks once after conversations are loaded
   useEffect(() => {
     if (!didLoadConversationsRef.current) return
+    if (!runtimeConfig) return
     if (didScanResumableRef.current) return
     if (conversations.length === 0) return
     didScanResumableRef.current = true
 
-    const resumableStatuses = new Set(['pending', 'queued', 'running'])
+    const resumableStatuses = new Set(['pending', 'generating', 'queued', 'running', 'unknown'])
     for (const conv of conversations) {
       for (const msg of (conv.messages || [])) {
         const tasks = msg.tasks || (msg.task ? [msg.task] : [])
         tasks.forEach((task, taskIndex) => {
           if (task.type !== 'video') return
           if (!resumableStatuses.has(task.status)) return
-          if (!task.taskId || !task.providerId) return
-          if (task.recoveryStatus !== 'resumable') return
-          const restoreProvider = {
-            id: task.providerId,
-            connectionId: task.connectionId,
-            model: task.model,
-            baseUrl: task.baseUrl,
-            accountId: task.accountId
-          }
           const msgId = msg.id
           const convId = conv.id
+          const recovery = classifyVideoRecovery(task, runtimeConfig)
+          if (!recovery.ok) {
+            updateRecoveredTask(convId, msgId, taskIndex, {
+              status: 'error',
+              recoveryStatus: 'not-resumable',
+              error: t('videoRecoveryUnavailable', lang)
+            })
+            return
+          }
+          const restoreProvider = {
+            id: String(task.providerId),
+            providerId: String(task.providerId),
+            connectionId: String(task.connectionId),
+            model: String(task.model)
+          }
           const capturedTask = task
           taskQueue.restorePolling({
             id: `restore_${convId}_${String(msgId)}_${taskIndex}`,
-            taskId: task.taskId,
+            taskId: String(task.taskId),
             prompt: task.prompt || '',
             label: task.label || t('video', lang),
             provider: restoreProvider,
             status: 'pending', progress: 0, videoUrl: '', error: '',
-            autoSave: true,
+            autoSave: generalConfig.autoSaveVideo === true,
             createdAt: task.submittedAt || new Date().toISOString(),
+            onPollUpdate: (result) => {
+              updateRecoveredTask(convId, msgId, taskIndex, {
+                lastPolledAt: result.lastPolledAt || new Date().toISOString(),
+                ...(result.status === 'unknown' ? { status: 'unknown', recoveryStatus: 'unknown', error: result.error || undefined } : {}),
+                ...(result.status === 'running' || result.status === 'queued' ? { recoveryStatus: 'resumable', error: undefined } : {})
+              })
+            },
             onComplete: async (result) => {
               const generation = buildGenerationMeta({
                 task: capturedTask, provider: restoreProvider, mode: 'video', taskId: capturedTask.taskId
               })
-              const asset = conversationBridge.addAsset?.(convId, {
+              const asset = addRecoveredAsset(convId, {
                 type: 'video', url: result.videoUrl,
                 prompt: capturedTask.prompt, label: capturedTask.label,
                 model: capturedTask.model, generation, duration: capturedTask.duration
               })
               if (asset) {
-                conversationBridge.updateTask?.(convId, msgId, taskIndex, {
+                updateRecoveredTask(convId, msgId, taskIndex, {
                   status: 'done', assetId: asset.id,
+                  lastPolledAt: result.lastPolledAt || new Date().toISOString(),
                   recoveredAt: new Date().toISOString()
                 })
               }
-              try {
-                await window.electronAPI?.saveAssetToDisk?.({ url: result.videoUrl, label: capturedTask.label, type: 'video' })
-              } catch {}
               return asset
             },
             onFail: (error) => {
-              conversationBridge.updateTask?.(convId, msgId, taskIndex, { status: 'error', error })
+              updateRecoveredTask(convId, msgId, taskIndex, { status: 'error', error, lastPolledAt: new Date().toISOString() })
             },
             onRemove: () => {
-              conversationBridge.updateTask?.(convId, msgId, taskIndex, { recoveryStatus: undefined })
+              updateRecoveredTask(convId, msgId, taskIndex, {
+                status: 'error',
+                recoveryStatus: 'not-resumable',
+                error: t('videoPollingStopped', lang)
+              })
             }
           })
         })
       }
     }
-  }, [conversations, conversationBridge, taskQueue, lang])
+  }, [conversations, updateRecoveredTask, addRecoveredAsset, taskQueue, lang, generalConfig.autoSaveVideo, runtimeConfig])
 
   const handleAssetAction = useCallback(/** @param {string} action @param {Asset} asset */ async (action, asset) => {
     if (action === 'moveAsset') {
@@ -778,7 +886,8 @@ export default function App() {
   )
   const activeConversationTitle = activeConversation?.title || ''
   const activeTaskCount = taskQueue.tasks?.length || 0
-  const autosaveReady = Boolean(activeConvId && !conversationBusy)
+  const conversationReady = Boolean(activeConvId && !conversationBusy)
+  const autosaveReady = Boolean(autoSaveHistory && conversationReady)
 
   return (
     <div className="app-shell">
@@ -823,7 +932,7 @@ export default function App() {
           <div className="sidebar-status-block">
             <div className="sidebar-status-dot" />
             <span className="sidebar-status-label">
-              {autosaveReady ? t('statusReady', lang) : t('statusSaving', lang)}
+              {conversationReady ? t('statusReady', lang) : t('statusSaving', lang)}
             </span>
           </div>
         </nav>
@@ -857,7 +966,7 @@ export default function App() {
           </div>
           <div className="workspace-main">
             <div className="chat-pane">
-                <ChatPanel chat={chat} config={runtimeConfig} providerLists={providerLists} activeSelections={activeSelections} onConnectionModelChange={/** @param {Track} track @param {ActiveSelection} selection */ (track, selection) => setActiveSelections(current => ({ ...current, [track]: selection }))} lang={lang} generationMode={activeModule}
+                <ChatPanel key={activeConvId || 'no-conversation'} chat={chat} config={runtimeConfig} providerLists={providerLists} activeSelections={activeSelections} onConnectionModelChange={/** @param {Track} track @param {ActiveSelection} selection */ (track, selection) => setActiveSelections(current => ({ ...current, [track]: selection }))} lang={lang} generationMode={activeModule}
                   conversations={conversations} activeConvId={activeConvId}
                   onSwitchConv={handleSwitchConv} onNewConv={handleNewConv} onDeleteConv={handleDeleteConv}
                   onRenameConv={handleRenameConv} onExportConv={handleExportConv} onExportProject={handleExportProject} onImportConv={handleImportConv}

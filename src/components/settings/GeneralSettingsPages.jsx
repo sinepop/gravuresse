@@ -109,6 +109,7 @@ export function OtherPage({ config, onChange, lang }) {
       <div style={{ borderTop: '1px solid var(--border-subtle)', margin: '4px 0' }} />
       <Toggle checked={general.autoSave !== false} onChange={checked => onChange('general', { autoSave: checked })} label={t('autoSave', lang)} />
       <Toggle checked={general.autoSaveImage === true} onChange={checked => onChange('general', { autoSaveImage: checked })} label={t('autoSaveImages', lang)} />
+      <Toggle checked={general.autoSaveVideo === true} onChange={checked => onChange('general', { autoSaveVideo: checked })} label={t('autoSaveVideos', lang)} />
       <Toggle checked={general.enableReference === true} onChange={checked => onChange('general', { enableReference: checked })} label={t('enableReference', lang)} detail={t('enableReferenceDesc', lang)} />
       <Toggle checked={general.enableVideo === true} onChange={checked => onChange('general', { enableVideo: checked })} label={t('enableVideo', lang)} detail={t('enableVideoDesc', lang)} />
       <label style={labelS()}>

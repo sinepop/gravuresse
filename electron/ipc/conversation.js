@@ -39,7 +39,8 @@ function registerConversationIpc({
       conversation: {
         title: conversation.title || '',
         messages: Array.isArray(conversation.messages) ? conversation.messages : [],
-        assets
+        assets,
+        canvasDocument: conversation.canvasDocument
       }
     })
     let payload = buildPayload(media.assets, { inlined: media.inlined, skipped: media.skipped, fallback: false })
@@ -77,7 +78,8 @@ function registerConversationIpc({
       payload = buildPayload(sourceConversations.map(conversation => ({
         title: conversation.title || '',
         messages: Array.isArray(conversation.messages) ? conversation.messages : [],
-        assets: Array.isArray(conversation.assets) ? conversation.assets : []
+        assets: Array.isArray(conversation.assets) ? conversation.assets : [],
+        canvasDocument: conversation.canvasDocument
       })), { inlined: 0, skipped: remoteExportConversationAssetCount(sourceConversations), fallback: true })
       text = JSON.stringify(payload, null, 2)
     }
@@ -96,10 +98,17 @@ function registerConversationIpc({
 
     const filePath = path.resolve(result.filePaths[0])
     const stat = fs.statSync(filePath)
+    if (!stat.isFile()) {
+      throw new Error('Conversation import must be a file')
+    }
     if (stat.size > maxProjectExportBytes) {
       throw new Error('Conversation import is too large')
     }
-    const data = sanitizeConversationImportPayload(JSON.parse(fs.readFileSync(filePath, 'utf8')))
+    const fileBytes = fs.readFileSync(filePath)
+    if (fileBytes.length > maxProjectExportBytes) {
+      throw new Error('Conversation import is too large')
+    }
+    const data = sanitizeConversationImportPayload(JSON.parse(fileBytes.toString('utf8')))
     if (!data || (typeof data !== 'object' && !Array.isArray(data))) {
       throw new Error('Invalid Gravuresse import file')
     }

@@ -1,6 +1,7 @@
 // @ts-check
 
 import { createAsset } from './assetFactory.js'
+import { canvasAssetItemId, normalizeCanvasDocument } from './canvasDocument.js'
 
 /** @typedef {import('../types/domain').Asset} Asset */
 /** @typedef {import('../types/domain').Conversation} Conversation */
@@ -87,11 +88,12 @@ function isImportableConversation(source) {
 
 /**
  * @param {unknown} assets
- * @returns {Asset[]}
+ * @returns {{ assets: Asset[], idMap: Map<string, string> }}
  */
 function normalizeImportedAssets(assets = []) {
   const seenIds = new Set()
-  return (Array.isArray(assets) ? assets : []).filter(asset => {
+  const idMap = new Map()
+  const normalizedAssets = (Array.isArray(assets) ? assets : []).filter(asset => {
     return isRecord(asset)
   }).map(asset => {
     const requestedId = typeof asset.id === 'string' || typeof asset.id === 'number' ? String(asset.id) : ''
@@ -124,25 +126,60 @@ function normalizeImportedAssets(assets = []) {
       generation: asset.generation
     })
     seenIds.add(normalized.id)
+    if (requestedId && !idMap.has(requestedId)) idMap.set(requestedId, normalized.id)
     return normalized
   })
+  return { assets: normalizedAssets, idMap }
+}
+
+/** @param {string | null} id @param {Map<string, string>} idMap @returns {string | null} */
+function remapId(id, idMap) {
+  return id ? idMap.get(id) || id : id
+}
+
+/** @param {unknown} value @param {Map<string, string>} idMap @returns {string[]} */
+function remapIdList(value, idMap) {
+  return toIdList(value).map(id => idMap.get(id) || id)
+}
+
+/** @param {unknown} value @returns {string | undefined} */
+function optionalText(value) {
+  return typeof value === 'string' && value ? value : undefined
+}
+
+/** @param {unknown} value @returns {'resumable' | 'unknown' | 'not-resumable' | undefined} */
+function normalizeRecoveryStatus(value) {
+  return value === 'resumable' || value === 'unknown' || value === 'not-resumable' ? value : undefined
+}
+
+/** @param {unknown} document @param {Map<string, string>} idMap @returns {unknown} */
+function remapRawCanvasDocument(document, idMap) {
+  if (!isRecord(document)) return document
+  const items = Array.isArray(document.items)
+    ? document.items.map(item => {
+        if (!isRecord(item) || item.kind !== 'asset') return item
+        const entityId = toOptionalId(item.entityId)
+        const mapped = entityId ? idMap.get(entityId) || entityId : entityId
+        return mapped ? { ...item, id: canvasAssetItemId(mapped), entityId: mapped } : item
+      })
+    : document.items
+  return { ...document, items }
 }
 
 /**
  * @param {unknown} task
+ * @param {Map<string, string>} idMap
  * @returns {MessageTask | null}
  */
-function normalizeImportedTask(task = {}) {
+function normalizeImportedTask(task = {}, idMap = new Map()) {
   if (!isRecord(task)) return null
   const rawStatus = typeof task.status === 'string' ? task.status : ''
-  const activeStatus = ['generating', 'queued', 'running'].includes(rawStatus)
   const error = typeof task.error === 'string' ? task.error : ''
   /** @type {TaskStatus} */
-  const status = activeStatus
-    ? 'error'
-    : rawStatus === 'done' || rawStatus === 'error' || rawStatus === 'partial'
-      ? rawStatus
-      : 'pending'
+  const status = /** @type {TaskStatus} */ (['pending', 'generating', 'queued', 'running', 'unknown', 'done', 'error', 'partial'].includes(rawStatus)
+    ? rawStatus
+    : 'pending')
+  const sourceImageId = remapId(toOptionalId(task.source_image_id), idMap)
   return {
     id: toOptionalId(task.id) || 't1',
     type: task.type === 'video' ? 'video' : 'image',
@@ -153,38 +190,46 @@ function normalizeImportedTask(task = {}) {
     negative_prompt: typeof task.negative_prompt === 'string' ? task.negative_prompt : '',
     ratio: typeof task.ratio === 'string' && task.ratio ? task.ratio : '1:1',
     resolution: typeof task.resolution === 'string' ? task.resolution : '',
-    source_image_id: toOptionalId(task.source_image_id),
+    source_image_id: sourceImageId,
     sourceImageUrl: typeof task.sourceImageUrl === 'string' ? task.sourceImageUrl : '',
     intent: typeof task.intent === 'string' ? task.intent : '',
     createdFrom: typeof task.createdFrom === 'string' ? task.createdFrom : '',
     styleDirection: typeof task.styleDirection === 'string' ? task.styleDirection : '',
-    sourceAssetIds: toIdList(task.sourceAssetIds),
-    promptReferenceAssetIds: toIdList(task.promptReferenceAssetIds),
-    parentAssetId: toOptionalId(task.parentAssetId),
+    sourceAssetIds: remapIdList(task.sourceAssetIds, idMap),
+    promptReferenceAssetIds: remapIdList(task.promptReferenceAssetIds, idMap),
+    parentAssetId: remapId(toOptionalId(task.parentAssetId), idMap),
     taskId: toOptionalId(task.taskId),
-    assetId: toOptionalId(task.assetId),
+    assetId: remapId(toOptionalId(task.assetId), idMap),
     queueId: toOptionalId(task.queueId),
     duration: toDuration(task.duration),
     elapsed: toNumber(task.elapsed),
     startTime: toNumber(task.startTime),
     batchTotal: toNumber(task.batchTotal),
     batchDone: toNumber(task.batchDone),
-    error: activeStatus ? error || 'Imported task is no longer running in this workspace.' : error || undefined
+    error: error || undefined,
+    providerId: toOptionalId(task.providerId) || undefined,
+    connectionId: toOptionalId(task.connectionId) || undefined,
+    model: optionalText(task.model),
+    submittedAt: optionalText(task.submittedAt),
+    lastPolledAt: optionalText(task.lastPolledAt),
+    recoveredAt: optionalText(task.recoveredAt),
+    recoveryStatus: normalizeRecoveryStatus(task.recoveryStatus) || (task.type === 'video' && ['generating', 'queued', 'running', 'unknown'].includes(status) ? 'unknown' : undefined)
   }
 }
 
 /**
  * @param {unknown} messages
+ * @param {Map<string, string>} idMap
  * @returns {Message[]}
  */
-function normalizeImportedMessages(messages = []) {
+function normalizeImportedMessages(messages = [], idMap = new Map()) {
   const seenIds = new Set()
   return (Array.isArray(messages) ? messages : []).filter(isRecord).map(message => {
     const requestedId = toOptionalId(message.id)
     const id = requestedId && !seenIds.has(requestedId) ? requestedId : makeMessageId()
     seenIds.add(id)
     const tasks = (Array.isArray(message.tasks) ? message.tasks : message.task ? [message.task] : [])
-      .map(normalizeImportedTask)
+      .map(task => normalizeImportedTask(task, idMap))
       .filter((task) => task !== null)
     /** @type {Message} */
     const normalized = {
@@ -224,10 +269,15 @@ export function normalizeImportedConversations(payload) {
  */
 export function normalizeConversationRecord(source = {}) {
   if (!isRecord(source)) return null
-  const messages = normalizeImportedMessages(source.messages)
-  const assets = normalizeImportedAssets(source.assets)
+  const { assets, idMap } = normalizeImportedAssets(source.assets)
+  const messages = normalizeImportedMessages(source.messages, idMap)
   const title = typeof source.title === 'string' ? source.title.slice(0, 80) : getConversationTitle(messages)
   const id = toOptionalId(source.id)
+  const canvasDocument = normalizeCanvasDocument(remapRawCanvasDocument(source.canvasDocument, idMap), {
+    conversationId: id || '',
+    assets,
+    fallbackViewMode: source.viewMode
+  })
   return {
     ...(id ? { id } : {}),
     title,
@@ -235,7 +285,8 @@ export function normalizeConversationRecord(source = {}) {
     ...(typeof source.updatedAt === 'string' ? { updatedAt: source.updatedAt } : {}),
     active: source.active === true,
     messages,
-    assets
+    assets,
+    canvasDocument
   }
 }
 

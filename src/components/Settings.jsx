@@ -1,6 +1,6 @@
 // @ts-check
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { CHAT_PROVIDERS } from '../providers/chatProviders'
 import { IMG_PROVIDERS } from '../providers/imageProviders'
 import { VID_PROVIDERS } from '../providers/videoProviders'
@@ -37,6 +37,23 @@ const NAV_SECTIONS = [
     { id: 'defaults', label: { zh: '默认模型搭配', en: 'Default Model Pairing' } },
   ]},
 ]
+
+const FOCUSABLE_SELECTOR = [
+  'button:not([disabled])',
+  'a[href]',
+  'input:not([disabled])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])'
+].join(',')
+
+/** @param {HTMLElement} container @returns {HTMLElement[]} */
+function focusableElements(container) {
+  return /** @type {HTMLElement[]} */ (
+    Array.from(container.querySelectorAll(FOCUSABLE_SELECTOR))
+      .filter((node) => node instanceof HTMLElement && !node.hidden && node.getAttribute('aria-hidden') !== 'true')
+  )
+}
 
 /** @param {unknown} value @returns {value is UnknownRecord} */
 function isRecord(value) {
@@ -91,6 +108,9 @@ export default function Settings({ config, providerLists, onSave, onClose, onCan
   const [pageBusy, setPageBusy] = useState(true)
   const [saveError, setSaveError] = useState('')
   const [showGeneral, setShowGeneral] = useState(false)
+  const dialogRef = useRef(/** @type {HTMLDivElement | null} */ (null))
+  const dialogTitleRef = useRef(/** @type {HTMLHeadingElement | null} */ (null))
+  const previousFocusRef = useRef(/** @type {HTMLElement | null} */ (null))
   useEffect(() => { if (config) setLocal(config) }, [config])
   useEffect(() => {
     if (!initialPage) return
@@ -99,10 +119,59 @@ export default function Settings({ config, providerLists, onSave, onClose, onCan
   }, [initialPage])
 
   useEffect(() => {
-    /** @param {KeyboardEvent} e */
-    const handler = (e) => { if (e.key === 'Escape' && !saving && !pageBusy) onClose() }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
+    const activeElement = document.activeElement
+    previousFocusRef.current = activeElement instanceof HTMLElement && activeElement !== document.body
+      ? activeElement
+      : null
+    const frame = window.requestAnimationFrame(() => {
+      dialogTitleRef.current?.focus({ preventScroll: true })
+    })
+    return () => {
+      window.cancelAnimationFrame(frame)
+      const previousFocus = previousFocusRef.current
+      if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true })
+    }
+  }, [])
+
+  useEffect(() => {
+    /** @param {KeyboardEvent} event */
+    const handler = (event) => {
+      if (event.key === 'Escape') {
+        if (!saving && !pageBusy) onClose()
+        return
+      }
+      if (event.key !== 'Tab') return
+
+      const dialog = dialogRef.current
+      if (!dialog) return
+      const focusable = focusableElements(dialog)
+      if (focusable.length === 0) {
+        event.preventDefault()
+        dialogTitleRef.current?.focus({ preventScroll: true })
+        return
+      }
+
+      const activeElement = document.activeElement
+      const activeIndex = activeElement instanceof HTMLElement ? focusable.indexOf(activeElement) : -1
+      if (activeIndex === -1 || (event.shiftKey && activeIndex === 0) || (!event.shiftKey && activeIndex === focusable.length - 1)) {
+        event.preventDefault()
+        const target = event.shiftKey ? focusable[focusable.length - 1] : focusable[0]
+        target.focus({ preventScroll: true })
+      }
+    }
+    /** @param {FocusEvent} event */
+    const handleFocusIn = (event) => {
+      const dialog = dialogRef.current
+      if (dialog && event.target instanceof Node && !dialog.contains(event.target)) {
+        dialogTitleRef.current?.focus({ preventScroll: true })
+      }
+    }
+    document.addEventListener('keydown', handler)
+    document.addEventListener('focusin', handleFocusIn)
+    return () => {
+      document.removeEventListener('keydown', handler)
+      document.removeEventListener('focusin', handleFocusIn)
+    }
   }, [onClose, saving, pageBusy])
 
   const lang = text(recordOf(local?.general).language) || 'zh'
@@ -139,9 +208,9 @@ export default function Settings({ config, providerLists, onSave, onClose, onCan
 
   return (
     <div className="settings-backdrop" style={{ position: 'fixed', inset: 0, zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={event => { if (event.target === event.currentTarget && !busy) onClose() }}>
-      <div className="settings-modal glass-overlay glass-specular" role="dialog" aria-modal="true" aria-label={lang === 'en' ? 'Provider Settings' : '提供商设置'} onClick={e => e.stopPropagation()} style={{ width: 860, maxWidth: '92vw', maxHeight: '84vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', fontFamily: 'var(--font-body)', animation: 'scaleIn 0.2s ease' }}>
+      <div ref={dialogRef} className="settings-modal glass-overlay glass-specular" role="dialog" aria-modal="true" aria-labelledby="settings-dialog-title" onClick={e => e.stopPropagation()} style={{ width: 860, maxWidth: '92vw', maxHeight: '84vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', fontFamily: 'var(--font-body)', animation: 'scaleIn 0.2s ease' }}>
         <div className="settings-chrome" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid var(--border-subtle)' }}>
-          <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)' }}>{lang === 'en' ? 'Provider Settings' : '提供商设置'}</span>
+          <h2 id="settings-dialog-title" ref={dialogTitleRef} tabIndex={-1} style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)', outline: 'none' }}>{lang === 'en' ? 'Provider Settings' : '提供商设置'}</h2>
           <button onClick={() => setShowGeneral(value => !value)} aria-expanded={showGeneral} style={{ marginLeft: 'auto', marginRight: 8, ...btnS(false), height: 32, padding: '0 12px' }}>
             <Ic n="gear" size={14} sw={1.8} /> {lang === 'en' ? 'General' : SETTINGS_COPY.General}
           </button>
@@ -168,6 +237,8 @@ export default function Settings({ config, providerLists, onSave, onClose, onCan
           <PreferenceToggle label={lang === 'en' ? 'Reference images' : '参考图'} checked={local.general?.enableReference === true} onChange={value => saveGeneral({ enableReference: value })} disabled={busy} />
           <PreferenceToggle label={lang === 'en' ? 'Video workspace' : '视频工作区'} checked={local.general?.enableVideo === true} onChange={value => saveGeneral({ enableVideo: value })} disabled={busy} />
           <PreferenceToggle label={lang === 'en' ? 'Auto-save history' : '自动保存历史'} checked={local.general?.autoSave !== false} onChange={value => saveGeneral({ autoSave: value })} disabled={busy} />
+          <PreferenceToggle label={t('autoSaveImages', lang)} checked={local.general?.autoSaveImage === true} onChange={value => saveGeneral({ autoSaveImage: value })} disabled={busy} />
+          <PreferenceToggle label={t('autoSaveVideos', lang)} checked={local.general?.autoSaveVideo === true} onChange={value => saveGeneral({ autoSaveVideo: value })} disabled={busy} />
           <div style={{ flexBasis: '100%', display: 'flex', flexDirection: 'column', gap: 4 }}>
             <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>{t('workspaceMode', lang)}</span>
             <SegmentedControl
@@ -186,7 +257,7 @@ export default function Settings({ config, providerLists, onSave, onClose, onCan
           <div className="settings-sidebar glass-shell" style={{ width: 170, borderRight: '1px solid var(--border-subtle)', padding: '12px 0', overflow: 'auto', flexShrink: 0 }}>
             {NAV_SECTIONS.map(section => (
               <div key={section.id}>
-                <button onClick={() => section.children.length ? setExpanded(current => ({ ...current, [section.id]: !current[section.id] })) : setPage(section.id)} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '10px 16px', background: page === section.id ? 'var(--accent-soft)' : 'none', border: 'none', borderRight: page === section.id ? '2px solid var(--accent)' : '2px solid transparent', color: page === section.id ? 'var(--accent)' : 'var(--text-muted)', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px', cursor: 'pointer', fontFamily: 'var(--font-body)', textAlign: 'left' }}>
+                <button onClick={() => section.children.length ? setExpanded(current => ({ ...current, [section.id]: !current[section.id] })) : setPage(section.id)} aria-expanded={section.children.length ? expanded[section.id] : undefined} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '10px 16px', background: page === section.id ? 'var(--accent-soft)' : 'none', border: 'none', borderRight: page === section.id ? '2px solid var(--accent)' : '2px solid transparent', color: page === section.id ? 'var(--accent)' : 'var(--text-muted)', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px', cursor: 'pointer', fontFamily: 'var(--font-body)', textAlign: 'left' }}>
                   <Ic n={section.icon} size={13} sw={2} />
                   {section.label[lang === 'en' ? 'en' : 'zh']}
                   <span aria-hidden="true" style={{ marginLeft: 'auto', display: 'flex', transition: 'transform 0.15s', transform: expanded[section.id] ? 'rotate(0)' : 'rotate(-90deg)' }}><Ic n="chevDown" size={12} /></span>

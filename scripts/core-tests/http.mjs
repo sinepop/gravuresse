@@ -193,4 +193,39 @@ export async function runHttpCoreTests() {
     pinnedDns.restore()
     mock.restore()
   }
+
+  const originalRequest = https.request
+  let dripTimer = null
+  https.request = (_url, _options, callback) => {
+    const req = new EventEmitter()
+    req.write = () => {}
+    req.end = () => {
+      queueMicrotask(() => {
+        const res = new EventEmitter()
+        res.statusCode = 200
+        res.headers = {}
+        res.resume = () => {}
+        callback(res)
+        dripTimer = setInterval(() => res.emit('data', Buffer.from('.')), 5)
+      })
+    }
+    req.destroy = () => {
+      if (dripTimer) clearInterval(dripTimer)
+      dripTimer = null
+    }
+    req.setTimeout = () => req
+    return req
+  }
+  try {
+    const outcome = await Promise.race([
+      httpRequest('https://93.184.216.34/slow-drip', { timeout: 30 })
+        .then(() => ({ resolved: true }), error => ({ error })),
+      new Promise(resolve => setTimeout(() => resolve({ watchdog: true }), 250))
+    ])
+    assert.equal(outcome.watchdog, undefined, 'provider request must have an absolute deadline')
+    assert.match(outcome.error?.message || '', /Request timed out after 30ms/)
+  } finally {
+    if (dripTimer) clearInterval(dripTimer)
+    https.request = originalRequest
+  }
 }

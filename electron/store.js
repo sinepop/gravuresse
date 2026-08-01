@@ -2,6 +2,7 @@ const { app } = require('electron')
 const fs = require('fs')
 const path = require('path')
 const { sanitizeStorePayload } = require('./security/sanitize')
+const { persistenceError, writeJsonAtomic } = require('./persistence')
 
 const CONFIG_DIR = path.join(app.getPath('userData'), 'Gravuresse')
 const STORE_FILE = path.join(CONFIG_DIR, 'conversations.json')
@@ -41,6 +42,9 @@ function loadAll() {
   ensureDir()
   try {
     const raw = JSON.parse(fs.readFileSync(STORE_FILE, 'utf-8'))
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      throw new TypeError('Conversation store root must be an object')
+    }
     const deletedIds = Array.isArray(raw.deletedIds) ? raw.deletedIds.map(String).filter(Boolean) : []
     const deleted = new Set(deletedIds)
     const sanitized = sanitizeStorePayload(raw)
@@ -59,21 +63,32 @@ function loadAll() {
       deletedIds
     }
   } catch (e) {
-    if (e.code !== 'ENOENT') {
-      console.error('Store read failed; backing up corrupt store:', e)
-      backupCorruptStore()
-    }
-    return emptyStore()
+    if (e.code === 'ENOENT') return emptyStore()
+    console.error('Store read failed; backing up corrupt store:', e)
+    backupCorruptStore()
+    throw persistenceError(
+      'STORE_READ_FAILED',
+      'Failed to read conversation history; the original file was not replaced',
+      STORE_FILE,
+      e
+    )
   }
+}
+
+function persistAll(data) {
+  ensureDir()
+  const payload = sanitizeStorePayload({ schemaVersion: SCHEMA_VERSION, ...data })
+  writeJsonAtomic(STORE_FILE, payload, {
+    errorCode: 'STORE_WRITE_FAILED',
+    label: 'conversation history'
+  })
 }
 
 function saveAll(data) {
   ensureDir()
-  const payload = sanitizeStorePayload({ schemaVersion: SCHEMA_VERSION, ...data })
-  // 原子写入：先写临时文件再 rename
-  const tmpFile = STORE_FILE + '.tmp'
-  fs.writeFileSync(tmpFile, JSON.stringify(payload, null, 2), 'utf-8')
-  fs.renameSync(tmpFile, STORE_FILE)
+  // A bulk save cannot turn an unreadable existing store into an empty one.
+  if (fs.existsSync(STORE_FILE)) loadAll()
+  persistAll(data)
 }
 
 function saveConversation(convId, convData) {
@@ -84,9 +99,9 @@ function saveConversation(convId, convData) {
     if ((data.deletedIds || []).includes(convId)) return
     const idx = data.conversations.findIndex(c => c.id === convId)
     if (idx >= 0) {
-      data.conversations[idx] = { ...data.conversations[idx], ...convData, updatedAt: new Date().toISOString() }
+      data.conversations[idx] = { ...data.conversations[idx], ...convData, id: convId, updatedAt: new Date().toISOString() }
     } else {
-      data.conversations.unshift({ id: convId, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), ...convData })
+      data.conversations.unshift({ createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), ...convData, id: convId })
     }
     saveAll(data)
   })

@@ -17,12 +17,13 @@
 - **图像生成** — 支持主流图像生成模型，先出提示词再确认生成
 - **视频生成** — 支持多家视频生成服务，含任务队列与进度追踪
 - **迭代修改** — 生成后用自然语言描述修改，AI 增量调整 prompt，保留满意部分
-- **无限画布** — 参考 Figma/Lovart 的缩放平移体验，鼠标滚轮缩放、拖拽平移
-- **画布编辑工具栏** — 选择、移动、铅笔、矩形、圆形、直线、文字等绘图工具
+- **无限画布** — 参考 Figma/Lovart 的缩放平移体验，网格/自由视图、视口、lineage 和素材位置随会话保存
+- **画布编辑工具栏** — 选择、移动、铅笔、矩形、圆形、直线、文字等绘图工具，标注以可导入导出的向量项保存
 - **参考图/视频** — 对话中附加多张参考图或视频，AI 结合上下文理解意图
 - **图片缩放预览** — 生成图片支持滚轮缩放、拖拽平移、双击重置
 - **多对话管理** — 多对话并行，独立记忆互不干扰，支持切换/新建/删除
 - **素材画廊** — 网格/自由布局切换，右键菜单操作，图片点击放大预览
+- **自动保存媒体** — 图片和视频可分别开启生成后自动保存到本地
 - **提供商设置** — 4 子页面：账号（OAuth/设备码连接）、API 密钥（自动拉取模型）、自定义中转、默认模型搭配
 - **主题与国际化** — 深色/浅色/跟随系统 + 中英文切换 + 字体大小调节
 - **Lucide 图标** — 全组件采用 Lucide React 图标库，精致统一
@@ -54,7 +55,7 @@ npm run package
 
 发布包会在 `release/SHA256SUMS.txt` 生成 SHA256 校验和。正式发布时请同时上传安装包和校验和，便于用户核对下载文件。
 
-`npm run package` 会依次执行受保护清理、核心测试、类型检查、生产构建、运行时检查、Windows 打包、ASAR 检查、SHA-256、秘密审计、解包应用冒烟和 NSIS 安装程序冒烟。完成后 `release` 仅保留 2.4.0 安装包、blockmap、`latest.yml`、`SHA256SUMS.txt` 与 `win-unpacked`。
+`npm run package` 会依次执行受保护清理、核心测试、类型检查、生产构建、运行时检查、Windows 打包、ASAR 检查、SHA-256、发布产物一致性验证、秘密审计、解包应用冒烟和 NSIS 安装程序冒烟。完成后 `release` 仅保留 2.4.0 安装包、blockmap、`latest.yml`、`SHA256SUMS.txt` 与 `win-unpacked`。
 
 ### 更新日志
 
@@ -83,12 +84,13 @@ Creative-generation models, providers, and APIs change quickly. Users often have
 - **Image Generation** — Shows prompt for review before generation, supports iterative modification
 - **Video Generation** — Supports multiple video services with task queue and progress tracking
 - **Iterative Editing** — Describe changes in natural language, AI incrementally adjusts the prompt
-- **Infinite Canvas** — Figma/Loveart-style zoom/pan: scroll to zoom on cursor, drag to pan
-- **Canvas Edit Toolbar** — Select, move, pencil, rectangle, circle, line, text drawing tools
+- **Infinite Canvas** — Figma/Loveart-style zoom/pan with per-conversation grid/free view, viewport, lineage, and asset positions
+- **Canvas Edit Toolbar** — Select, move, pencil, rectangle, circle, line, and text tools persisted as importable/exportable vector annotations
 - **Reference Images/Videos** — Attach multiple reference images from the asset gallery to chat
 - **Image Zoom Preview** — Scroll-zoom, drag-pan, double-click reset for generated images
 - **Multi-Conversation** — Parallel conversations with isolated memory, switch/create/delete
 - **Workspace Canvas** — Grid/free layout, right-click menu, click-to-zoom preview, auto-filters by image/video workspace
+- **Media Auto-Save** — Image and video outputs can be auto-saved to disk independently
 - **Provider Settings** — 4 sub-pages: Accounts (OAuth/device-code), API Keys (auto-fetch models), Custom Relays, Default Model Pairing
 - **Theme & i18n** — Dark/light/system themes, Chinese/English, adjustable font size
 - **Lucide Icons** — Unified icon system across all components using Lucide React
@@ -120,7 +122,7 @@ npm run package
 
 Release builds should be signed when certificate environment variables are available. `npm run package` writes `release/SHA256SUMS.txt`; publish it with the installer so users can verify the download.
 
-`npm run package` runs protected cleanup, core tests, type checking, the production build, runtime checks, Windows packaging, ASAR verification, SHA-256 generation, secret auditing, unpacked-app smoke, and an NSIS installer smoke. On completion, `release` contains only the 2.4.0 installer, blockmap, `latest.yml`, `SHA256SUMS.txt`, and `win-unpacked`.
+`npm run package` runs protected cleanup, core tests, type checking, the production build, runtime checks, Windows packaging, ASAR verification, SHA-256 generation, release-artifact consistency verification, secret auditing, unpacked-app smoke, and an NSIS installer smoke. On completion, `release` contains only the 2.4.0 installer, blockmap, `latest.yml`, `SHA256SUMS.txt`, and `win-unpacked`.
 
 ### Changelog
 

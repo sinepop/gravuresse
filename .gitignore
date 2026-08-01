@@ -75,6 +75,7 @@ secrets.json
 
 # Agent and security audit files
 AGENTS.md
+.audit/
 SECURITY-AUDIT-*.md
 Screenshot*.png
 

@@ -301,6 +301,13 @@ export default function ChatPanel({ chat, config, providerLists, activeSelection
   }, [config?.general, generalConfig.defaultRatio, generalConfig.defaultStyle, generalConfig.defaultResolution])
 
   useEffect(() => {
+    if (!enableReference) {
+      setReferences([])
+      setShowRefPicker(false)
+    }
+  }, [enableReference])
+
+  useEffect(() => {
     if (ratioOptions.length > 0 && !ratioOptions.some(option => option.value === genRatio)) {
       setGenRatio(ratioOptions[0].value)
     }
@@ -446,7 +453,7 @@ export default function ChatPanel({ chat, config, providerLists, activeSelection
         display: 'flex', alignItems: 'center', gap: 6, padding: '12px 16px',
         flexShrink: 0
       }}>
-        <button onClick={() => setShowConvList(!showConvList)} style={{
+        <button onClick={() => setShowConvList(!showConvList)} aria-expanded={showConvList} style={{
           background: showConvList ? 'var(--accent-soft)' : 'transparent',
           border: `1px solid ${showConvList ? 'var(--border-accent)' : 'var(--border-subtle)'}`,
           borderRadius: 'var(--radius-sm)', padding: '5px 12px', color: showConvList ? 'var(--accent)' : 'var(--text-secondary)',
@@ -542,21 +549,35 @@ export default function ChatPanel({ chat, config, providerLists, activeSelection
                     }}
                   />
                 ) : (
-                  <div
+                  <button
+                    type="button"
+                    className="conversation-select-button"
+                    onClick={(event) => { event.stopPropagation(); onSwitchConv(conv.id); setShowConvList(false) }}
                     onDoubleClick={(e) => { e.stopPropagation(); startRename(conv) }}
+                    aria-current={conv.id === activeConvId ? 'true' : undefined}
                     title={t('doubleClickRename', lang)}
                     style={{
+                      background: 'transparent', border: 'none', padding: 0, width: '100%', textAlign: 'left',
                       fontSize: 12, color: 'var(--text-primary)',
                       overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                       fontWeight: conv.id === activeConvId ? 500 : 400, cursor: 'text'
                     }}
                   >
                     {conv.title || t('untitledConversation', lang)}
-                  </div>
+                  </button>
                 )}
                 <div className="workspace-meta" style={{ marginTop: 2 }}>{formatDate(conv.updatedAt)}</div>
               </div>
+              <button type="button" onClick={(event) => { event.stopPropagation(); startRename(conv) }}
+                aria-label={t('renameConversation', lang)} title={t('renameConversation', lang)}
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 2, opacity: 0.7, transition: 'opacity 0.15s' }}
+                onMouseEnter={event => { event.currentTarget.style.opacity = '1' }}
+                onMouseLeave={event => { event.currentTarget.style.opacity = '0.7' }}
+              >
+                <Ic n="pencil" size={10} />
+              </button>
               <button onClick={(e) => { e.stopPropagation(); if (window.confirm(t('deleteConvConfirm', lang))) onDeleteConv(conv.id) }}
+                aria-label={t('deleteConversation', lang)} title={t('deleteConversation', lang)}
                 style={{ background: 'none', border: 'none', color: 'var(--text-ghost)', cursor: 'pointer', padding: 2, opacity: 0.5, transition: 'opacity 0.15s' }}
                 onMouseEnter={e => e.currentTarget.style.opacity = '1'}
                 onMouseLeave={e => e.currentTarget.style.opacity = '0.5'}
@@ -639,7 +660,7 @@ export default function ChatPanel({ chat, config, providerLists, activeSelection
               overflow: 'hidden', border: '1px solid var(--border-accent)', flexShrink: 0
             }}>
               <SafeReferenceThumb asset={ref} />
-              <button onClick={() => removeReference(ref.id)} style={{
+              <button type="button" onClick={() => removeReference(ref.id)} aria-label={lang === 'en' ? 'Remove reference image' : '移除参考图'} style={{
                 position: 'absolute', top: -2, right: -2, width: 14, height: 14, borderRadius: '50%',
                 background: 'var(--danger)', border: 'none', color: 'var(--text-white)', fontSize: 8,
                 display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
@@ -671,7 +692,15 @@ export default function ChatPanel({ chat, config, providerLists, activeSelection
             </div>
           )}
           {visibleReferenceAssets.map(asset => (
-            <div key={asset.id} onClick={() => addReference(asset)} style={{
+            <button
+              type="button"
+              className="reference-asset-button"
+              key={asset.id}
+              onClick={() => addReference(asset)}
+              aria-pressed={references.some(reference => reference.id === asset.id)}
+              aria-label={asset.label || t('referenceImage', lang)}
+              title={asset.label || t('referenceImage', lang)}
+              style={{
               width: 52, height: 52, borderRadius: 'var(--radius-sm)', overflow: 'hidden',
               border: references.find(r => r.id === asset.id) ? '2px solid var(--accent)' : '1px solid var(--border-default)',
               cursor: 'pointer', flexShrink: 0, position: 'relative'
@@ -692,7 +721,7 @@ export default function ChatPanel({ chat, config, providerLists, activeSelection
                 background: 'var(--overlay-dark)', fontSize: 8, color: 'var(--text-white)', textAlign: 'center',
                 overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
               }}>{asset.type}</div>
-            </div>
+            </button>
           ))}
         </div>
       )}
@@ -821,7 +850,7 @@ export default function ChatPanel({ chat, config, providerLists, activeSelection
               flex: 1, background: 'transparent', border: 'none', outline: 'none',
               color: 'var(--text-primary)', fontSize: 14, resize: 'none', maxHeight: 120, lineHeight: 1.6
             }} />
-          <button onClick={handleSend} disabled={!canSend} style={{
+          <button type="button" onClick={handleSend} disabled={!canSend} aria-label={lang === 'en' ? 'Send message' : '发送消息'} style={{
             background: canSend
               ? 'var(--accent-gradient)'
               : 'var(--bg-hover)',
